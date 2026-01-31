@@ -50,7 +50,7 @@ export rcc_log_dir=/path/to/log
 cd PostgreSQL
 bash run_server.sh              # Build RCC and start
 bash run_server.sh --vanilla    # Build vanilla PostgreSQL
-bash shutdown.sh
+bash util/shutdown.sh
 ```
 
 ## Reproducing Experiments

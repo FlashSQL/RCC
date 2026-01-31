@@ -45,7 +45,7 @@ Examples:
 ./run_server.sh                  # Build RCC and start
 ./run_server.sh --vanilla        # Build vanilla and start
 ./run_server.sh --skip-build     # Use existing build, just start server
-./shutdown.sh                    # Stop server
+./util/shutdown.sh               # Stop server
 ```
 
 ---
