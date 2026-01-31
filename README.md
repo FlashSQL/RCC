@@ -1,37 +1,129 @@
-# RCC
+# RCC: Speculative Write Versioning with Redo Logs
 
-# Prepare
+## Overview
 
-1. Install packages.
-```
-sudo apt-get update  
-sudo apt-get install -y gcc python3 python3-pip python-dateutil python3-dateutil bash sudo git gnuplot bison flex libreadline6 libreadline6-dev linux-tools-generic zlib1g-dev vim autoconf linux-tools-`uname -r` build-essential libreadline-dev pkg-config libmysqlclient-dev libpq-dev libtool libaio1 libaio-dev cmake libncurses5 libncurses5-dev bison libssl-dev openssl
+This repository contains the implementation of **RCC**, a concurrency control mechanism that leverages redo logs to resolve write-write (WW) conflicts.
 
+## Hardware Configuration
+
+**Testing Configuration** (from paper experiments):
+- AMD EPYC 9754 CPU (128 cores at 2.25GHz)
+- 256GB DRAM
+- 2x SK hynix PS1010 4TB NVMe SSDs (data + log devices)
+- Ubuntu 22.04
+
+## Software Dependencies
+
+```bash
+sudo apt-get update
+sudo apt-get install -y \
+    gcc make cmake build-essential \
+    python3 python3-pip \
+    libreadline-dev zlib1g-dev libssl-dev \
+    libicu-dev pkg-config \
+    libncurses5-dev bison flex \
+    autoconf automake libtool \
+    libmysqlclient-dev libpq-dev \
+    libaio1 libaio-dev
+
+pip3 install psycopg2-binary
 ```
 
-# PostgreSQL
-```
-cd PostgreSQL/Figure_12_the_CDF_of_version_chain_length
-bash ./script_main.sh
-```
+## Build & Run
 
-# MySQL
-```
+### MySQL
+
+```bash
 cd MySQL
 bash build.sh
-```
-basic commands:
-```
 bash run_server.sh
 bash shutdown.sh
 ```
 
-run experiments in paper:
+### PostgreSQL
+
+```bash
+# Set environment variables
+export rcc_data_dir=/path/to/data
+export rcc_log_dir=/path/to/log
+
+cd PostgreSQL
+bash run_server.sh              # Build RCC and start
+bash run_server.sh --vanilla    # Build vanilla PostgreSQL
+bash shutdown.sh
 ```
+
+## Reproducing Experiments
+
+Benchmark scripts to reproduce the experimental results in the paper:
+
+| Figure | Benchmark | Description |
+|--------|-----------|-------------|
+| Fig4 | Synthetic | Varying transaction length (64, 128, 256 reads/tx) |
+| Fig5 | Synthetic | Varying hotspot position (0.0 ~ 1.0) |
+| Fig6 | TPC-C | Varying client threads (1 ~ 128) |
+| Fig7 | TPC-C | Varying warehouse count (1 ~ 8) |
+
+### Run All Experiments
+
+#### MySQL
+
+```bash
+cd MySQL
+bash run_all_experiments.sh
+```
+
+#### PostgreSQL
+
+```bash
+cd PostgreSQL
+bash run_all_experiments.sh
+```
+
+### Run Experiments Individually
+
+#### MySQL
+
+```bash
+cd MySQL
 bash fig4_varying_transaction_length.sh
 bash fig5_varying_hotspot_position.sh
 bash fig6_varying_client_threads.sh
 bash fig7_varying_warehouse_count.sh
 ```
 
- 
+#### PostgreSQL
+
+```bash
+cd PostgreSQL
+bash fig4_varying_transaction_length.sh
+bash fig5_varying_hotspot_position.sh
+bash fig6_varying_client_threads.sh
+bash fig7_varying_warehouse_count.sh
+```
+
+> **Note:** TPC-C benchmarks (Fig6, Fig7) require sysbench. See `PostgreSQL/README.md` for installation.
+
+### Plotting Results
+
+> **Note:** Requires `gnuplot`. Install with `sudo apt-get install -y gnuplot`.
+
+#### MySQL
+
+```bash
+cd MySQL/plots
+bash plot_fig4.sh
+bash plot_fig5.sh
+bash plot_fig6.sh
+bash plot_fig7.sh
+```
+
+#### PostgreSQL
+
+```bash
+cd PostgreSQL/plots
+bash plot_fig4.sh
+bash plot_fig5.sh
+bash plot_fig6.sh
+bash plot_fig7.sh
+```
