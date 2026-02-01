@@ -61,10 +61,9 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "ut0new.h"
 #include "ut0vec.h"
 
-// [TPL]
 #include "tpl0log.h"
 #include "trx0rec.h"
-//
+
 
 #include "my_dbug.h"
 #include "my_psi_config.h"
@@ -86,10 +85,6 @@ static const ulint TABLE_LOCK_CACHE = 8;
 /** Size in bytes, of the table lock instance */
 static const ulint TABLE_LOCK_SIZE = sizeof(ib_lock_t);
 
-// [TPL]
-// Max count for search conflict cycle
-static const ulint	LOCK_MAX_DEPTH_IN_CONF_CYCLE_CHECK = 200;
-//
 
 template <typename T>
 using Locks = std::vector<T, mem_heap_allocator<T>>;
@@ -489,7 +484,6 @@ bool lock_is_waiting(const lock_t &lock) {
   return lock.is_waiting();
 }
 
-// [TPL]
 inline conflict_t* add_conflict(trx_t* trx, trx_t* blocker, lock_t* lock, ulint heap_no) {
   auto* c = static_cast<conflict_t*>(
       mem_heap_zalloc(trx->conflict_heap, sizeof(conflict_t)));
@@ -497,18 +491,8 @@ inline conflict_t* add_conflict(trx_t* trx, trx_t* blocker, lock_t* lock, ulint 
   c->conf_lock = lock;
   c->heap_no = heap_no;
   trx->lock.conf_lock_pool.push_back(c);
-
-  // int size = 0;
-  // for (auto* elem : trx->lock.conf_lock_pool) {
-  //   if (elem) {
-  //     size++;
-  //   }
-  // }
-  // // fprintf(stderr, "%d\n", size);
-  // fprintf(stderr, "(%d) %d, %s\n", trx->id, size, lock->index->table_name);
   return c;
 }
-//
 
 /** Sets the wait flag of a lock and the back pointer in trx to lock.
 @param[in]  lock  The lock on which a transaction is waiting */
@@ -591,19 +575,14 @@ static inline Conflict rec_lock_check_conflict(
   ut_ad(trx && lock2);
   ut_ad(lock_get_type_low(lock2) == LOCK_REC);
 
-  // [TPL] - wait for rollback trx
-	// rollback 중인 record에 대해서는 XX가 아닌, X로 봐야 함
   lock_mode		type_mode2 = lock_get_mode(lock2);
   if (lock2->trx->conflict_abort && type_mode2 == LOCK_XX) {
-		// fprintf(stderr, "[DEBUG] (%d) lock_rec_has_to_wait - %d is rolling back\n", trx->id, lock2->trx->id);
 		type_mode2 = LOCK_X;
 	}
-  //
 
   if (trx == lock2->trx ||
       lock_mode_compatible(static_cast<lock_mode>(LOCK_MODE_MASK & type_mode),
                            lock_get_mode(lock2))) {
-    // fprintf(stderr, "[DEBUG] (%d) rec_lock_check_conflict - compatible with %d %p\n", trx->id, lock2->trx->id, lock2);
     return Conflict::NO_CONFLICT;
   }
 
@@ -860,7 +839,6 @@ static inline const lock_t *lock_rec_has_expl(ulint precise_mode,
   return lock_rec_has_expl(precise_mode, block->get_page_id(), heap_no, trx);
 }
 
-// [TPL]
 static inline const lock_t *tpl_lock_rec_has_expl(
   ulint precise_mode,
   const page_id_t page_id,
@@ -873,7 +851,6 @@ static inline const lock_t *tpl_lock_rec_has_expl(
 
   const auto first =
   lock_sys->rec_hash.find_on_record(rec_id, [&](const lock_t *lock) {
-    // fprintf(stderr, "[DEBUG] (%d) tpl_lock_rec_has_expl - %d, %p\n", trx->id, lock->trx->id, lock);
     return (
       (lock->trx == trx && !lock->is_insert_intention() 
       && lock_mode_stronger_or_eq(lock_get_mode(lock), mode) 
@@ -890,7 +867,7 @@ static inline const lock_t *tpl_lock_rec_has_expl(
   ulint			target_mode) {
   return tpl_lock_rec_has_expl(precise_mode, block->get_page_id(), heap_no, trx, target_mode);
 }
-//
+
 
 namespace locksys {
 bool Trx_locks_cache::has_granted_blocker(const trx_t *trx,
@@ -963,7 +940,6 @@ struct Conflicting {
   const lock_t *wait_for;
   /** true iff the trx has bypassed one of waiting locks */
   bool bypassed;
-  // [TPL]
   // true if any lock on this record aborts
   bool aborting;
 };
@@ -999,8 +975,6 @@ static locksys::Conflicting lock_rec_other_has_conflicting(
         const auto conflict = locksys::rec_lock_check_conflict(
             trx, mode, lock, is_supremum, trx_locks_cache);
 
-        // fprintf(stderr, "[DEBUG] (%d) lock_rec_other_has_conflicting - %d %p: %d\n", trx->id, lock->trx->id, lock, conflict);
-
         if (conflict == locksys::Conflict::CAN_BYPASS) {
           bypassed = true;
         }
@@ -1009,9 +983,7 @@ static locksys::Conflicting lock_rec_other_has_conflicting(
   return {wait_for, bypassed, false};
 }
 
-// [TPL] - Bamboo
-// [TPL]
-// return last_lock (tail of conflict chain)
+
 static locksys::Conflicting tpl_lock_rec_other_has_conflicting(
   ulint mode, 
   const buf_block_t *block, 
@@ -1030,11 +1002,9 @@ static locksys::Conflicting tpl_lock_rec_other_has_conflicting(
   bool aborting = false;
 
   lock_sys->rec_hash.find_on_record(rec_id, [&](const lock_t *lock) {
-        // lock_rec_has_to_wait와 유사
         const auto conflict = locksys::rec_lock_check_conflict(
             trx, mode, lock, is_supremum, trx_locks_cache);
 
-        // fprintf(stderr, "[DEBUG] (%d) tpl_lock_rec_other_has_conflicting - %d %p: %d\n", trx->id, lock->trx->id, lock, conflict);
 
         if (conflict == locksys::Conflict::CAN_BYPASS) {
           bypassed = true;
@@ -1049,25 +1019,20 @@ static locksys::Conflicting tpl_lock_rec_other_has_conflicting(
           return false;
         }
         else if (conflict == locksys::Conflict::HAS_TO_WAIT) {
-          // fprintf(stderr, "[DEBUG] (%d) tpl_lock_rec_other_has_conflicting - has to wait\n", trx->id);
           last_lock = lock;
           if (lock_get_mode(lock) == LOCK_X || lock_get_mode(lock) == LOCK_XX) {
             updated = true;
           }
         // [SR]
         } else if (updated) {
-          // S_LOCK -> NO_CONFLICT -> 하지만 이전에 X_LOCK 있었으면 -> conflicter로
-          // fprintf(stderr, "[DEBUG] (%d) tpl_lock_rec_other_has_conflicting - updated\n", trx->id);
           last_lock = lock;
-        } // end SR
+        } 
         return false; 
       });
   return {last_lock, bypassed, aborting};
-}  // end RCC
+}  
 
-// [TPL]
-// return last_lock (tail of conflict chain)
-// use when rollback
+
 static locksys::Conflicting tpl_lock_rec_other_has_conflicting_rollback(
   ulint mode, 
   RecID rec_id, 
@@ -1087,7 +1052,6 @@ static locksys::Conflicting tpl_lock_rec_other_has_conflicting_rollback(
         const auto conflict = locksys::rec_lock_check_conflict(
             trx, mode, lock, is_supremum, trx_locks_cache);
 
-        // fprintf(stderr, "[DEBUG] (%d) tpl_lock_rec_other_has_conflicting_rollback - %d %p: %d\n", trx->id, lock->trx->id, lock, conflict);
         if (trx == lock->trx) {
           // 나 까지 옴, 뒤는 볼 필요X
           return true;

@@ -42,7 +42,7 @@ constexpr uint32_t DYN_BLOCK_MAGIC_N = 375767;
 
 /** This is the initial 'payload' size of a dynamic array;
 this must be > MLOG_BUF_MARGIN + 30! */
-// [TPL] - 512->4096
+
 constexpr uint32_t DYN_ARRAY_DATA_SIZE = 4096; // 512
 
 /** Flag for dyn_block_t::used that indicates a full block */

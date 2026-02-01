@@ -52,9 +52,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "lock0prdt.h"
 #include "ut0sharded_bitset.h"
 
-// [TPL]
 #include "trx0trx.h"
-//
 
 /**
 @page PAGE_INNODB_LOCK_SYS Innodb Lock-sys
@@ -273,8 +271,6 @@ lock_rec_lock_xx(
 	dict_index_t*		index,	/*!< in: index of record */
 	que_thr_t*		thr);	/*!< in: query thread */
 
-bool search_conflict_cycle(trx_t* trx);
-
 void lock_cascade_abort(trx_t* trx);
 void lock_make_trx_abort_list(trx_t *in_trx, abort_list_t &abort_list);
 void collect_cascade_rollback(abort_list_t &abort_list, lock_t* in_lock);
@@ -282,14 +278,6 @@ bool trx_conf_lock_empty(trx_t* trx);
 bool trx_set_latest_conf_to_wait(trx_t* trx);
 bool lock_conflicter(lock_t* lock1, lock_t* lock2);
 conflict_t* lock_get_conf(trx_t* trx, page_id_t page_id, ulint heap_no);
-// future_apply_t trx_last_future_vers(lock_t* in_lock); // [TPL] - group commit
-// // [TPL] - async commit
-// trx_t* trx_conf_lock_conf(trx_t* trx, lock_t* lock);
-// trx_t* trx_conf_lock_set_blocker(trx_t* trx, lock_t* lock, trx_t* new_blocker);
-// trx_t* trx_conf_overwrite_future_vers(trx_t* t1, trx_t* t2, page_id_t page_id);
-// trx_t* trx_page_lock_conf(trx_t* trx, page_id_t page_id);
-// // end async
-
 /** Allocates memory suitable for holding a lock_t from specified heap.
 The allocated memory has additional bitmap_bytes right after the returned
 lock_t instance for holding the bitmap used by LOCK_REC type.

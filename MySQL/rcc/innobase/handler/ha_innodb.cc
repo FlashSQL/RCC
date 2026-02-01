@@ -1256,7 +1256,7 @@ static SHOW_VAR innodb_status_variables[] = {
     {"row_lock_time", (char *)&export_vars.innodb_row_lock_time, SHOW_LONGLONG,
      SHOW_SCOPE_GLOBAL},
     {"row_commit_time", (char *)&export_vars.innodb_row_commit_time, SHOW_LONGLONG,
-    SHOW_SCOPE_GLOBAL}, // [TPL] - time
+    SHOW_SCOPE_GLOBAL},
     {"row_lock_time_avg", (char *)&export_vars.innodb_row_lock_time_avg,
      SHOW_LONG, SHOW_SCOPE_GLOBAL},
     {"row_lock_time_max", (char *)&export_vars.innodb_row_lock_time_max,
@@ -5197,7 +5197,7 @@ static PSI_metric_info_v1 inno_metrics[] = {
      METRIC_UNIT_MILLISECONDS,
      "Time spent in acquiring row locks, in milliseconds (innodb_row_commit_time)",
      MetricOTELType::ASYNC_COUNTER,
-     export_vars.innodb_row_commit_time), // [TPL] - time
+     export_vars.innodb_row_commit_time), 
     simple("row_lock_time_avg",
      METRIC_UNIT_MILLISECONDS,
      "The average time to acquire a row lock, in milliseconds (innodb_row_lock_time_avg)",
@@ -6019,7 +6019,6 @@ static int innobase_commit(handlerton *hton, /*!< in: InnoDB handlerton */
   DBUG_PRINT("trans", ("ending transaction"));
   DEBUG_SYNC_C("transaction_commit_start");
 
-  // thread에 연결된 InnoDB trx를 가져온다
   trx_t *trx = check_trx_exists(thd);
 
   /* We are about to check if the transaction is_aborted, and if it is,
@@ -6034,13 +6033,11 @@ static int innobase_commit(handlerton *hton, /*!< in: InnoDB handlerton */
   after each statement (with commit_trx=false), so we need some logic to decide
   if we really plan to perform commit during this call.
   */
- // high priority trx가 나를 강제 abort 할 수 있음. 근데 commit 중간에 abort되면 안 되니까 TRX_FORCE_ROLLBACK_DISABLE를 켜서 보호 모드에 들어가야 함
   bool will_commit =
       commit_trx ||
       (!thd_test_options(thd, OPTION_NOT_AUTOCOMMIT | OPTION_BEGIN));
   TrxInInnoDB trx_in_innodb(trx, will_commit);
 
-  // 커밋 전에 abort 됐으니까 그냥 롤백
   if (trx_in_innodb.is_aborted()) {
     innobase_rollback(hton, thd, commit_trx);
 
@@ -6111,33 +6108,11 @@ static int innobase_commit(handlerton *hton, /*!< in: InnoDB handlerton */
       trx->flush_log_later = true;
     }
 
-    // [TPL] - group_commit
-    // trx_t* owner = nullptr;
-    // for (auto* elem : trx->lock.conf_lock_pool) {
-    //   if (elem && (!elem->deleted)) {
-    //     trx_t* blocker = elem->blocker;
-    //     trx_mutex_enter(blocker);
-    //     if(blocker->pre_commit != TRX_COMMIT_GROUP) {
-    //       // GROUP COMMIT 중 아닌 blocker 하나라도 있으면 거기로 붙으면 됨
-    //       // 나 blocker가모두 group commit 중이다 == commit wait
-    //       owner = blocker;
-    //     }
-    //     trx_mutex_exit(blocker);
-    //   }
-    // }
-
-    // if(!trx_conf_lock_empty(trx) && owner != nullptr) {
-    //   fprintf(stderr, "[DEBUG] (%d) async commit\n", trx->id);
-    //   trx->pre_commit = TRX_COMMIT_ASYNC;
-    //   return 0;
-    // } 
-
     /* If SE needs to persist GTID we must have a transaction. */
     if (thd->se_persists_gtid_explicit()) {
       trx_start_if_not_started(trx, true, UT_LOCATION_HERE);
     }
 
-    // redo 쓰기, undo 확정 처리, logical commit, lock release, cleanup 등
     innobase_commit_low(trx);
 
     if (!read_only) {
@@ -6158,35 +6133,9 @@ static int innobase_commit(handlerton *hton, /*!< in: InnoDB handlerton */
     trx_deregister_from_2pc(trx);
 
     /* Now do a write + flush of logs. */
-    // redo log flush
     if (!read_only) {
       trx_commit_complete_for_mysql(trx);
     }
-
-    // [TPL] - group_commit
-    // fprintf(stderr, "[DEBUG] (%d) group commit (%d)\n", trx->id, trx->async_pending_list.size());
-    // if (trx->async_pending_list.size() > 0) {
-    //   trx->pre_commit = TRX_COMMIT_GROUP;
-    //   trx_list_t::iterator end = trx->async_pending_list.end();
-    //   for(trx_list_t::iterator it = trx->async_pending_list.begin(); it != end; ++it) {
-    //       trx_t* ptrx = *it;
-    //       fprintf(stderr, "[DEBUG] (%d) async_pending_list: %p %d\n", trx->id, ptrx, ptrx->id);
-
-    //       // innobase_commit_low(ptrx);
-
-    //       // ptrx->flush_log_later = false;
-    //       // trx_deregister_from_2pc(ptrx);
-    //       // trx_commit_complete_for_mysql(ptrx);
-    //       // ptrx->n_autoinc_rows = 0;
-    //       // ptrx->fts_next_doc_id = 0;
-    //       // ptrx->async_pending_list.clear();
-    //       // innobase_srv_conc_force_exit_innodb(ptrx);
-    //       // ptrx->async_pending_list.clear();
-    //     }
-    //   trx->async_pending_list.clear();
-
-    // }
-    
 
   } else {
     /* We just mark the SQL statement ended and do not do a
@@ -8679,9 +8628,8 @@ void ha_innobase::build_template(bool whole_row) {
   bool fetch_primary_key_cols = false;
   ulint i;
 
-  // [TPL]
+
   if (m_prebuilt->select_lock_type == LOCK_X || m_prebuilt->select_lock_type == LOCK_XX) {
-  //
     /* We always retrieve the whole clustered index record if we
     use exclusive row level locks, for example, if the read is
     done in an UPDATE statement. */

@@ -90,14 +90,11 @@ static inline trx_undo_rec_t *trx_undo_rec_copy(const page_t *undo_page,
   and subtract it from current undo log record offset to get the length
   of undo record */
   uint32_t next_undo_offset = mach_read_from_2(undo_rec);
-  // [TPL]
-  // 이상하게 nex_undo_offset을 0으로 읽는다
-  // T1<-T2(conf, buf write)<-T3(wait), T2롤백+T3는X, T3가 씀, 이걸 prev ver 읽을 때 T2껄 읽으면 0으로 읽힘
-  // 예상 원인: Purge된 걸 읽음. 근데 이게 van에서는 T3가 생길 일이 없어서 readview에서 못 걸러내는 건 아닐지?
+
   if (next_undo_offset <= undo_offset) {
     return nullptr;
   }
-  //
+
   ut_a(next_undo_offset > undo_offset);
 
   uint32_t len = next_undo_offset - undo_offset;

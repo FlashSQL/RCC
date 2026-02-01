@@ -75,11 +75,9 @@ struct srv_stats_t {
   typedef ib_counter_t<lint, 1, single_indexer_t> lint_ctr_1_t;
   typedef ib_counter_t<int64_t, 1, single_indexer_t> int64_ctr_1_t;
 
-  // [TPL] - time
   int64_ctr_1_t rollback_time; 
   ulint_ctr_1_t rollback_count;
   int64_ctr_1_t n_lock_commit_time; 
-  // end time
 
   /** Count the amount of data written in total (in bytes) */
   ulint_ctr_1_t data_written;
@@ -1193,7 +1191,7 @@ struct export_var_t {
   ulint innodb_row_lock_current_waits; /*!< srv_n_lock_wait_current_count */
   int64_t innodb_row_lock_time;        /*!< srv_n_lock_wait_time
                                        / 1000 */
-  int64_t innodb_row_commit_time;      // [TPL] - time
+  int64_t innodb_row_commit_time;  
   ulint innodb_row_lock_time_avg;      /*!< srv_n_lock_wait_time
                                        / 1000
                                        / srv_n_lock_wait_count */

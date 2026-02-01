@@ -54,24 +54,18 @@ usage() {
 DATA_DIR="${rcc_data_dir:-}"
 LOG_DIR="${rcc_log_dir:-}"
 SKIP_BUILD=false
-
+pkill -9 -ef mysql
 while [[ $# -gt 0 ]]; do
     case $1 in
         --vanilla)
-            # Stop existing
-            bash shutdown.sh --vanilla
             BUILD_MODE="vanilla"
             shift
             ;;
         --rcc)
-            # Stop existing
-            bash shutdown.sh --rcc
             BUILD_MODE="rcc"
             shift
             ;;
         --bamboo)
-            # Stop existing
-            bash shutdown.sh --bamboo
             BUILD_MODE="bamboo"
             shift
             ;;
@@ -150,6 +144,9 @@ else
 fi
 
 # Initialize database (only if DATA_DIR is empty)
+rm -rf $$DATA_DIR/*
+rm -rf $LOG_DIR/*
+
 if [ -z "$(ls -A $DATA_DIR 2>/dev/null)" ]; then
     print_info "Initializing database..."
     cd $BASE_DIR

@@ -134,7 +134,6 @@ static inline void lock_reset_lock_and_trx_wait(
 {
   ut_ad(locksys::owns_lock_shard(lock));
   ut_ad(lock_get_wait(lock));
-  // ut_ad(lock->trx->lock.wait_lock == lock);
   
   /* We intentionally don't clear trx->lock.blocking_trx here, as
   lock_reset_lock_and_trx_wait() is called also during movements of locks from
@@ -144,21 +143,18 @@ static inline void lock_reset_lock_and_trx_wait(
   we really want to remove the edge from the wait-for graph.
   - B-tree 재구성 등으로 잠시 wait_lock이 옮겨가는 경우에는 blocking_trx를 유지해야 wait-for graph가 유지됨.
   */
-  // [TPL]
+
   trx_t* trx = lock->trx;
 
   if (lock == trx->lock.wait_lock.load()) {
     lock->trx->lock.wait_lock = nullptr;
-    // fprintf(stderr, "[DEBUG] (%d) lock_reset_lock_and_trx_wait - reset wait_lock\n", trx->id);
   }
 
   for (auto &element : trx->lock.conf_lock_pool) {
     if (element->conf_lock == lock) {
-      // reset this conflict lock
       element->deleted = true;
     }
   }
-  //
 
   /* We intentionally don't clear lock->trx->lock.wait_lock_type here, to make
   it easier to obtain stats about the last wait in lock_wait_suspend_thread().

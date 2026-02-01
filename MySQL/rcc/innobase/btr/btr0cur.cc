@@ -3254,14 +3254,12 @@ const byte *btr_cur_parse_update_in_place(
   row_upd_rec_in_place(rec, index, offsets, update, page_zip);
 
 func_exit:
-  // fprintf(stderr, "[DEBUG] que_thr_stop_for_mysql: %s\n", UT_LOCATION_HERE.filename);
   mem_heap_free(heap);
 
   return (ptr);
 }
 
-// [TPL]
-// cc. btr_cur_parse_update_in_place
+
  const byte *tpl_btr_cur_parse_update_in_place(
   const byte *ptr,          /*!< in: buffer */
   const byte *end_ptr,      /*!< in: buffer end */
@@ -3325,9 +3323,7 @@ func_exit:
 	dberr_t		err;
   err = trx_parse_undo_report_row_operation(
         trx, flags, TRX_UNDO_MODIFY_OP, index, update, rec, offsets, &roll_ptr, UPD_NODE_NO_ORD_CHANGE);
-  // fprintf(stderr, "[DEBUG] (%d) tpl_btr_cur_parse_update_in_place - rec: %p, roll_ptr: %p\n", trx->id, rec, roll_ptr);
   if (err != DB_SUCCESS) {
-    fprintf(stderr, "[!DEBUG] (%d) <ERR> tpl_btr_cur_parse_del_mark_set_clust_rec -- err != DB_SUCCESS\n", trx->id);
     goto func_exit;
 
   }
@@ -3337,7 +3333,6 @@ func_exit:
                                       roll_ptr);
   }
 
-  // fprintf(stderr, "[DEBUG] (%d) Apply - rec: %p\n", trx->id, rec);
   row_upd_rec_in_place(rec, index, offsets, update, page_zip);
   btr_cur_update_in_place_log(flags, rec, index, update, trx_id, roll_ptr, mtr);
 
@@ -3346,97 +3341,6 @@ func_exit:
 
   return (ptr);
 }
-
-
-// // [TPL] - group commit
-// // cc. btr_cur_parse_update_in_place
-// const byte *btr_cur_parse_update_install(
-//   const byte *ptr,          /*!< in: buffer */
-//   const byte *end_ptr,      /*!< in: buffer end */
-//   page_t *page,             /*!< in/out: page or NULL */
-//   page_zip_des_t *page_zip, /*!< in/out: compressed page, or NULL */
-//   dict_index_t *index, /*!< in: index corresponding to page */
-// 	trx_t* trx,
-//   rec_t* future_vers)
-// {
-//   ulint flags;
-//   rec_t *rec;
-//   upd_t *update;
-//   ulint pos;
-//   trx_id_t trx_id;
-//   roll_ptr_t roll_ptr;
-//   ulint rec_offset;
-//   mem_heap_t *heap;
-//   ulint *offsets;
-
-//   if (end_ptr < ptr + 1) {
-//     return (nullptr);
-//   }
-
-//   flags = mach_read_from_1(ptr);
-//   ptr++;
-
-//   ptr = row_upd_parse_sys_vals(ptr, end_ptr, &pos, &trx_id, &roll_ptr);
-
-//   if (ptr == nullptr) {
-//     return (nullptr);
-//   }
-
-//   if (end_ptr < ptr + 2) {
-//     return (nullptr);
-//   }
-
-//   rec_offset = mach_read_from_2(ptr);
-//   ptr += 2;
-
-//   ut_a(rec_offset <= UNIV_PAGE_SIZE);
-
-//   heap = mem_heap_create(256, UT_LOCATION_HERE);
-
-//   ptr = row_upd_index_parse(ptr, end_ptr, heap, &update);
-
-//   if (!ptr || !page) {
-//     goto func_exit;
-//   }
-
-//   ut_a(page_is_comp(page) == dict_table_is_comp(index->table));
-//   rec = page + rec_offset;
-
-//   /* We do not need to reserve search latch, as the page is only
-//   being recovered, and there cannot be a hash index to it. */
-
-//   offsets = rec_get_offsets(rec, index, nullptr, ULINT_UNDEFINED,
-//                             UT_LOCATION_HERE, &heap);
-
-
-//   // Undo Logging (update)
-// 	dberr_t		err;
-//   err = trx_parse_undo_report_row_operation(
-//         trx, flags, TRX_UNDO_MODIFY_OP, index, update, rec, offsets, &roll_ptr, UPD_NODE_NO_ORD_CHANGE);
-//   // fprintf(stderr, "[DEBUG] (%d) tpl_btr_cur_parse_update_in_place - rec: %p, roll_ptr: %p\n", trx->id, rec, roll_ptr);
-//   if (err != DB_SUCCESS) {
-//     fprintf(stderr, "[!DEBUG] (%d) <ERR> tpl_btr_cur_parse_del_mark_set_clust_rec -- err != DB_SUCCESS\n", trx->id);
-//     goto func_exit;
-
-//   }
-
-//   if (!(flags & BTR_KEEP_SYS_FLAG)) {
-//     row_upd_rec_sys_fields_in_recovery(rec, page_zip, offsets, pos, trx_id,
-//                                       roll_ptr);
-//   }
-
-//   // Install
-// 	ulint extra_len;
-// 	ulint data_len;
-//   extra_len = rec_offs_extra_size(offsets);
-//   data_len = rec_offs_data_size(offsets);
-//   ut_memcpy(rec - extra_len, future_vers - extra_len, extra_len + data_len);
-
-// func_exit:
-//   mem_heap_free(heap);
-
-//   return (ptr);
-// }
 
 #ifndef UNIV_HOTBACKUP
 bool btr_cur_update_alloc_zip_func(page_zip_des_t *page_zip, page_cur_t *cursor,
@@ -3498,7 +3402,6 @@ out_of_space:
   return (false);
 }
 
-// [TPL] - tpl_update_only_log
 /* Write only redo log without buffer update if it conflicted */
 dberr_t
 tpl_update_only_log(
@@ -3510,7 +3413,6 @@ tpl_update_only_log(
 	trx_id_t	trx_id,
   ulint*			offsets)	
 {
-  // Q. Why??
   if (!thr) return (DB_FAIL);
 
 	dict_index_t*	index;
@@ -3528,7 +3430,6 @@ tpl_update_only_log(
 	trx_t*	trx = thr_get_trx(thr);
   trx_mutex_enter(trx); // to protect trx->lock.conflict_lock
 
-	// 충돌을 일으킨 page에 대해서만 log 써야 함, que_state나 cnt로 관리하면 안 됨
   char * table_name = const_cast<char*>(index->table_name);
   if (std::strstr(table_name, "mysql") == nullptr && strcmp(table_name, "tpcc/customer")!= 0 && strcmp(table_name, "tpcc/orders") != 0 && strcmp(table_name, "tpcc/order_line") != 0) {
 
@@ -3544,14 +3445,6 @@ tpl_update_only_log(
 		  return (DB_FAIL);
     }
 
-    // if (conf->updated) {
-    //   fprintf(stderr, "[DEBUG] (%d) Log write - rec: %p, %s, lock: %p, future: %p, size: %d, %p\n", trx->id, rec, index->table_name, trx->lock.conf_lock_pool.back()->conf_lock, future_vers, trx->in_memory_ppl_buf.size(), index);
-    //   trx->abort = true;
-    //   trx->conflict_abort = TRX_ABORT_MARKED;
-    //   trx_mutex_exit(trx);
-    //   return (DB_SUCCESS);
-    // }
-    
 		mtr_t		tpl_mtr;
 		tpl_mtr.start();
 		tpl_mtr.set_mtr_blocking_tpl_pointer(&trx->in_memory_ppl_buf);
@@ -3559,9 +3452,6 @@ tpl_update_only_log(
     
 		btr_cur_update_in_place_log(flags, rec, index, update, trx_id, roll_ptr, &tpl_mtr); // Write redo log
 
-
-		// fprintf(stderr, "[DEBUG] (%d) Log write - rec: %p, %s, lock: %p, future: %p, size: %d, %p\n", trx->id, rec, index->table_name, trx->lock.conf_lock_pool.back()->conf_lock, future_vers, trx->in_memory_ppl_buf.size(), index);
-    
     row_upd_rec_in_place(future_vers, index, offsets, update, page_zip);
     conf->updated = true;
     tpl_mtr.set_mtr_ipl_start_pointer(NULL);
@@ -3572,7 +3462,6 @@ tpl_update_only_log(
     trx_mutex_exit(trx);
 		return (DB_SUCCESS);
 	} else {
-    // fprintf(stderr, "[DEBUG] (%d) Log write FAIL - rec: %p, %s (%d %d)\n", trx->id, rec, index->table_name, block->page.id.space(), block->page.id.page_no());
     trx_mutex_exit(trx);
 		return (DB_FAIL);
 	}
@@ -3607,7 +3496,6 @@ dberr_t btr_cur_update_in_place(ulint flags, btr_cur_t *cursor, ulint *offsets,
 
   rec = btr_cur_get_rec(cursor);
   index = cursor->index;
-  // ut_ad(rec_offs_validate(rec, index, offsets));
   ut_ad(page_rec_is_comp(rec) == dict_table_is_comp(index->table));
   ut_ad(trx_id > 0 || (flags & BTR_KEEP_SYS_FLAG) ||
         index->table->is_intrinsic());
@@ -3811,12 +3699,9 @@ dberr_t btr_cur_optimistic_update(ulint flags, btr_cur_t *cursor,
        trx_is_recv(thr_get_trx(thr)));
 #endif /* UNIV_DEBUG || UNIV_BLOB_LIGHT_DEBUG */
  
-  // [TPL] - Bamboo
 	err = tpl_update_only_log(flags, cursor, update, thr, trx_id, *offsets);
 	if(err == DB_SUCCESS) {
 		if (row_upd_changes_field_size_or_external(index, *offsets, update)) {
-			// fprintf(stderr, "[!DEBUG] <ERR> (%d) btr_cur_optimistic_update -- err\n", trx_id);
-			// ut_error;
 		}
 		return err;
 	}

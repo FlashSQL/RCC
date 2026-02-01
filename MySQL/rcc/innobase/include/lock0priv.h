@@ -590,7 +590,7 @@ locks on the inserted record. */
  statement-level MySQL binlog.
  See also lock_mode_compatible().
  */
-// [TPL] - XX lock 추가
+
 static const byte lock_compatibility_matrix[6][6] = {
     /**         IS     IX       S     X       AI  XX */
     /* IS */ {true, true, true, false, true, false},
@@ -935,10 +935,9 @@ sleep.
 @param[in, out]   lock    The lock for which lock->trx is waiting */
 void lock_reset_wait_and_release_thread_if_suspended(lock_t *lock);
 
-// [TPL]
+
 void tpl_lock_reset_wait_and_release_thread_if_suspended(lock_t *lock);
 void tpl_lock_wait_release_thread_if_suspended(lock_t *lock);
-//
 
 /** Checks if some transaction has an implicit x-lock on a record in a clustered
 index.
@@ -1130,7 +1129,7 @@ void run_if_waiting(const TrxVersion trx_version, F &&f) {
   } while (trx->lock.blocking_trx.load() && ut_delay(10));
 }
 
-// [TPL]
+
 template <typename F>
 void tpl_run_if_waiting(trx_t *trx, F &&f) {
   do {
@@ -1146,8 +1145,7 @@ void tpl_run_if_waiting(trx_t *trx, F &&f) {
       const bool retry = latch_peeked_shard_and_do(peeked_wait_lock, [&]() {
 
         if (peeked_wait_lock != trx->lock.wait_lock.load()) {
-          // wait_lock이 여전히 일치하는지 한 번만 확인
-          return peeked_wait_lock->is_record_lock(); // record 락이면 retry
+          return peeked_wait_lock->is_record_lock();
         }
         std::forward<F>(f)();
         return false;
@@ -1160,7 +1158,6 @@ void tpl_run_if_waiting(trx_t *trx, F &&f) {
     probably the wait_lock will soon be restored, otherwise we can give up */
   } while (trx->lock.blocking_trx.load() && ut_delay(10));
 }
-//
 }  // namespace locksys
 
 template <typename F>

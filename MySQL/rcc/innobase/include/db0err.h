@@ -229,8 +229,7 @@ enum dberr_t {
   /* Too many nested sub expression in full-text search string */
   DB_FTS_TOO_MANY_NESTED_EXP,
 
-	// [TPL] - DB_CONFLICT 선언
+
 	DB_CONFLICT_LOCKED_REC = 3000	
-  //
 };
 #endif

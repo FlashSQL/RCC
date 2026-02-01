@@ -31,6 +31,7 @@ $BASE_DIR/mysql-8.4.5-build/bin/mysqld --defaults-file=$BASE_DIR/my.cnf --datadi
 sleep 20
 
 echo "CREATE TPCC"
+cd $BASE_DIR/tpcc-mysql/src && make
 $BASE_DIR/mysql-8.4.5-build/bin/mysql -uroot  -e "CREATE DATABASE tpcc;"
 $BASE_DIR/mysql-8.4.5-build/bin/mysql -u root  tpcc < $BASE_DIR/tpcc-mysql/create_table.sql
 $BASE_DIR/mysql-8.4.5-build/bin/mysql -u root  tpcc < $BASE_DIR/tpcc-mysql/add_fkey_idx.sql
