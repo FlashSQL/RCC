@@ -34,10 +34,15 @@ pip3 install psycopg2-binary
 ### MySQL
 
 ```bash
+export rcc_data_dir=/path/to/data
+export rcc_log_dir=/path/to/log
+
 cd MySQL
-bash build.sh
-bash run_server.sh
-bash shutdown.sh
+
+# --server: vailla, bamboo, rcc
+bash build.sh --server # Build
+bash run_server.sh --server # Run MySQL Server
+bash shutdown.sh --server
 ```
 
 ### PostgreSQL
@@ -63,6 +68,8 @@ Benchmark scripts to reproduce the experimental results in the paper:
 | Fig5 | Synthetic | Varying hotspot position (0.0 ~ 1.0) |
 | Fig6 | TPC-C | Varying client threads (1 ~ 128) |
 | Fig7 | TPC-C | Varying warehouse count (1 ~ 8) |
+| Fig8 | TPC-C | Varying client threads with Serialzable mode (compare to bamboo) (only for mysql) |
+| Fig10 | Synthetic | Comparison with OCC (only for mysql) |
 
 ### Run All Experiments
 
@@ -90,6 +97,8 @@ bash fig4_varying_transaction_length.sh
 bash fig5_varying_hotspot_position.sh
 bash fig6_varying_client_threads.sh
 bash fig7_varying_warehouse_count.sh
+bash fig8_serializable.sh
+bash fig10_occ.sh
 ```
 
 #### PostgreSQL
