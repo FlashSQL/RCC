@@ -156,12 +156,16 @@ if [ -z "$(ls -A $DATA_DIR 2>/dev/null)" ]; then
     
     if grep -Eq '^[[:space:]]*pid-file[[:space:]]*=' "$BASE_DIR/my.cnf"; then
         sed -i -E "s|^[[:space:]]*pid-file[[:space:]]*=.*$|pid-file=${DATA_DIR}/mysql.pid|" "$BASE_DIR/my.cnf"
+    fi
     if grep -Eq '^[[:space:]]*datadir[[:space:]]*=' "$BASE_DIR/my.cnf"; then
         sed -i -E "s|^[[:space:]]*datadir[[:space:]]*=.*$|datadir=${DATA_DIR}|" "$BASE_DIR/my.cnf"
+    fi
     if grep -Eq '^[[:space:]]*log-error[[:space:]]*=' "$BASE_DIR/my.cnf"; then
         sed -i -E "s|^[[:space:]]*log-error[[:space:]]*=.*$|log-error=${LOG_DIR}/mysql_error.log|" "$BASE_DIR/my.cnf"
+    fi
     if grep -Eq '^[[:space:]]*innodb_log_group_home_dir[[:space:]]*=' "$BASE_DIR/my.cnf"; then
         sed -i -E "s|^[[:space:]]*innodb_log_group_home_dir[[:space:]]*=.*$|innodb_log_group_home_dir=${LOG_DIR}|" "$BASE_DIR/my.cnf"
+    fi
     
     bash $BASE_DIR/scripts/init_database.sh $BUILD_MODE
 

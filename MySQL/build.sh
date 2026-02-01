@@ -125,3 +125,7 @@ cmake $MYSQL_HOME \
     -DCMAKE_INSTALL_PREFIX=$INSTALL_PATH
 
 make -j$(nproc) install 
+
+cd ..
+rm $BASE_DIR/$BUILD_MODE/mysql-8.4.5.tar.gz
+
