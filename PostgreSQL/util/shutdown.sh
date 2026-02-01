@@ -17,4 +17,4 @@ if [[ -z "$DATA_DIR" ]]; then
     exit 1
 fi
 
-$BASE_DIR/rcc_postgresql/bld/bin/pg_ctl stop -D $DATA_DIR -m fast
+$BASE_DIR/rcc_postgresql/bld/bin/pg_ctl stop -D $DATA_DIR -w -t 300

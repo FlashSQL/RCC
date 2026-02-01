@@ -45,5 +45,5 @@ echo "CREATE TABLE AND LOAD DATA"
 $BASE_DIR/rcc_postgresql/bld/bin/psql -U postgres -d synt -f $BASE_DIR/synthetic_benchmark/create_table_synthetic.sql
 
 echo "Data loading complete. Stopping server..."
-$BASE_DIR/rcc_postgresql/bld/bin/pg_ctl stop -D $DATA_DIR -m fast
+$BASE_DIR/rcc_postgresql/bld/bin/pg_ctl stop -D $DATA_DIR -w -t 300
 echo "Server stopped. Ready for benchmark."
