@@ -79,7 +79,7 @@ for BUILD_MODE in "${BUILD_MODES[@]}"; do
     python3 $SCRIPT_DIR/synthetic_benchmark/varying_hotspot_position.py | tee $RESULT_DIR/$BUILD_MODE/output.log
 
     # Shutdown
-    bash $SCRIPT_DIR/util/shutdown.sh
+    bash $SCRIPT_DIR/util/shutdown.sh --data-dir $rcc_data_dir
     sleep 3
 done
 
