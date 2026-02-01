@@ -39,10 +39,10 @@ $BASE_DIR/rcc_postgresql/bld/bin/postgres -D $DATA_DIR > /dev/null 2>&1 &
 sleep 10
 
 echo "CREATE DATABASE"
-$BASE_DIR/rcc_postgresql/bld/bin/psql -U postgres -c "CREATE DATABASE stx;" 2>/dev/null
+$BASE_DIR/rcc_postgresql/bld/bin/psql -U postgres -c "CREATE DATABASE synt;" 2>/dev/null
 
 echo "CREATE TABLE AND LOAD DATA"
-$BASE_DIR/rcc_postgresql/bld/bin/psql -U postgres -d stx -f $BASE_DIR/synthetic_benchmark/create_table_synthetic.sql
+$BASE_DIR/rcc_postgresql/bld/bin/psql -U postgres -d synt -f $BASE_DIR/synthetic_benchmark/create_table_synthetic.sql
 
 echo "Data loading complete. Stopping server..."
 $BASE_DIR/rcc_postgresql/bld/bin/pg_ctl stop -D $DATA_DIR -m fast

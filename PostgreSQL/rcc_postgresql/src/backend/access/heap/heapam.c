@@ -74,7 +74,7 @@
 #include "utils/spccache.h"
 
 #ifdef RCC
-#include "access/shadowtx.h"
+#include "access/rcc.h"
 #include "access/clog.h"
 #include "storage/proc.h"
 #endif
@@ -3264,8 +3264,8 @@ l2:
 		 /* 의존 트랜잭션이 abort 되었으므로 직렬화 실패 */
 		if( TransactionIdIsValid(GetTopTransactionIdIfAny()) &&
 			HeapTupleHeaderGetRawXmax(oldtup.t_data) == GetTopTransactionIdIfAny() && 
-			(oldtup.t_data->t_infomask2 & HEAP_SHADOWS_READ)){
-			oldtup.t_data->t_infomask2 &= ~HEAP_SHADOWS_READ;
+			(oldtup.t_data->t_infomask2 & HEAP_RCC_READ)){
+			oldtup.t_data->t_infomask2 &= ~HEAP_RCC_READ;
 		}
 		UnlockReleaseBuffer(buffer);
 		ereport(ERROR,
@@ -3328,8 +3328,8 @@ skip_visibility_check:
 					ItemIdGetFlags(lp));
 		}
 		if( result == TM_Ok &&
-			(oldtup.t_data->t_infomask2 & HEAP_SHADOWS_READ)){
-			oldtup.t_data->t_infomask2 &= ~HEAP_SHADOWS_READ;
+			(oldtup.t_data->t_infomask2 & HEAP_RCC_READ)){
+			oldtup.t_data->t_infomask2 &= ~HEAP_RCC_READ;
 		}
 		UnlockReleaseBuffer(buffer);
 		ereport(ERROR,
@@ -3575,8 +3575,8 @@ skip_visibility_check:
 				relation->rd_id > 16000 &&
 				HeapTupleHeaderGetRawXmax(oldtup.t_data) != xid){
 				// 이 케이스는, Delete된 튜플에 Lock을 걸고 넘어온 경우임.
-				if(!(oldtup.t_data->t_infomask2 & HEAP_SHADOWS_READ))
-					oldtup.t_data->t_infomask2 |= HEAP_SHADOWS_READ;
+				if(!(oldtup.t_data->t_infomask2 & HEAP_RCC_READ))
+					oldtup.t_data->t_infomask2 |= HEAP_RCC_READ;
 				result = TM_Ok;
 			}
 			else if(TransactionIdIsValid(xid) &&
@@ -3588,8 +3588,8 @@ skip_visibility_check:
 			else if(oldtup.t_data->t_infomask & HEAP_XMIN_INVALID)
 				result = TM_Deleted;
 			else{
-				if(!(oldtup.t_data->t_infomask2 & HEAP_SHADOWS_READ))
-					oldtup.t_data->t_infomask2 |= HEAP_SHADOWS_READ;
+				if(!(oldtup.t_data->t_infomask2 & HEAP_RCC_READ))
+					oldtup.t_data->t_infomask2 |= HEAP_RCC_READ;
 				result = TM_Ok;
 			}
 		}
@@ -3830,7 +3830,7 @@ skip_visibility_check:
 		if(CheckAbortedDependencies()){
 			/* 의존 트랜잭션이 abort 되었으므로 직렬화 실패 */
 			// 나중에 이 비트에 대한 로그는 어떻게 남길지 상의 필요
-			oldtup.t_data->t_infomask2 &= ~HEAP_SHADOWS_READ;
+			oldtup.t_data->t_infomask2 &= ~HEAP_RCC_READ;
 			if(relation->rd_id == 16385){
 				elog(LOG, "Fail_3: result: %u lp: (%u, %u), t_xmin: %u, t_xmax: %u, t_infomask: %X, t_infomask2: %X, TX_ID: %u, t_self: (%u, %u), t_ctid: (%u, %u), lp_flags: %u",
 						result,
@@ -4048,7 +4048,7 @@ skip_visibility_check:
 	if(CheckAbortedDependencies()){
 		/* 의존 트랜잭션이 abort 되었으므로 직렬화 실패 */
 		// 나중에 이 비트에 대한 로그는 어떻게 남길지 상의 필요
-		oldtup.t_data->t_infomask2 &= ~HEAP_SHADOWS_READ;
+		oldtup.t_data->t_infomask2 &= ~HEAP_RCC_READ;
 		if(relation->rd_id == 16385){
 			elog(LOG, "Fail_2: result: %u lp: (%u, %u), t_xmin: %u, t_xmax: %u, t_infomask: %X, t_infomask2: %X, TX_ID: %u, t_self: (%u, %u), t_ctid: (%u, %u), lp_flags: %u",
 					result,
@@ -4105,7 +4105,7 @@ skip_visibility_check:
 	/* Clear obsolete visibility flags, possibly set by ourselves above... */
 	oldtup.t_data->t_infomask &= ~(HEAP_XMAX_BITS | HEAP_MOVED);
 	oldtup.t_data->t_infomask2 &= ~HEAP_KEYS_UPDATED;
-	oldtup.t_data->t_infomask2 &= ~HEAP_SHADOWS_READ;
+	oldtup.t_data->t_infomask2 &= ~HEAP_RCC_READ;
 	/* ... and store info about transaction updating this tuple */
 	Assert(TransactionIdIsValid(xmax_old_tuple));
 	HeapTupleHeaderSetXmax(oldtup.t_data, xmax_old_tuple);
@@ -6202,7 +6202,7 @@ failed:
 	tuple->t_data->t_infomask2 &= ~HEAP_KEYS_UPDATED;
 	tuple->t_data->t_infomask |= new_infomask;
 	tuple->t_data->t_infomask2 |= new_infomask2;
-	tuple->t_data->t_infomask2 |= HEAP_SHADOWS_READ;
+	tuple->t_data->t_infomask2 |= HEAP_RCC_READ;
 	if (HEAP_XMAX_IS_LOCKED_ONLY(new_infomask))
 		HeapTupleHeaderClearHotUpdated(tuple->t_data);
 	HeapTupleHeaderSetXmax(tuple->t_data, xid);
@@ -7095,7 +7095,7 @@ l5:
 	new_infomask = 0;
 	new_infomask2 = 0;
 #ifdef RCC	
-	if ((old_infomask & HEAP_XMAX_INVALID) || (old_infomask2 & HEAP_SHADOWS_READ))
+	if ((old_infomask & HEAP_XMAX_INVALID) || (old_infomask2 & HEAP_RCC_READ))
 #else
 	if (old_infomask & HEAP_XMAX_INVALID)
 #endif	

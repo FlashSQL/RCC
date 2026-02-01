@@ -27,7 +27,7 @@
 #include "storage/smgr.h"
 
 #ifdef RCC
-#include "access/shadowtx.h"
+#include "access/rcc.h"
 #endif
 
 /* Minimum tree height for application of fastpath optimization */

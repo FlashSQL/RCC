@@ -69,7 +69,7 @@
 #include "utils/snapmgr.h"
 
 #ifdef RCC
-#include "access/shadowtx.h"
+#include "access/rcc.h"
 #endif
 
 

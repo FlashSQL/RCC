@@ -2382,7 +2382,7 @@ redo_act:
 					TupleTableSlot *inputslot;
 					TupleTableSlot *epqslot;
 					TupleTableSlot *oldSlot;
-#ifndef SHADOWTX
+#ifndef RCC
 					if (IsolationUsesXactSnapshot())
 						ereport(ERROR,
 								(errcode(ERRCODE_T_R_SERIALIZATION_FAILURE),

@@ -2,8 +2,8 @@
 -- 10만 row * 128 파티션 + 1 hotspot용 파티션
 
 -- Create database (run as superuser)
--- CREATE DATABASE stx;
--- \c stx;
+-- CREATE DATABASE synt;
+-- \c synt;
 
 -- Helper tables for data generation
 CREATE TABLE IF NOT EXISTS seq1000 (i INT PRIMARY KEY);

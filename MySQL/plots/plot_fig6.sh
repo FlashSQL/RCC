@@ -37,7 +37,7 @@ generate_csv() {
     done
 
     # Generate CSV
-    echo "#threads,van,stx" > "$OUTPUT_CSV"
+    echo "#threads,van,rcc" > "$OUTPUT_CSV"
     for t in "${THREADS[@]}"; do
         echo "$t,${vanilla_tps[$t]},${rcc_tps[$t]}" >> "$OUTPUT_CSV"
     done

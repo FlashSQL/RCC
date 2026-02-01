@@ -27,7 +27,7 @@ set style line 90 lc rgb "#888888" dt 2 lw 1.5
 
 set style line 11 lc rgb "black" lw 2 pt 7 ps 0.7 dt 2 # van(RR)
 set style line 21 lc rgb "#1f77b4" lw 2 pt 7 ps 0.7 dt 2 # van(RC)
-set style line 31 lc rgb "#ff7f0e" lw 2 pt 5 ps 0.7  # stx
+set style line 31 lc rgb "#ff7f0e" lw 2 pt 5 ps 0.7  # rcc
 
 plot \
   'tps_distance_my.csv' using 0:4 with linespoints ls 31 title "RCC", \

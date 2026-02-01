@@ -14,7 +14,7 @@
 #include "utils/rel.h"
 #include "utils/builtins.h"
 #include "storage/procarray.h"
-#include "access/shadowtx.h"
+#include "access/rcc.h"
 
 /* Local Dependency (from → to) */
 #define MAX_DEP 128
@@ -49,29 +49,29 @@ InitTxnDependency(void)
 }
 
 /* Shared Memory Allocation */
-#define SHADOWTX_HASH_SIZE 500000  /* Total entries across all partitions */
+#define RCC_HASH_SIZE 500000  /* Total entries across all partitions */
 
 Size
-ShadowTxShmemSize(void)
+RccShmemSize(void)
 {
     Size sz = 0;
     /* Partitioned structure */
     sz += MAXALIGN(sizeof(DepGraphPartition) * NUM_DEP_PARTITIONS);
     /* Each partition's hash table */
-    sz += MAXALIGN(hash_estimate_size(SHADOWTX_HASH_SIZE / NUM_DEP_PARTITIONS, sizeof(TxnReverseDepEntry))) * NUM_DEP_PARTITIONS;
+    sz += MAXALIGN(hash_estimate_size(RCC_HASH_SIZE / NUM_DEP_PARTITIONS, sizeof(TxnReverseDepEntry))) * NUM_DEP_PARTITIONS;
     /* Each partition's lock */
     sz += MAXALIGN(sizeof(LWLockPadded)) * NUM_DEP_PARTITIONS;
     return BUFFERALIGN(sz);
 }
 
 void
-ShadowTxShmemInit(void)
+RccShmemInit(void)
 {
     bool found;
     char name[64];
 
     /* Allocate partition array */
-    TxnReverseDepPartitions = ShmemInitStruct("ShadowTxRevDepPartitions",
+    TxnReverseDepPartitions = ShmemInitStruct("RccRevDepPartitions",
                                               sizeof(DepGraphPartition) * NUM_DEP_PARTITIONS,
                                               &found);
 
@@ -81,7 +81,7 @@ ShadowTxShmemInit(void)
         HASHCTL ctl;
 
         /* Initialize lock for this partition */
-        snprintf(name, sizeof(name), "ShadowTxRevDepLock_%d", i);
+        snprintf(name, sizeof(name), "RccRevDepLock_%d", i);
         lock = ShmemInitStruct(name, sizeof(LWLockPadded), &found);
         if (!found)
             LWLockInitialize(&(lock->lock), LWLockNewTrancheId());
@@ -93,8 +93,8 @@ ShadowTxShmemInit(void)
         ctl.entrysize = sizeof(TxnReverseDepEntry);
         snprintf(name, sizeof(name), "TxnRevDepGraph_%d", i);
         TxnReverseDepPartitions[i].graph = ShmemInitHash(name,
-                                                         SHADOWTX_HASH_SIZE / NUM_DEP_PARTITIONS,
-                                                         SHADOWTX_HASH_SIZE / NUM_DEP_PARTITIONS,
+                                                         RCC_HASH_SIZE / NUM_DEP_PARTITIONS,
+                                                         RCC_HASH_SIZE / NUM_DEP_PARTITIONS,
                                                          &ctl,
                                                          HASH_ELEM | HASH_BLOBS);
     }
@@ -417,4 +417,4 @@ CheckAbortedDependencies(void)
 }
 
 
-#endif /* SHADOWTX */
+#endif /* RCC */

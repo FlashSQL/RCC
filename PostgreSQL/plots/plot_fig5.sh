@@ -52,7 +52,7 @@ generate_csv() {
     done < "$RCC_LOG"
 
     # Generate TPS CSV
-    echo "#distance,van,van(RC),stx" > "$OUTPUT_CSV"
+    echo "#distance,van,van(RC),rcc" > "$OUTPUT_CSV"
 
     for distance in 0.00 0.25 0.50 0.75 1.00; do
         van_tps="${vanilla_tps[$distance]:-0}"

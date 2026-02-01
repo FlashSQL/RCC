@@ -28,7 +28,7 @@ set ytics nomirror
 set style line 90 lc rgb "#888888" dt 2 lw 1.5
 
 set style line 11 lc rgb "black" lw 1 pt 7 ps 0.7  dt 2# VAN
-set style line 21 lc rgb "#ff7f0e" lw 1 pt 5 ps 0.7  # STX
+set style line 21 lc rgb "#ff7f0e" lw 1 pt 5 ps 0.7  # RCC
 
 plot \
   'varying_conn_pg.csv' using 0:3 with linespoints ls 21 title "RCC",  \

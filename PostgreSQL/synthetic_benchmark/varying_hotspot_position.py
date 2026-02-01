@@ -9,7 +9,7 @@ from psycopg2.extras import RealDictCursor
 CONFIG = {
     "host": "localhost",
     "port": 5432,
-    "dbname": "stx",
+    "dbname": "synt",
     "user": "postgres",
     "password": "",
     "warmup_sec": 50,

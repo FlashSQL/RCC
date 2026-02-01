@@ -50,7 +50,7 @@
 #include "utils/guc.h"
 #include "utils/snapmgr.h"
 #ifdef RCC
-#include "access/shadowtx.h"
+#include "access/rcc.h"
 #endif
 /* GUCs */
 int			shared_memory_type = DEFAULT_SHARED_MEMORY_TYPE;
@@ -145,7 +145,7 @@ CalculateShmemSize(int *num_semaphores)
 	size = add_size(size, AsyncShmemSize());
 	size = add_size(size, StatsShmemSize());
 #ifdef RCC
-	size = add_size(size, ShadowTxShmemSize());
+	size = add_size(size, RccShmemSize());
 #endif	
 #ifdef EXEC_BACKEND
 	size = add_size(size, ShmemBackendArraySize());
@@ -257,7 +257,7 @@ CreateSharedMemoryAndSemaphores(void)
 	 */
 	InitLocks();
 #ifdef RCC
-	ShadowTxShmemInit();
+	RccShmemInit();
 #endif
 	/*
 	 * Set up predicate lock manager

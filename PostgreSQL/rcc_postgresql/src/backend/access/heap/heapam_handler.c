@@ -47,7 +47,7 @@
 #include "utils/rel.h"
 
 #ifdef RCC
-#include "access/shadowtx.h"
+#include "access/rcc.h"
 #endif
 static void reform_and_rewrite_tuple(HeapTuple tuple,
 									 Relation OldHeap, Relation NewHeap,
@@ -492,7 +492,7 @@ tuple_lock_retry:
 					}
 
 					/* otherwise xmin should not be dirty... */
-#ifndef SHADOWTX					
+#ifndef RCC					
 					if (TransactionIdIsValid(SnapshotDirty.xmin))
 						ereport(ERROR,
 								(errcode(ERRCODE_DATA_CORRUPTED),

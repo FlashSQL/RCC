@@ -1,13 +1,13 @@
-#ifndef SHADOWTX_H
-#define SHADOWTX_H
+#ifndef RCC_H
+#define RCC_H
 
 #include "access/xact.h"
 #include "storage/lwlock.h"
 
 /* Shared Memory Size & Initialization */
 extern void InitTxnDependency(void);
-extern Size ShadowTxShmemSize(void);
-extern void ShadowTxShmemInit(void);
+extern Size RccShmemSize(void);
+extern void RccShmemInit(void);
 
 /* Dependency Graph Operations */
 extern void RecordReadDependency(TransactionId xmin, TransactionId myxid);
@@ -15,4 +15,4 @@ extern void CleanupTxnDependency(void);
 extern bool CheckAbortedDependencies(void);
 extern bool WaitForTxnDependencies(void);
 
-#endif /* SHADOWTX_H */
+#endif /* RCC_H */

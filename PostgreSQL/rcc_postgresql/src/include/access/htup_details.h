@@ -276,7 +276,7 @@ struct HeapTupleHeaderData
 #define HEAP_NATTS_MASK			0x07FF	/* 11 bits for number of attributes */
 /* bits 0x1800 are available */
 #ifdef RCC
-#define HEAP_SHADOWS_READ		0x0800	/* tuple was updated and key cols modified, or tuple deleted */
+#define HEAP_RCC_READ		0x0800	/* tuple was updated and key cols modified, or tuple deleted */
 #endif	
 									
 #define HEAP_KEYS_UPDATED		0x2000	/* tuple was updated and key cols

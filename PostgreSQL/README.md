@@ -59,7 +59,7 @@ Examples:
 ./fig5_varying_hotspot_position.sh
 ```
 
-> **Note:** Database: `stx`, Table: `bench_hotread`
+> **Note:** Database: `synt`, Table: `bench_hotread`
 
 ### TPC-C Benchmarks (Fig6, Fig7)
 

@@ -615,26 +615,26 @@ HeapTupleSatisfiesUpdate(HeapTuple htup, CommandId curcid,
 		else if (TransactionIdIsInProgress(HeapTupleHeaderGetRawXmin(tuple))){
 			// 만약 1. Xmin, Xmax가 같고, 2.
 			if(tuple->t_infomask & HEAP_XMAX_INVALID){
-				tuple->t_infomask2 |= HEAP_SHADOWS_READ;
+				tuple->t_infomask2 |= HEAP_RCC_READ;
 				return TM_Ok;
 			}
 			if(TransactionIdIsCurrentTransactionId(HeapTupleHeaderGetRawXmax(tuple))){
 				if( !ItemPointerEquals(&htup->t_self, &tuple->t_ctid)){
 					return TM_Updated; // 내가 락을 걸어서 업데이트한 튜플이라면 Updated됐다고하여 최신 튜플로 가게 변경.
 				}
-				tuple->t_infomask2 |= HEAP_SHADOWS_READ;
+				tuple->t_infomask2 |= HEAP_RCC_READ;
 				return TM_Ok;
 			}
 			if(TransactionIdDidAbort(HeapTupleHeaderGetRawXmax(tuple))){
 				SetHintBits(tuple, buffer, HEAP_XMAX_INVALID,
 							InvalidTransactionId);
-				tuple->t_infomask2 |= HEAP_SHADOWS_READ;
+				tuple->t_infomask2 |= HEAP_RCC_READ;
 				return TM_Ok;
 			}
 			if (ItemPointerEquals(&htup->t_self, &tuple->t_ctid) &&
 				!TransactionIdDidAbort(HeapTupleHeaderGetRawXmax(tuple)) && 
-				!(tuple->t_infomask2 & HEAP_SHADOWS_READ)){
-				tuple->t_infomask2 |= HEAP_SHADOWS_READ;
+				!(tuple->t_infomask2 & HEAP_RCC_READ)){
+				tuple->t_infomask2 |= HEAP_RCC_READ;
 				return TM_Ok;
 			}
 			if(ItemPointerGetBlockNumber(&htup->t_self) != ItemPointerGetBlockNumber(&htup->t_data->t_ctid) &&

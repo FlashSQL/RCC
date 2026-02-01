@@ -40,7 +40,7 @@ generate_csv() {
     done
 
     # Generate CSV
-    echo "#warehouses,van,stx" > "$OUTPUT_CSV"
+    echo "#warehouses,van,rcc" > "$OUTPUT_CSV"
     for w in "${WAREHOUSES[@]}"; do
         echo "$w,${vanilla_tps[$w]},${rcc_tps[$w]}" >> "$OUTPUT_CSV"
     done
