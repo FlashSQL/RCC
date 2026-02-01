@@ -1,4 +1,0 @@
-!include suite/ndb_ddl/my.cnf
-
-[mysqld]
-ndb_metadata_check = false

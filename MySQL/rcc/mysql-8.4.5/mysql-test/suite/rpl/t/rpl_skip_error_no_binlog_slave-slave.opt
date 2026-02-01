@@ -1,1 +1,0 @@
---replica-skip-errors=1062,1050 --disable-log-bin --disable-log-replica-updates

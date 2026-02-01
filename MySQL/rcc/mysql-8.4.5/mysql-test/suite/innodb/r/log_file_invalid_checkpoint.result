@@ -1,3 +1,0 @@
-# Initialize new data directory...
-Pattern "No valid checkpoint found \(corrupted redo log\). You can try --innodb-force-recovery=6 as a last resort" found
-Pattern "Found checkpoint LSN REDO_NEW_CHECKPOINT_LSN in a redo log file .*, but the file represents range of LSN values .*REDO_FILE_START_LSN, REDO_FILE_END_LSN.* so the file is corrupted." found

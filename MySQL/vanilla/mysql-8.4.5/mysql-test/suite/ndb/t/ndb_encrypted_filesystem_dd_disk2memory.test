@@ -1,2 +1,0 @@
-source include/have_ndb.inc;
-source ndb_dd_disk2memory.test;

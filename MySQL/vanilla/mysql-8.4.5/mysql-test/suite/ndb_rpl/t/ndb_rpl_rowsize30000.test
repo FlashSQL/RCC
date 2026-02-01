@@ -1,2 +1,0 @@
-let $varsize = 26924;
-source ndb_rpl_rowsize.inc;

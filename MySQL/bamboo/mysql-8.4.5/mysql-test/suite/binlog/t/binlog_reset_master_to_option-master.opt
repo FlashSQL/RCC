@@ -1,1 +1,0 @@
---log-error=$MYSQLTEST_VARDIR/tmp/binlog_reset_master_to_option.err

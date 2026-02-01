@@ -1,3 +1,0 @@
---skip-log-bin
---innodb-log-buffer-size=1M
---innodb-redo-log-capacity=30M

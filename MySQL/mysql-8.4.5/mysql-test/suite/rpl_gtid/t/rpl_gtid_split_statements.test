@@ -1,2 +1,0 @@
---source include/no_valgrind_without_big.inc
---source common/rpl/rpl_split_statements.test

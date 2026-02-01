@@ -1,8 +1,0 @@
-!include suite/ndb/my.cnf
-
-[cluster_config.1]
-# Increase TDDT to avoid it interfering with
-# API side timeout + cleanup handling
-TransactionDeadlockDetectionTimeout = 60000
-
-

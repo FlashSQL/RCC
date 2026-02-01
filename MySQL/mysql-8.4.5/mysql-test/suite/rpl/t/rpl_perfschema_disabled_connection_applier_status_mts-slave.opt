@@ -1,2 +1,0 @@
---replica-parallel-workers=1 --replica-transaction-retries=0 --force-restart
---performance_schema=OFF

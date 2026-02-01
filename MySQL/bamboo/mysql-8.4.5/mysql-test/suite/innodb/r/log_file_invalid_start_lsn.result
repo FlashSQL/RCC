@@ -1,3 +1,0 @@
-# Initialize new data directory...
-Pattern "Invalid redo log header checksum" found
-Pattern "The redo log file .* has invalid start_lsn" found

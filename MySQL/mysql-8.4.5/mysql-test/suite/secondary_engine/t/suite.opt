@@ -1,4 +1,0 @@
-$MOCK_PLUGIN_OPT
-# Set the cost threshold to zero to maximize the use of secondary
-# engines in this test suite.
---secondary-engine-cost-threshold=0

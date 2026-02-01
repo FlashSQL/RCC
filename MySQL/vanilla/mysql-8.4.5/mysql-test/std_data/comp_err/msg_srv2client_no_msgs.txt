@@ -1,3 +1,0 @@
-languages english=eng latin1;
-
-start-error-number 1000

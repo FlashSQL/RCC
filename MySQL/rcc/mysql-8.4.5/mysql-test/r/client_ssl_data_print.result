@@ -1,3 +1,0 @@
-#
-# Bug#35304195: ssl_session_data_print creates world readable files by default
-#

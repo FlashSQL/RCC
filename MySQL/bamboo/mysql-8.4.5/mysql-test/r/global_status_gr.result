@@ -1,3 +1,0 @@
-include/assert.inc ['There are no Group Replication global status variables']
-SHOW GLOBAL STATUS LIKE 'Gr\_%';
-Variable_name	Value

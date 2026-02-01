@@ -1,5 +1,0 @@
--->macro Admin_stmt  %CMD%  %ARGS%  %ERROR%
--->stmtadmin %CMD%	%ARGS%
--->expecterror %ERROR%
--->recvresult
--->endmacro

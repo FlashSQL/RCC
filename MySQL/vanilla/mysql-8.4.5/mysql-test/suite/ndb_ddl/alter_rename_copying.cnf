@@ -1,3 +1,0 @@
-!include suite/ndb_ddl/my.cnf
-[mysqld]
-ndb-read-backup=0

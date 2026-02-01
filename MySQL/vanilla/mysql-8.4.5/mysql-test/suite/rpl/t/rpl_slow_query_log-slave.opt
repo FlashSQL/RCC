@@ -1,1 +1,0 @@
---force-restart --log-slow-replica-statements --slow-query-log
