@@ -102,7 +102,7 @@ start_postgresql() {
     if [[ "$BUILD_MODE" == "vanilla" ]]; then
         ../configure --prefix=$POSTGRESQL_HOME/bld --with-blocksize=$PAGE_SIZE CFLAGS="-O2" > "$CONFIG_LOG" 2>&1
     else
-        ../configure --prefix=$POSTGRESQL_HOME/bld --with-blocksize=$PAGE_SIZE CFLAGS="-O2 -DSHADOWTX" > "$CONFIG_LOG" 2>&1
+        ../configure --prefix=$POSTGRESQL_HOME/bld --with-blocksize=$PAGE_SIZE CFLAGS="-O2 -DRCC" > "$CONFIG_LOG" 2>&1
     fi
 
     make clean >> "$BUILD_LOG" 2>&1

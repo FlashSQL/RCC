@@ -10,6 +10,6 @@ cd bld
 
 ../configure --prefix=$BASE_DIR/rcc_postgresql/bld \
   --with-blocksize=16 \
-  CFLAGS="-O2 -DSHADOWTX"
+  CFLAGS="-O2 -DRCC"
 
 make -j$(nproc) install-world

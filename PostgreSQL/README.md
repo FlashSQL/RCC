@@ -1,6 +1,6 @@
 # RCC: Speculative Write Versioning for PostgreSQL
 
-Implemented on PostgreSQL with the `-DSHADOWTX` compile flag.
+Implemented on PostgreSQL with the `-DRCC` compile flag.
 
 ---
 
@@ -129,7 +129,7 @@ grep "transactions:" fig6_varying_client_threads/results/rcc/s1_t64/sysbench.log
 | Mode | Compile Flags | Description |
 |------|---------------|-------------|
 | vanilla | `-O2` | Vanilla PostgreSQL |
-| rcc | `-O2 -DSHADOWTX` | PostgreSQL with RCC |
+| rcc | `-O2 -DRCC` | PostgreSQL with RCC |
 
 ---
 

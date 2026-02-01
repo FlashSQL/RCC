@@ -58,7 +58,7 @@ for BUILD_MODE in "${BUILD_MODES[@]}"; do
     if [[ "$BUILD_MODE" == "vanilla" ]] || [[ "$BUILD_MODE" == "vanilla_rc" ]]; then
         ../configure --prefix=$POSTGRESQL_HOME/bld --with-blocksize=$PAGE_SIZE CFLAGS="-O2" > /dev/null 2>&1
     else
-        ../configure --prefix=$POSTGRESQL_HOME/bld --with-blocksize=$PAGE_SIZE CFLAGS="-O2 -DSHADOWTX" > /dev/null 2>&1
+        ../configure --prefix=$POSTGRESQL_HOME/bld --with-blocksize=$PAGE_SIZE CFLAGS="-O2 -DRCC" > /dev/null 2>&1
     fi
 
     make -j > /dev/null 2>&1

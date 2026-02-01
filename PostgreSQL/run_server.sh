@@ -17,7 +17,7 @@ INITDB_BIN="${BLD_PATH}/bin/initdb"
 # DEFAULT CONFIGURATION
 # ==========================================
 PAGE_SIZE=16
-BUILD_MODE="shadowtx"
+BUILD_MODE="RCC"
 
 # ==========================================
 # HELPER FUNCTIONS
@@ -45,7 +45,7 @@ usage() {
     echo "  rcc_log_dir           PostgreSQL log directory"
     echo ""
     echo "Options:"
-    echo "  --vanilla             Build vanilla PostgreSQL (without SHADOWTX)"
+    echo "  --vanilla             Build vanilla PostgreSQL (without RCC)"
     echo "  --skip-build          Skip build step (use existing binaries)"
     echo "  -h, --help            Show this help"
     exit 0
@@ -123,7 +123,7 @@ if [[ "$SKIP_BUILD" == false ]]; then
     if [[ "$BUILD_MODE" == "vanilla" ]]; then
         ../configure --prefix=$BLD_PATH --with-blocksize=$PAGE_SIZE CFLAGS="-O2" > "$CONFIG_LOG" 2>&1
     else
-        ../configure --prefix=$BLD_PATH --with-blocksize=$PAGE_SIZE CFLAGS="-O2 -DSHADOWTX" > "$CONFIG_LOG" 2>&1
+        ../configure --prefix=$BLD_PATH --with-blocksize=$PAGE_SIZE CFLAGS="-O2 -DRCC" > "$CONFIG_LOG" 2>&1
     fi
     make clean >> "$BUILD_LOG" 2>&1
     echo $PASSWD | sudo -S make -j install >> "$BUILD_LOG" 2>&1
