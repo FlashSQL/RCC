@@ -201,26 +201,6 @@ static srv_slot_t *lock_wait_table_reserve_slot(
   ut_error;
 }
 
-void print_cycle(trx_t* trx) {
-  trx_t* from;
-  // trx_t* to;
-  int count = 0;
-
-  fprintf(stderr, "[DEBUG] DEADLOCK (%d) \n", trx->id);
-  from = trx;
-  while(from) {
-    count ++;
-    fprintf(stderr, "%d(%p)->", from->id,from);
-    // trx_print_low(stderr, from, 1000, 0, 0, 0); 
-    from = from->lock.blocking_trx.load();
-    if (from == trx) {
-      fprintf(stderr, "%d END\n", from->id);
-      break;
-    }
-
-  }
-}
-
 void lock_wait_request_check_for_cycles() { lock_set_timeout_event(); }
 
 void lock_wait_suspend_thread(que_thr_t *thr) {
@@ -228,7 +208,6 @@ void lock_wait_suspend_thread(que_thr_t *thr) {
   trx_t *trx;
 
   trx = thr_get_trx(thr);
-  // fprintf(stderr, "[DEBUG] (%d) lock_wait_suspend_thread\n", trx->id);
 
   if (trx->mysql_thd != nullptr) {
     DEBUG_SYNC_C("lock_wait_suspend_thread_enter");
@@ -266,7 +245,6 @@ void lock_wait_suspend_thread(que_thr_t *thr) {
 
   ut_ad(!thr->is_active);
 
-  // 여기서 데드락 검사
   slot = lock_wait_table_reserve_slot(thr, lock_wait_timeout);
 
   lock_wait_mutex_exit();
@@ -316,9 +294,7 @@ void lock_wait_suspend_thread(que_thr_t *thr) {
 
   DEBUG_SYNC_C("lock_wait_will_wait");
 
-  // fprintf(stderr, "[DEBUG] (%d) WAIT (%p, blocker: %p)\n", trx->id, trx, trx->lock.blocking_trx.load());
   os_event_wait(slot->event);
-  // fprintf(stderr, "[DEBUG] (%d) WAIT END (%p)\n", trx->id, trx);
 
   DEBUG_SYNC_C("lock_wait_has_finished_waiting");
 
@@ -343,42 +319,23 @@ void lock_wait_suspend_thread(que_thr_t *thr) {
   const auto start_time = slot->suspend_time;
   lock_wait_table_release_slot(slot);
 
-  // // [TPL] - time
-  // if (trx->pre_commit == TRX_COMMIT_PRE) {
-  //   const auto diff_time = std::chrono::steady_clock::now() - start_time;
-  //   trx->lock_commit_time += std::chrono::duration_cast<std::chrono::microseconds>(diff_time).count();
+  if (thr->lock_state == QUE_THR_LOCK_ROW) {
+    const auto diff_time = std::chrono::steady_clock::now() - start_time;
 
-  //   if (diff_time > lock_sys->n_lock_max_wait_time) {
-  //     lock_sys->n_lock_max_wait_time = diff_time;
-  //   }
+    srv_stats.n_lock_wait_time.add(
+        std::chrono::duration_cast<std::chrono::microseconds>(diff_time)
+            .count());
 
-  //   /* Record the lock wait time for this thread */
-  //   thd_set_lock_wait_time(trx->mysql_thd, diff_time);
+    if (diff_time > lock_sys->n_lock_max_wait_time) {
+      lock_sys->n_lock_max_wait_time = diff_time;
+    }
 
-  //   DBUG_EXECUTE_IF("lock_instrument_slow_query_log",
-  //                   std::this_thread::sleep_for(std::chrono::milliseconds(1)););
+    /* Record the lock wait time for this thread */
+    thd_set_lock_wait_time(trx->mysql_thd, diff_time);
 
-  // }
-  // if (trx->pre_commit != TRX_COMMIT_PRE && thr->lock_state == QUE_THR_LOCK_ROW) {
-  // // end time
-  // // if (thr->lock_state == QUE_THR_LOCK_ROW) {
-  //   const auto diff_time = std::chrono::steady_clock::now() - start_time;
-  //   trx->lock_wait_time += std::chrono::duration_cast<std::chrono::microseconds>(diff_time).count();
-
-  //   // srv_stats.n_lock_wait_time.add(
-  //   //     std::chrono::duration_cast<std::chrono::microseconds>(diff_time)
-  //   //         .count());
-
-  //   if (diff_time > lock_sys->n_lock_max_wait_time) {
-  //     lock_sys->n_lock_max_wait_time = diff_time;
-  //   }
-
-  //   /* Record the lock wait time for this thread */
-  //   thd_set_lock_wait_time(trx->mysql_thd, diff_time);
-
-  //   DBUG_EXECUTE_IF("lock_instrument_slow_query_log",
-  //                   std::this_thread::sleep_for(std::chrono::milliseconds(1)););
-  // }
+    DBUG_EXECUTE_IF("lock_instrument_slow_query_log",
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1)););
+  }
 
   /* The transaction is chosen as deadlock victim during sleep. */
   if (trx->error_state == DB_DEADLOCK) {
@@ -449,9 +406,7 @@ static void lock_wait_release_thread_if_suspended(que_thr_t *thr) {
   ut_ad(trx->lock.wait_lock == nullptr);
 
   if (thr->slot != nullptr && thr->slot->in_use && thr->slot->thr == thr) {
-    // victim을 깨우다
-    // [TPL] - conlfict_abort
-    if (trx->lock.was_chosen_as_deadlock_victim || trx->conflict_abort) {
+    if (trx->lock.was_chosen_as_deadlock_victim) {
       trx->error_state = DB_DEADLOCK;
       trx->lock.was_chosen_as_deadlock_victim = false;
 
@@ -465,7 +420,7 @@ static void lock_wait_release_thread_if_suspended(que_thr_t *thr) {
 void lock_reset_wait_and_release_thread_if_suspended(lock_t *lock) {
   ut_ad(locksys::owns_lock_shard(lock));
   ut_ad(trx_mutex_own(lock->trx));
-  // ut_ad(lock->trx->lock.wait_lock == lock); // conf lock일 수도
+  ut_ad(lock->trx->lock.wait_lock == lock);
 
   /* We clear blocking_trx here and not in lock_reset_lock_and_trx_wait(), as
   lock_reset_lock_and_trx_wait() is called also when the wait_lock is being
@@ -496,50 +451,15 @@ void lock_reset_wait_and_release_thread_if_suspended(lock_t *lock) {
 
   que_thr_t *thr = que_thr_end_lock_wait(lock->trx);
 
-
   /* Reset the wait flag and the back pointer to lock in trx.
   It is important to call it only after we obtain lock->trx->mutex, because
   trx_mutex_enter makes some assertions based on trx->lock.wait_lock value */
-
-  lock_reset_lock_and_trx_wait(lock);
-  
-  if (thr != nullptr) {
-    lock_wait_release_thread_if_suspended(thr);
-  }
-  
-}
-
-// [TPL]
-// cc. lock_reset_wait_and_release_thread_if_suspended
-// add wait_lock condition
-void tpl_lock_reset_wait_and_release_thread_if_suspended(lock_t *lock) {
-
-  // [TPL]
-  // 여기서 blocking_trx는 reset 안 하는 이유: 다른 곳에도 이 함수가 쓰이기 때문에 -> 진짜 트랜잭션 깨울 때까지 유지하는 게 나음!
   lock_reset_lock_and_trx_wait(lock);
 
-  if(lock->trx->lock.que_state == TRX_QUE_LOCK_WAIT && lock->trx->lock.wait_lock.load() == nullptr) {
-    // fprintf(stderr, "[DEBUG] (%d) tpl_lock_reset_wait_and_release_thread_if_suspended - WAKE UP\n", lock->trx->id);
-    lock->trx->lock.blocking_trx.store(nullptr);
-
-    que_thr_t *thr = que_thr_end_lock_wait(lock->trx);
-    if (thr != nullptr) {
-      lock_wait_release_thread_if_suspended(thr);
-    }
-  }
-  
-}
-
-// [TPL]
-// Don't reset wait state. Just Wake-up (x->xx)
-void tpl_lock_wait_release_thread_if_suspended(lock_t *lock) {
-  que_thr_t *thr = que_thr_end_lock_wait(lock->trx);
   if (thr != nullptr) {
     lock_wait_release_thread_if_suspended(thr);
   }
 }
-//
-
 static void lock_wait_try_cancel(trx_t *trx, bool timeout) {
   ut_a(trx->lock.wait_lock != nullptr);
   ut_ad(locksys::owns_lock_shard(trx->lock.wait_lock));
@@ -661,19 +581,15 @@ static uint64_t lock_wait_snapshot_waiting_threads(
   every X iterations and modify the lock_wait_build_wait_for_graph() to handle
   duplicates in a smart way.
   */
-  const auto table_reservations = lock_wait_table_reservations; // 스냅샷 캡쳐
+  const auto table_reservations = lock_wait_table_reservations;
   for (auto slot = lock_sys->waiting_threads; slot < lock_sys->last_slot;
        ++slot) {
     if (slot->in_use) {
       auto from = thr_get_trx(slot->thr);
       auto to = from->lock.blocking_trx.load();
-      // if (to != nullptr && (to->conflict_abort == TRX_NOT_ABORTED) && (from->conflict_abort == TRX_NOT_ABORTED)) {
       if (to != nullptr) {
-        infos.push_back({from, to, slot, slot->reservation_no}); // 포인터만 복사하는 거라 복사 cost 적음
+        infos.push_back({from, to, slot, slot->reservation_no});
       }
-      // if (to != nullptr && (to->conflict_abort != TRX_NOT_ABORTED)) {
-      //   fprintf(stderr, "[DEBUG] %d <- %d\n", to->id, from->id);
-      // }
     }
   }
   lock_wait_mutex_exit();
@@ -738,13 +654,13 @@ static void lock_wait_build_wait_for_graph(
   const auto n = static_cast<uint>(infos.size());
   ut_ad(n < static_cast<uint>(std::numeric_limits<int>::max()));
   outgoing.clear();
-  outgoing.resize(n, -1); // -1로 초기화 (-1이면 스냅샷 내부에 blocker가 없다는 뜻)
+  outgoing.resize(n, -1);
   /* This particular implementation sorts infos by ::trx, and then uses
   lower_bound to find index in infos corresponding to ::wait_for, which has
   O(nlgn) complexity and modifies infos, but has a nice property of avoiding any
   allocations.
   An alternative O(n) approach would be to use a hash table to map infos[i].trx
-  to i. ** hash table로 매핑하자는 대안도 있었으나 linked list라 오버헤드 커서 패스했다 **
+  to i.
   Using unordered_map<trx_t*,int> however causes too much (de)allocations as
   its bucket chains are implemented as a linked lists - overall it works much
   slower than sort.
@@ -752,7 +668,7 @@ static void lock_wait_build_wait_for_graph(
   with open addressing and double hashing with a statically allocated
   2 * srv_max_n_threads buckets. This however did not increase transactions per
   second, so introducing a custom implementation seems unjustified here. */
-  sort(infos.begin(), infos.end()); // trx 포인터로 정렬
+  sort(infos.begin(), infos.end());
   waiting_trx_info_t needle{};
   for (uint from = 0; from < n; ++from) {
     /* Assert that the order used by sort and lower_bound depends only on the
@@ -760,10 +676,9 @@ static void lock_wait_build_wait_for_graph(
     ut_ad(from == 0 ||
           std::less<trx_t *>{}(infos[from - 1].trx, infos[from].trx));
     needle.trx = infos[from].waits_for;
-    auto it = std::lower_bound(infos.begin(), infos.end(), needle); // trx 기준으로 binary search
+    auto it = std::lower_bound(infos.begin(), infos.end(), needle);
 
-    if (it == infos.end() || it->trx != needle.trx) { // 스냅샷 내부에 blocker 없으므로
-      // infos[from].waits_for가 infos 안에 없으면 -1 유지
+    if (it == infos.end() || it->trx != needle.trx) {
       continue;
     }
     auto to = it - infos.begin();
@@ -780,19 +695,10 @@ static void lock_wait_rollback_deadlock_victim(trx_t *chosen_victim) {
   the lock itself.*/
   ut_ad(locksys::owns_exclusive_global_latch());
   trx_mutex_enter(chosen_victim);
-  // fprintf(stderr, "[DEBUG] (%d) lock_wait_rollback_deadlock_victim\n", chosen_victim->id);
   chosen_victim->lock.was_chosen_as_deadlock_victim = true;
   ut_a(chosen_victim->lock.wait_lock != nullptr);
   ut_a(chosen_victim->lock.que_state == TRX_QUE_LOCK_WAIT);
-
-  // [TPL]
-  chosen_victim->conflict_abort = TRX_ABORT_MARKED;
-  // - cascading rollback을 하고 dequeue를 해야 하는데, 먼저 dequeue를 하게 되면 안 됨
-  // - 그럼 데드락-락을 늦게 release하게 되는 건데 여기에 대한 느려짐은 없을까?
-  // lock_cancel_waiting_and_release(chosen_victim);
-  const auto lock = chosen_victim->lock.wait_lock.load();
-  lock_reset_wait_and_release_thread_if_suspended(lock);
-  //
+  lock_cancel_waiting_and_release(chosen_victim);
   trx_mutex_exit(chosen_victim);
 }
 
@@ -1318,9 +1224,6 @@ static bool lock_wait_check_candidate_cycle(
 
   trx_t *const chosen_victim = lock_wait_choose_victim(cycle_ids, infos);
   ut_a(chosen_victim);
-  // fprintf(stderr, "[DEBUG] DEADLOCK - %d\n", chosen_victim->id);
-  // print_cycle(chosen_victim);
-  // ut_error;
 
   lock_wait_handle_deadlock(chosen_victim, cycle_ids, infos, new_weights);
 
@@ -1396,10 +1299,8 @@ static void lock_wait_find_and_handle_deadlocks(
       - or, it has a color used in a previous DFS which means that current DFS
         path merges into an already processed portion of wait-for graph, so we
         can stop now */
-      // DEADLOCK !!
       if (colors[id] == current_color) {
         /* found a candidate cycle! */
-        // fprintf(stderr, "[DEBUG] DEADLOCK\n");
         lock_wait_extract_cycle_ids(cycle_ids, id, outgoing);
         if (lock_wait_check_candidate_cycle(cycle_ids, infos, new_weights)) {
           MONITOR_INC(MONITOR_DEADLOCK);
@@ -1507,9 +1408,6 @@ static void lock_wait_update_schedule_and_check_for_deadlocks() {
   Anyway, in case some tests will indicate that taking a snapshot is a
   bottleneck, one can check if declaring this vectors as static solves the
   issue.
-  - infos를 static으로 선언해서 메모리 재할당을 줄이면 빨라질 것으로 예상했지만, 실험해보니 아니었음
-  - : 요즘 malloc이 thread contention을 줄이도록 잘 설계되어 있어서, static은 deallocator 동작 문제도 있음
-  - ㅇ
   */
   ut::vector<waiting_trx_info_t> infos;
   ut::vector<int> outgoing;

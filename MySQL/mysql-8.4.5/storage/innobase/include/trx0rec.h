@@ -176,19 +176,6 @@ const byte *trx_undo_update_rec_get_update(
                                 0 if BTR_NO_UNDO_LOG
                                 flag was specified */
 
-dberr_t
-trx_parse_undo_report_row_operation(
-  trx_t*		trx,
-  ulint		flags,
-  ulint		op_type,
-  dict_index_t*	index,
-  const upd_t*	update,
-  const rec_t*	rec,
-  const ulint*	offsets,
-  roll_ptr_t*	roll_ptr,
-  ulint		cmpl_info
-);
-
 /** status bit used for trx_undo_prev_version_build() */
 
 /** TRX_UNDO_PREV_IN_PURGE tells trx_undo_prev_version_build() that it
@@ -244,14 +231,6 @@ bool trx_undo_prev_version_build(const rec_t *index_rec, mtr_t *index_mtr,
                                  rec_t **old_vers, mem_heap_t *v_heap,
                                  const dtuple_t **vrow, ulint v_status,
                                  lob::undo_vers_t *lob_undo);
-
-dberr_t
-tpl_redo_future_version_build(
-  dict_index_t*	index,
-  ulint**		offsets,
-  rec_t**		old_vers,
-  trx_t*		trx,
-  byte*     log_start);
 
 #endif /* !UNIV_HOTBACKUP */
 /** Parses a redo log record of adding an undo log record.

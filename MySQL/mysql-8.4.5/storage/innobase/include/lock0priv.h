@@ -590,15 +590,13 @@ locks on the inserted record. */
  statement-level MySQL binlog.
  See also lock_mode_compatible().
  */
-// [TPL] - XX lock 추가
-static const byte lock_compatibility_matrix[6][6] = {
-    /**         IS     IX       S     X       AI  XX */
-    /* IS */ {true, true, true, false, true, false},
-    /* IX */ {true, true, false, false, true, false},
-    /* S  */ {true, false, true, false, false, false},
-    /* X  */ {false, false, false, false, false, false},
-    /* AI */ {true, true, false, false, false, false},
-    /* XX */ {false, false, false, false, false, false}};
+static const byte lock_compatibility_matrix[5][5] = {
+    /**         IS     IX       S     X       AI */
+    /* IS */ {true, true, true, false, true},
+    /* IX */ {true, true, false, false, true},
+    /* S  */ {true, false, true, false, false},
+    /* X  */ {false, false, false, false, false},
+    /* AI */ {true, true, false, false, false}};
 
 /* STRONGER-OR-EQUAL RELATION (mode1=row, mode2=column)
     IS IX S  X  AI
@@ -609,14 +607,13 @@ static const byte lock_compatibility_matrix[6][6] = {
  AI -  -  -  -  +
  See lock_mode_stronger_or_eq().
  */
-static const byte lock_strength_matrix[6][6] = {
-    /**         IS     IX       S     X       AI  XX */
-    /* IS */ {true, false, false, false, false, true},
-    /* IX */ {true, true, false, false, false, true},
-    /* S  */ {true, false, true, false, false, true},
-    /* X  */ {true, true, true, true, true, true},
-    /* AI */ {false, false, false, false, true, true},
-    /* AXXI */ {true, true, true, true, true, true}};
+static const byte lock_strength_matrix[5][5] = {
+    /**         IS     IX       S     X       AI */
+    /* IS */ {true, false, false, false, false},
+    /* IX */ {true, true, false, false, false},
+    /* S  */ {true, false, true, false, false},
+    /* X  */ {true, true, true, true, true},
+    /* AI */ {false, false, false, false, true}};
 
 /** Maximum depth of the DFS stack. */
 constexpr uint32_t MAX_STACK_SIZE = 4096;
@@ -770,7 +767,6 @@ class RecLock {
                                 transactions and got the lock granted, so there
                                 is no need to wait. */
   dberr_t add_to_waitq(const lock_t *wait_for,
-                       bool aborting,
                        const lock_prdt_t *prdt = nullptr);
 
   /**
@@ -934,11 +930,6 @@ It makes sure that trx is woken up exactly once, and only if it already went to
 sleep.
 @param[in, out]   lock    The lock for which lock->trx is waiting */
 void lock_reset_wait_and_release_thread_if_suspended(lock_t *lock);
-
-// [TPL]
-void tpl_lock_reset_wait_and_release_thread_if_suspended(lock_t *lock);
-void tpl_lock_wait_release_thread_if_suspended(lock_t *lock);
-//
 
 /** Checks if some transaction has an implicit x-lock on a record in a clustered
 index.
@@ -1129,45 +1120,13 @@ void run_if_waiting(const TrxVersion trx_version, F &&f) {
     probably the wait_lock will soon be restored, otherwise we can give up */
   } while (trx->lock.blocking_trx.load() && ut_delay(10));
 }
-
-// [TPL]
-template <typename F>
-void tpl_run_if_waiting(trx_t *trx, F &&f) {
-  do {
-    if (!trx->lock.wait_lock.load()) {
-      continue;
-    }
-    locksys::Global_shared_latch_guard shared_latch_guard{UT_LOCATION_HERE};
-    
-    trx_mutex_enter(trx);
-    auto guard = create_scope_guard([trx]() { trx_mutex_exit(trx); });
-
-    if (const lock_t *peeked_wait_lock = trx->lock.wait_lock.load()) {
-      const bool retry = latch_peeked_shard_and_do(peeked_wait_lock, [&]() {
-
-        if (peeked_wait_lock != trx->lock.wait_lock.load()) {
-          // wait_lock이 여전히 일치하는지 한 번만 확인
-          return peeked_wait_lock->is_record_lock(); // record 락이면 retry
-        }
-        std::forward<F>(f)();
-        return false;
-      });
-      if (!retry) {
-        return;
-      }
-    }
-    /* wait_lock appears to be null. If blocking_trx isn't nullptr, then
-    probably the wait_lock will soon be restored, otherwise we can give up */
-  } while (trx->lock.blocking_trx.load() && ut_delay(10));
-}
-//
 }  // namespace locksys
 
 template <typename F>
 lock_t *Locks_hashtable::find_in_cell(size_t cell_id, F &&f) {
   lock_t *lock = (lock_t *)hash_get_first(ht.get(), cell_id);
   while (lock != nullptr) {
-    // ut_ad(locksys::owns_lock_shard(lock));
+    ut_ad(locksys::owns_lock_shard(lock));
     // f(lock) might remove the lock from list, so we must save the next pointer
     lock_t *next = lock->hash;
     if (std::forward<F>(f)(lock)) {
@@ -1180,7 +1139,7 @@ lock_t *Locks_hashtable::find_in_cell(size_t cell_id, F &&f) {
 
 template <typename F>
 lock_t *Locks_hashtable::find_on_page(page_id_t page_id, F &&f) {
-  // ut_ad(locksys::owns_page_shard(page_id));
+  ut_ad(locksys::owns_page_shard(page_id));
   return find_in_cell(hash_calc_cell_id(lock_rec_hash_value(page_id), ht.get()),
                       [&](lock_t *lock) {
                         return (lock->rec_lock.page_id == page_id) &&
@@ -1195,7 +1154,6 @@ lock_t *Locks_hashtable::find_on_block(const buf_block_t *block, F &&f) {
 
 template <typename F>
 lock_t *Locks_hashtable::find_on_record(const struct RecID &rec_id, F &&f) {
-  // rec_id의 해시값으로 버킷cell을 찾고 해당 cell 안의 모든 lock 탐색하면서 f(lock)을 만족하는 첫 락을 반환
   return find_in_cell(hash_calc_cell_id(rec_id.hash_value(), ht.get()),
                       [&](lock_t *lock) {
                         return rec_id.matches(lock) && std::forward<F>(f)(lock);

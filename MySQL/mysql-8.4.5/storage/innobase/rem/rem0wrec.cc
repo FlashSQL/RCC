@@ -63,7 +63,7 @@ static void dump_metadata_dict_table(const dict_table_t *table) {
 
 void validate_rec_offset(const dict_index_t *index, const ulint *offsets,
                          ulint n, ut::Location L) {
-  // ut_ad(rec_offs_validate(nullptr, nullptr, offsets));
+  ut_ad(rec_offs_validate(nullptr, nullptr, offsets));
   if (n >= rec_offs_n_fields(offsets)) {
 #ifndef UNIV_NO_ERR_MSGS
     dump_metadata_dict_table(index->table);

@@ -368,7 +368,7 @@ static inline dtuple_t *row_build_low(ulint type, const dict_index_t *index,
     offsets = rec_get_offsets(rec, index, offsets_, ULINT_UNDEFINED,
                               UT_LOCATION_HERE, &tmp_heap);
   } else {
-    // ut_ad(rec_offs_validate(rec, index, offsets));
+    ut_ad(rec_offs_validate(rec, index, offsets));
   }
 
 #if defined UNIV_DEBUG || defined UNIV_BLOB_LIGHT_DEBUG
@@ -633,7 +633,7 @@ dtuple_t *row_rec_to_index_entry(
   ut_ad(rec != nullptr);
   ut_ad(heap != nullptr);
   ut_ad(index != nullptr);
-  // ut_ad(rec_offs_validate(rec, index, offsets));
+  ut_ad(rec_offs_validate(rec, index, offsets));
 
   /* Take a copy of rec to heap */
   buf = static_cast<byte *>(mem_heap_alloc(heap, rec_offs_size(offsets)));
@@ -778,7 +778,7 @@ void row_build_row_ref_in_tuple(dtuple_t *ref, const rec_t *rec,
     offsets = rec_get_offsets(rec, index, offsets_, ULINT_UNDEFINED,
                               UT_LOCATION_HERE, &heap);
   } else {
-    // ut_ad(rec_offs_validate(rec, index, offsets));
+    ut_ad(rec_offs_validate(rec, index, offsets));
   }
 
   /* Secondary indexes must not contain externally stored columns. */

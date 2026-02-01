@@ -394,7 +394,6 @@ static bool fill_trx_row(i_s_trx_row_t *row, const trx_t *trx,
   row->trx_id = trx_get_id_for_print(trx);
   row->trx_started = trx->start_time.load(std::memory_order_relaxed);
   row->trx_state = trx_get_que_state_str(trx);
-  // row->trx_state = trx_get_abort_state_str(trx);
 
   if (const lock_t *wait_lock = trx->lock.wait_lock; wait_lock != nullptr) {
     ut_a(trx->lock.que_state == TRX_QUE_LOCK_WAIT);
@@ -538,7 +537,7 @@ static ulint put_nth_field(
   dict_field_t *dict_field;
   ulint ret;
 
-  // ut_ad(rec_offs_validate(rec, nullptr, offsets));
+  ut_ad(rec_offs_validate(rec, nullptr, offsets));
 
   if (buf_size == 0) {
     return (0);

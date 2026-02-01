@@ -468,7 +468,7 @@ dberr_t lock_prdt_insert_check_and_lock(
 
       /* Note that we may get DB_SUCCESS also here! */
 
-      err = rec_lock.add_to_waitq(wait_for, true, prdt);
+      err = rec_lock.add_to_waitq(wait_for, prdt);
 
       trx_mutex_exit(trx);
     }

@@ -73,11 +73,6 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "trx0undo.h"
 #include "ut0new.h"
 
-// [TPL]
-#include "tpl0log.h"
-#include "trx0rec.h"
-//
-
 #include "my_dbug.h"
 
 /** Maximum number of rows to prefetch; MySQL interface has another parameter */
@@ -479,7 +474,7 @@ static void row_sel_fetch_columns(trx_t *trx, dict_index_t *index,
   const byte *data;
   ulint len;
 
-  // ut_ad(rec_offs_validate(rec, index, offsets));
+  ut_ad(rec_offs_validate(rec, index, offsets));
 
   if (index->is_clustered()) {
     index_type = SYM_CLUST_FIELD_NO;
@@ -2467,7 +2462,7 @@ static void row_sel_store_row_id_to_prebuilt(
   const byte *data;
   ulint len;
 
-  // ut_ad(rec_offs_validate(index_rec, index, offsets));
+  ut_ad(rec_offs_validate(index_rec, index, offsets));
 
   data = rec_get_nth_field(index, index_rec, offsets,
                            index->get_sys_col_pos(DATA_ROW_ID), &len);
@@ -2748,7 +2743,7 @@ void row_sel_field_store_in_mysql_format_func(
   ut_ad(clust_templ_for_sec || field_no == templ->clust_rec_field_no ||
         field_no == templ->rec_field_no || field_no == templ->icp_rec_field_no);
 
-  // ut_ad(rec_offs_validate(rec, index_used, offsets));
+  ut_ad(rec_offs_validate(rec, index_used, offsets));
 
   /* If sec_field_no is present then extract the data from record
   using secondary field no. */
@@ -3087,6 +3082,7 @@ bool row_sel_store_mysql_rec(byte *mysql_rec, row_prebuilt_t *prebuilt,
   } else {
     prebuilt->old_vers_heap = mem_heap_create(200, UT_LOCATION_HERE);
   }
+
   err = row_vers_build_for_consistent_read(
       rec, mtr, clust_index, offsets, read_view, offset_heap,
       prebuilt->old_vers_heap, old_vers, vrow, lob_undo);
@@ -3787,7 +3783,7 @@ static ICP_RESULT row_search_idx_cond_check(
   ICP_RESULT result;
   ulint i;
 
-  // ut_ad(rec_offs_validate(rec, prebuilt->index, offsets));
+  ut_ad(rec_offs_validate(rec, prebuilt->index, offsets));
 
   if (!prebuilt->idx_cond) {
     return (ICP_MATCH);
@@ -5249,16 +5245,9 @@ rec_loop:
         pcur, rec, index, offsets,
         use_semi_consistent ? SELECT_SKIP_LOCKED : prebuilt->select_mode,
         prebuilt->select_lock_type, lock_type, thr, &mtr);
-    // fprintf(stderr, "[DEBUG] (%d) row_search_mvc - sel_set_rec_lock (rec: %p): %d, %s\n", trx->id,rec, err, index->table_name);
 
     switch (err) {
-
       const rec_t *old_vers;
-
-      // [TPL]
-      rec_t *old_vers2;
-		  byte*		buf2;
-      case DB_CONFLICT_LOCKED_REC:
       case DB_SUCCESS_LOCKED_REC:
         if (trx->releases_non_matching_rows()) {
           /* Note that a record of
@@ -5272,28 +5261,7 @@ rec_loop:
         if (row_to_range_relation.row_must_be_at_end) {
           prebuilt->m_stop_tuple_found = true;
         }
-      {
-
-        old_vers2 = lock_apply_log(pcur->get_block(), old_vers2, index, offsets, trx, rec);
-
-        if (old_vers2 == nullptr)
-				{
-					// Nothing to read, read buffer
-					// Ex. lock 획득 -> conf -> grant -> read 시도
-					err = DB_SUCCESS;
-					break;
-				}
-				else  
-				{
-					rec = old_vers2;
-					prev_rec = rec;
-          ut_d(prev_rec_debug = row_search_debug_copy_rec_order_prefix(
-                   pcur, index, prev_rec, &prev_rec_debug_n_fields,
-                   &prev_rec_debug_buf, &prev_rec_debug_buf_size));
-          err = DB_SUCCESS;
-					break;
-				}
-      }
+        break;
       case DB_SKIP_LOCKED:
         if (prebuilt->select_mode == SELECT_SKIP_LOCKED) {
           goto next_rec;
@@ -5321,7 +5289,6 @@ rec_loop:
                  pcur, index, prev_rec, &prev_rec_debug_n_fields,
                  &prev_rec_debug_buf, &prev_rec_debug_buf_size));
         break;
-      //
       case DB_LOCK_WAIT:
         /* Lock wait for R-tree should already
         be handled in sel_set_rtr_rec_lock() */
@@ -5395,21 +5362,15 @@ rec_loop:
 
       ut_ad(!index->is_clustered());
 
-      // !lock_sec_rec_cons_read_sees: 현재 readview로 해당 sec idx rec을 볼 수 없다는 의미
-      // - 즉, 이 rec은 delete marked or snapshot 상으로 안 보임
       if (!srv_read_only_mode &&
           !lock_sec_rec_cons_read_sees(rec, index, trx->read_view)) {
-        
-        // 하지만 이 sec idx는 covering idx가 아니기 때문에 최종 where 조건을 만족하는지는 clustered idx를 직접 읽어봐야 판단 가능
-        // 5.6부터는 ICP(idx condition pushdown) 최적화를 통해 sec idx rec만 보고도 where 조건 일부 판단 가능
         /* We should look at the clustered index.
         However, as this is a non-locking read,
         we can skip the clustered index lookup if
         the condition does not match the secondary
         index entry. */
-        // MVCC에 의해 보이지 않는 secondary index rec에 대한 불필요한 clustered index 접근을 피하기 위한 shortcut
         switch (row_search_idx_cond_check(buf, prebuilt, rec, offsets)) {
-          case ICP_NO_MATCH: // sec idx만 봐도 where 조건 명백히 불일치 -> 바로 skip
+          case ICP_NO_MATCH:
             goto next_rec;
           case ICP_OUT_OF_RANGE:
             err = DB_RECORD_NOT_FOUND;
@@ -5438,9 +5399,7 @@ rec_loop:
   point that rec is on a buffer pool page. Functions like
   page_rec_is_comp() cannot be used! */
 
-  // [TPL] - page_rec_is_comp in 5.7
-  if (rec_get_deleted_flag(rec, comp)
-      || rec_get_deleted_flag(rec, page_rec_is_comp(rec))) {
+  if (rec_get_deleted_flag(rec, comp)) {
     /* The record is delete-marked: we can skip it */
 
     /* No need to keep a lock on a delete-marked record in lower isolation
@@ -5493,7 +5452,7 @@ rec_loop:
     read of a secondary index record requires us to look up old
     versions of the associated clustered index record. */
 
-    // ut_ad(rec_offs_validate(rec, index, offsets));
+    ut_ad(rec_offs_validate(rec, index, offsets));
 
     /* It was a non-clustered index and we must fetch also the
     clustered index record */
@@ -5554,7 +5513,7 @@ rec_loop:
     }
 
     result_rec = clust_rec;
-    // ut_ad(rec_offs_validate(result_rec, clust_index, offsets));
+    ut_ad(rec_offs_validate(result_rec, clust_index, offsets));
 
     if (prebuilt->idx_cond) {
       /* Convert the record to MySQL format. We were
@@ -5621,8 +5580,8 @@ rec_loop:
   /* We found a qualifying record 'result_rec'. At this point,
   'offsets' are associated with 'result_rec'. */
 
-  // ut_ad(rec_offs_validate(result_rec, result_rec != rec ? clust_index : index,
-                          // offsets));
+  ut_ad(rec_offs_validate(result_rec, result_rec != rec ? clust_index : index,
+                          offsets));
   ut_ad(!rec_get_deleted_flag(result_rec, comp));
 
   /* If we cannot prefetch records, we should not have a record buffer.

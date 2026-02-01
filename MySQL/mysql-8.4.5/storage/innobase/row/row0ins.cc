@@ -243,7 +243,7 @@ void ins_node_set_new_row(
   rec = btr_cur_get_rec(cursor);
 
   ut_ad(!cursor->index->is_clustered());
-  // ut_ad(rec_offs_validate(rec, cursor->index, *offsets));
+  ut_ad(rec_offs_validate(rec, cursor->index, *offsets));
   ut_ad(!entry->info_bits);
 
   /* We know that in the alphabetical ordering, entry and rec are
@@ -1324,7 +1324,7 @@ static dberr_t row_ins_set_rec_lock(lock_mode mode, ulint type,
                                     que_thr_t *thr) {
   dberr_t err;
 
-  // ut_ad(rec_offs_validate(rec, index, offsets));
+  ut_ad(rec_offs_validate(rec, index, offsets));
 
   if (index->is_clustered()) {
     err = lock_clust_rec_read_check_and_lock(
@@ -1335,13 +1335,6 @@ static dberr_t row_ins_set_rec_lock(lock_mode mode, ulint type,
                                            block, rec, index, offsets,
                                            SELECT_ORDINARY, mode, type, thr);
   }
-
-  // [TPL]
-	// Insert 시, 외래키를 검사하면서 충돌락을 찾는 경우가 있다. 이때 충돌락이면 DB_CONFLICT_LOCKED_REC을 반환하는데, 이는 이미 lock을 가지고 있다는 뜻이므로 DB_SUCCESS로 보아도 된다.
-	if (err == DB_CONFLICT_LOCKED_REC) {
-		err = DB_SUCCESS;
-	}
-	//
 
   return (err);
 }
@@ -1827,7 +1820,7 @@ static bool row_ins_dupl_error_with_rec(
   ulint n_unique;
   ulint i;
 
-  // ut_ad(rec_offs_validate(rec, index, offsets));
+  ut_ad(rec_offs_validate(rec, index, offsets));
 
   n_unique = dict_index_get_n_unique(index);
 
@@ -2196,8 +2189,6 @@ a newer version of entry (the entry should not be inserted)
       duplicate:
         trx->error_index = cursor->index;
         err = DB_DUPLICATE_KEY;
-        fprintf(stderr, "[DEBUG] (%d) row_ins_duplicate_error_in_clust - %p of %d\n", trx->id, rec, row_get_rec_trx_id(rec, cursor->index, offsets));
-
         goto func_exit;
       }
     }
@@ -2473,17 +2464,12 @@ dberr_t row_ins_clust_index_entry_low(uint32_t flags, ulint mode,
     } else {
       /* Note that the following may return also
       DB_LOCK_WAIT */
-      // DB_LOCK_WAIT 16
-      // DB_DUPLICATE_KEY 19
+
       err = row_ins_duplicate_error_in_clust(flags, cursor, entry, thr, &mtr);
     }
 
     if (err != DB_SUCCESS) {
     err_exit:
-      // DB_DUPLICATE_KEY
-      // DUPLICATED PK
-      fprintf(stderr, "[DEBUG] (%d) Duplicated PK: %s (%d)\n", thr_get_trx(thr)->id, index->table_name, err);
-      ut_error;
       mtr.commit();
       goto func_exit;
     }

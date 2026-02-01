@@ -578,7 +578,6 @@ void rec_init_offsets(const rec_t *rec, const dict_index_t *index,
     - cached and shared by many records, in which case we've passed rec=nullptr
       when preparing the offsets array.
     We use caching only for the ROW_FORMAT=COMPACT format. */
-    // offsets[2]: 이 offsets가 계산된 rec 포인터 (디버깅용)
     ut_ad((ulint)rec == offsets[2] || ((ulint) nullptr == offsets[2] &&
                                        offsets == index->rec_cache.offsets));
     if (!comp && index != nullptr) {
@@ -588,8 +587,6 @@ void rec_init_offsets(const rec_t *rec, const dict_index_t *index,
 
   if (index) {
     ulint max_n_fields;
-    // offsets: rec에 컬럼 몇 개, 위치, 길이 등 알려주는 메타데이터
-    // offsets[3]: 이 offsets 배열이 어떤 dict_index_t*에 대응하는지 저장
     ut_ad((ulint)index == offsets[3]);
     ulint n_fields = dict_index_get_n_fields(index);
     ulint n_unique_in_tree = dict_index_get_n_unique_in_tree(index) + 1;

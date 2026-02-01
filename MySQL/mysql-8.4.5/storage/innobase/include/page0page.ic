@@ -900,7 +900,7 @@ static inline void page_mem_free(
   rec_t *free;
   ulint garbage;
 
-  // ut_ad(rec_offs_validate(rec, index, offsets));
+  ut_ad(rec_offs_validate(rec, index, offsets));
   free = page_header_get_ptr(page, PAGE_FREE);
 
   page_rec_set_next(rec, free);

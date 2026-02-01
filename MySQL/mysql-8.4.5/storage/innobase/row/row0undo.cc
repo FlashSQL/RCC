@@ -310,7 +310,6 @@ static void long_running_diag(undo_node_t &node) {
     undo_node_t *node, /*!< in: row undo node */
     que_thr_t *thr)    /*!< in: query thread */
 {
-  // fprintf(stderr, "[DEBUG] row_undo\n");
   dberr_t err;
   roll_ptr_t roll_ptr;
 

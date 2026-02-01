@@ -1571,7 +1571,7 @@ static byte *page_zip_write_rec_ext(
   byte *externs = storage;
   ulint n_ext = rec_offs_n_extern(index, offsets);
 
-  // ut_ad(rec_offs_validate(rec, index, offsets));
+  ut_ad(rec_offs_validate(rec, index, offsets));
   UNIV_MEM_ASSERT_RW(rec, rec_offs_data_size(offsets));
   UNIV_MEM_ASSERT_RW(rec - rec_offs_extra_size(offsets),
                      rec_offs_extra_size(offsets));
@@ -1672,7 +1672,7 @@ void page_zip_write_rec(
   ut_ad(page_zip_simple_validate(page_zip));
   ut_ad(page_zip_get_size(page_zip) > PAGE_DATA + page_zip_dir_size(page_zip));
   ut_ad(rec_offs_comp(offsets));
-  // ut_ad(rec_offs_validate(rec, index, offsets));
+  ut_ad(rec_offs_validate(rec, index, offsets));
 
   ut_ad(page_zip->m_start >= PAGE_DATA);
 
@@ -1899,7 +1899,7 @@ void page_zip_write_blob_ptr(
   ut_ad(page_zip_simple_validate(page_zip));
   ut_ad(page_zip_get_size(page_zip) > PAGE_DATA + page_zip_dir_size(page_zip));
   ut_ad(rec_offs_comp(offsets));
-  // ut_ad(rec_offs_validate(rec, nullptr, offsets));
+  ut_ad(rec_offs_validate(rec, nullptr, offsets));
   ut_ad(rec_offs_any_extern(offsets));
   ut_ad(rec_offs_nth_extern(index, offsets, n));
 
@@ -2103,7 +2103,7 @@ void page_zip_write_trx_id_and_roll_ptr(page_zip_des_t *page_zip, byte *rec,
   ut_ad(page_simple_validate_new(page));
   ut_ad(page_zip_simple_validate(page_zip));
   ut_ad(page_zip_get_size(page_zip) > PAGE_DATA + page_zip_dir_size(page_zip));
-  // ut_ad(rec_offs_validate(rec, nullptr, offsets));
+  ut_ad(rec_offs_validate(rec, nullptr, offsets));
   ut_ad(rec_offs_comp(offsets));
 
   ut_ad(page_zip->m_start >= PAGE_DATA);
@@ -2150,7 +2150,7 @@ static void page_zip_clear_rec(
   ulint len;
   /* page_zip_validate() would fail here if a record
   containing externally stored columns is being deleted. */
-  // ut_ad(rec_offs_validate(rec, index, offsets));
+  ut_ad(rec_offs_validate(rec, index, offsets));
   ut_ad(!page_zip_dir_find(page_zip, page_offset(rec)));
   ut_ad(page_zip_dir_find_free(page_zip, page_offset(rec)));
   ut_d(page_zip_header_cmp(page_zip, page));
@@ -2334,7 +2334,7 @@ void page_zip_dir_delete(page_zip_des_t *page_zip, byte *rec,
   ulint n_ext;
   page_t *page = page_align(rec);
 
-  // ut_ad(rec_offs_validate(rec, index, offsets));
+  ut_ad(rec_offs_validate(rec, index, offsets));
   ut_ad(rec_offs_comp(offsets));
 
   UNIV_MEM_ASSERT_RW(page_zip->data, page_zip_get_size(page_zip));

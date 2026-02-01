@@ -342,25 +342,6 @@ void btr_cur_update_in_place_log(ulint flags, const rec_t *rec,
                                  trx_id_t trx_id, roll_ptr_t roll_ptr,
                                  mtr_t *mtr);
 
-// [TPL]
-const byte *tpl_btr_cur_parse_update_in_place(
-    const byte *ptr,          /*!< in: buffer */
-    const byte *end_ptr,      /*!< in: buffer end */
-    page_t *page,             /*!< in/out: page or NULL */
-    page_zip_des_t *page_zip, /*!< in/out: compressed page, or NULL */
-    dict_index_t *index, /*!< in: index corresponding to page */
-    trx_t* trx,
-    mtr_t *mtr);
-// const byte *btr_cur_parse_update_install(
-//         const byte *ptr,          /*!< in: buffer */
-//         const byte *end_ptr,      /*!< in: buffer end */
-//         page_t *page,             /*!< in/out: page or NULL */
-//         page_zip_des_t *page_zip, /*!< in/out: compressed page, or NULL */
-//         dict_index_t *index, /*!< in: index corresponding to page */
-//             trx_t* trx,
-//         rec_t* future_vers);
-//
-
 /** Tries to update a record on a page in an index tree. It is assumed that mtr
 holds an x-latch on the page. The operation does not succeed if there is too
 little space on the page or if the update would result in too empty a page,

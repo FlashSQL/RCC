@@ -107,8 +107,6 @@ class Shard_naked_latch_guard : private ut::Non_copyable {
  private:
   /** The mutex protecting the shard requested in constructor */
   Lock_mutex &m_shard_mutex;
-  // std::chrono::steady_clock::time_point start_time;
-  // std::string dir;
 };
 
 /**

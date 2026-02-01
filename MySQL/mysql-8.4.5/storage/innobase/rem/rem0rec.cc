@@ -1682,7 +1682,7 @@ static void rec_print_mbr_old(FILE *file,       /*!< in: file where to print */
 void rec_print_mbr_rec(FILE *file, const rec_t *rec, const ulint *offsets) {
   ut_ad(rec);
   ut_ad(offsets);
-  // ut_ad(rec_offs_validate(rec, nullptr, offsets));
+  ut_ad(rec_offs_validate(rec, nullptr, offsets));
 
   if (!rec_offs_comp(offsets)) {
     rec_print_mbr_old(file, rec);
@@ -1746,7 +1746,7 @@ void rec_print_new(
 {
   ut_ad(rec);
   ut_ad(offsets);
-  // ut_ad(rec_offs_validate(rec, nullptr, offsets));
+  ut_ad(rec_offs_validate(rec, nullptr, offsets));
 
 #ifdef UNIV_DEBUG
   if (rec_get_deleted_flag(rec, rec_offs_comp(offsets))) {
@@ -1805,7 +1805,7 @@ void rec_print(std::ostream &o, const rec_t *rec, ulint info,
   const ulint comp = rec_offs_comp(offsets);
   const ulint n = rec_offs_n_fields(offsets);
 
-  // ut_ad(rec_offs_validate(rec, nullptr, offsets));
+  ut_ad(rec_offs_validate(rec, nullptr, offsets));
 
   o << (comp ? "COMPACT RECORD" : "RECORD") << "(info_bits=" << info << ", "
     << n << " fields): {";

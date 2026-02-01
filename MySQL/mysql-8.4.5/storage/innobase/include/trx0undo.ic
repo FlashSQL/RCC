@@ -53,7 +53,6 @@ inline roll_ptr_t trx_undo_build_roll_ptr(bool is_insert, space_id_t space_id,
 
   roll_ptr = (roll_ptr_t)is_insert << 55 | (roll_ptr_t)id << 48 |
              (roll_ptr_t)page_no << 16 | offset;
-  // fprintf(stderr, "[DEBUG] trx_undo_build_roll_ptr - %u %u %u %u -> %p\n", is_insert, space_id, page_no, offset, roll_ptr);
   return (roll_ptr);
 }
 

@@ -255,7 +255,7 @@ static bool page_cur_rec_field_extends(const dtuple_t *tuple, const rec_t *rec,
   const byte *rec_f;
   ulint rec_f_len;
 
-  // ut_ad(rec_offs_validate(rec, NULL, offsets));
+  ut_ad(rec_offs_validate(rec, NULL, offsets));
   dfield = dtuple_get_nth_field(tuple, n);
 
   type = dfield_get_type(dfield);
@@ -1245,7 +1245,7 @@ rec_t *page_cur_insert_rec_low(
   ulint heap_no;      /*!< heap number of the inserted
                       record */
 
-  // ut_ad(rec_offs_validate(rec, index, offsets));
+  ut_ad(rec_offs_validate(rec, index, offsets));
 
   page = page_align(current_rec);
   ut_ad(dict_table_is_comp(index->table) == page_is_comp(page));
@@ -1616,7 +1616,7 @@ rec_t *page_cur_insert_rec_zip(
   page_zip = page_cur_get_page_zip(cursor);
   ut_ad(page_zip);
 
-  // ut_ad(rec_offs_validate(rec, index, offsets));
+  ut_ad(rec_offs_validate(rec, index, offsets));
 
   page = page_cur_get_page(cursor);
   ut_ad(dict_table_is_comp(index->table));
@@ -2335,7 +2335,7 @@ void page_cur_delete_rec(
   in the smallest user record, it cannot be used here either. */
 
   current_rec = cursor->rec;
-  // ut_ad(rec_offs_validate(current_rec, index, offsets));
+  ut_ad(rec_offs_validate(current_rec, index, offsets));
   ut_ad(page_is_comp(page) == dict_table_is_comp(index->table));
   ut_ad(fil_page_index_page_check(page));
   ut_ad(mach_read_from_8(page + PAGE_HEADER + PAGE_INDEX_ID) == index->id ||

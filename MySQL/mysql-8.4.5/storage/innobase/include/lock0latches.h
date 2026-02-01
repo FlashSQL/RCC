@@ -141,7 +141,7 @@ class Latches {
     void x_lock(ut::Location location) { rw_lock.x_lock(location); }
     void x_unlock() { rw_lock.x_unlock(); }
     void s_lock(ut::Location location) {
-      // ut_ad(m_shard_id == NOT_IN_USE); // ㅜㅜ 자꾸 걸림
+      ut_ad(m_shard_id == NOT_IN_USE);
       m_shard_id = rw_lock.s_lock(location);
     }
     void s_unlock() {

@@ -61,11 +61,6 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "ut0new.h"
 #include "ut0vec.h"
 
-// [TPL]
-#include "tpl0log.h"
-#include "trx0rec.h"
-//
-
 #include "my_dbug.h"
 #include "my_psi_config.h"
 #include "mysql/plugin.h"
@@ -85,11 +80,6 @@ static const ulint TABLE_LOCK_CACHE = 8;
 
 /** Size in bytes, of the table lock instance */
 static const ulint TABLE_LOCK_SIZE = sizeof(ib_lock_t);
-
-// [TPL]
-// Max count for search conflict cycle
-static const ulint	LOCK_MAX_DEPTH_IN_CONF_CYCLE_CHECK = 200;
-//
 
 template <typename T>
 using Locks = std::vector<T, mem_heap_allocator<T>>;
@@ -227,7 +217,7 @@ void lock_report_trx_id_insanity(trx_id_t trx_id, const rec_t *rec,
 
 bool lock_check_trx_id_sanity(trx_id_t trx_id, const rec_t *rec,
                               const dict_index_t *index, const ulint *offsets) {
-  // ut_ad(rec_offs_validate(rec, index, offsets));
+  ut_ad(rec_offs_validate(rec, index, offsets));
 
   trx_id_t next_trx_id = trx_sys_get_next_trx_id_or_no();
   bool is_ok = trx_id < next_trx_id;
@@ -251,7 +241,7 @@ bool lock_clust_rec_cons_read_sees(
 {
   ut_ad(index->is_clustered());
   ut_ad(page_rec_is_user_rec(rec));
-  // ut_ad(rec_offs_validate(rec, index, offsets));
+  ut_ad(rec_offs_validate(rec, index, offsets));
 
   /* Temp-tables are not shared across connections and multiple
   transactions from different connections cannot simultaneously
@@ -489,33 +479,12 @@ bool lock_is_waiting(const lock_t &lock) {
   return lock.is_waiting();
 }
 
-// [TPL]
-inline conflict_t* add_conflict(trx_t* trx, trx_t* blocker, lock_t* lock, ulint heap_no) {
-  auto* c = static_cast<conflict_t*>(
-      mem_heap_zalloc(trx->conflict_heap, sizeof(conflict_t)));
-  c->blocker   = blocker;
-  c->conf_lock = lock;
-  c->heap_no = heap_no;
-  trx->lock.conf_lock_pool.push_back(c);
-
-  // int size = 0;
-  // for (auto* elem : trx->lock.conf_lock_pool) {
-  //   if (elem) {
-  //     size++;
-  //   }
-  // }
-  // // fprintf(stderr, "%d\n", size);
-  // fprintf(stderr, "(%d) %d, %s\n", trx->id, size, lock->index->table_name);
-  return c;
-}
-//
-
 /** Sets the wait flag of a lock and the back pointer in trx to lock.
 @param[in]  lock  The lock on which a transaction is waiting */
 static inline void lock_set_lock_and_trx_wait(lock_t *lock) {
   auto trx = lock->trx;
   ut_ad(trx_mutex_own(trx));
-  ut_ad(trx->lock.wait_lock == nullptr); // 5.7에서는 ut_ad로 선언됨
+  ut_a(trx->lock.wait_lock == nullptr);
   ut_ad(locksys::owns_lock_shard(lock));
 
   trx->lock.wait_lock = lock;
@@ -581,29 +550,19 @@ enum class Conflict {
 @retval CAN_BYPASS  the trx does not have to wait for lock2, as it can bypass it
 @retval HAS_TO_WAIT the trx has to wait for lock2
 */
-static inline Conflict rec_lock_check_conflict(
-    const trx_t *trx,
-    ulint type_mode,
-    const lock_t *lock2,
-    bool lock_is_on_supremum,
-    Trx_locks_cache &trx_locks_cache)
+static inline Conflict rec_lock_check_conflict(const trx_t *trx,
+                                               ulint type_mode,
+                                               const lock_t *lock2,
+                                               bool lock_is_on_supremum,
+                                               Trx_locks_cache &trx_locks_cache)
+
 {
   ut_ad(trx && lock2);
   ut_ad(lock_get_type_low(lock2) == LOCK_REC);
 
-  // [TPL] - wait for rollback trx
-	// rollback 중인 record에 대해서는 XX가 아닌, X로 봐야 함
-  lock_mode		type_mode2 = lock_get_mode(lock2);
-  if (lock2->trx->conflict_abort && type_mode2 == LOCK_XX) {
-		// fprintf(stderr, "[DEBUG] (%d) lock_rec_has_to_wait - %d is rolling back\n", trx->id, lock2->trx->id);
-		type_mode2 = LOCK_X;
-	}
-  //
-
   if (trx == lock2->trx ||
       lock_mode_compatible(static_cast<lock_mode>(LOCK_MODE_MASK & type_mode),
                            lock_get_mode(lock2))) {
-    // fprintf(stderr, "[DEBUG] (%d) rec_lock_check_conflict - compatible with %d %p\n", trx->id, lock2->trx->id, lock2);
     return Conflict::NO_CONFLICT;
   }
 
@@ -824,26 +783,23 @@ static inline const lock_t *lock_rec_has_expl(ulint precise_mode,
                                               const page_id_t page_id,
                                               uint32_t heap_no,
                                               const trx_t *trx) {
-  // ut_ad(locksys::owns_page_shard(page_id));
-  // ut_ad((precise_mode & LOCK_MODE_MASK) == LOCK_S ||
-  //       (precise_mode & LOCK_MODE_MASK) == LOCK_X);
-  // ut_ad(
-  //     !(precise_mode & ~(ulint)(LOCK_MODE_MASK | LOCK_GAP | LOCK_REC_NOT_GAP)));
-  // ut_ad(!(precise_mode & LOCK_INSERT_INTENTION));
-  // ut_ad(!(precise_mode & LOCK_PREDICATE));
-  // ut_ad(!(precise_mode & LOCK_PRDT_PAGE));
-
+  ut_ad(locksys::owns_page_shard(page_id));
+  ut_ad((precise_mode & LOCK_MODE_MASK) == LOCK_S ||
+        (precise_mode & LOCK_MODE_MASK) == LOCK_X);
+  ut_ad(
+      !(precise_mode & ~(ulint)(LOCK_MODE_MASK | LOCK_GAP | LOCK_REC_NOT_GAP)));
+  ut_ad(!(precise_mode & LOCK_INSERT_INTENTION));
+  ut_ad(!(precise_mode & LOCK_PREDICATE));
+  ut_ad(!(precise_mode & LOCK_PRDT_PAGE));
   const RecID rec_id{page_id, heap_no};
   const bool is_on_supremum = rec_id.is_supremum();
   const bool is_rec_not_gap = 0 != (precise_mode & LOCK_REC_NOT_GAP);
   const bool is_gap = 0 != (precise_mode & LOCK_GAP);
   const auto mode = static_cast<lock_mode>(precise_mode & LOCK_MODE_MASK);
   const auto p_implies_q = [](bool p, bool q) { return q || !p; };
-  
   /* Stop iterating on first matching record or first WAITING lock */
   const auto first =
       lock_sys->rec_hash.find_on_record(rec_id, [&](const lock_t *lock) {
-        // 첫 waiting lock이 있으면 그 시점에서 중단
         return (lock->is_waiting() ||
                 (lock->trx == trx && !lock->is_insert_intention() &&
                  lock_mode_stronger_or_eq(lock_get_mode(lock), mode) &&
@@ -859,39 +815,6 @@ static inline const lock_t *lock_rec_has_expl(ulint precise_mode,
                                               ulint heap_no, const trx_t *trx) {
   return lock_rec_has_expl(precise_mode, block->get_page_id(), heap_no, trx);
 }
-
-// [TPL]
-static inline const lock_t *tpl_lock_rec_has_expl(
-  ulint precise_mode,
-  const page_id_t page_id,
-  uint32_t heap_no,
-  const trx_t *trx,
-  ulint			target_mode) {
-
-  const RecID rec_id{page_id, heap_no};
-  const auto mode = static_cast<lock_mode>(precise_mode & LOCK_MODE_MASK);
-
-  const auto first =
-  lock_sys->rec_hash.find_on_record(rec_id, [&](const lock_t *lock) {
-    // fprintf(stderr, "[DEBUG] (%d) tpl_lock_rec_has_expl - %d, %p\n", trx->id, lock->trx->id, lock);
-    return (
-      (lock->trx == trx && !lock->is_insert_intention() 
-      && lock_mode_stronger_or_eq(lock_get_mode(lock), mode) 
-      && (!target_mode || lock_get_mode(lock) == target_mode)
-    ));
-  });
-  return first == nullptr ? nullptr : first;
-}
-
-static inline const lock_t *tpl_lock_rec_has_expl(
-  ulint precise_mode,
-  const buf_block_t *block,
-  ulint heap_no, const trx_t *trx,
-  ulint			target_mode) {
-  return tpl_lock_rec_has_expl(precise_mode, block->get_page_id(), heap_no, trx, target_mode);
-}
-//
-
 namespace locksys {
 bool Trx_locks_cache::has_granted_blocker(const trx_t *trx,
                                           const lock_t *waiting_lock) {
@@ -963,9 +886,6 @@ struct Conflicting {
   const lock_t *wait_for;
   /** true iff the trx has bypassed one of waiting locks */
   bool bypassed;
-  // [TPL]
-  // true if any lock on this record aborts
-  bool aborting;
 };
 } /*namespace locksys*/
 /** Checks if some other transaction has a conflicting explicit lock request
@@ -986,125 +906,21 @@ static locksys::Conflicting lock_rec_other_has_conflicting(
                           LOCK_INSERT_INTENTION)));
   ut_ad(!(mode & LOCK_PREDICATE));
   ut_ad(!(mode & LOCK_PRDT_PAGE));
-
   bool bypassed{false};
 
   RecID rec_id{block, heap_no};
   const bool is_supremum = rec_id.is_supremum();
   locksys::Trx_locks_cache trx_locks_cache{};
-
   const lock_t *wait_for =
       lock_sys->rec_hash.find_on_record(rec_id, [&](const lock_t *lock) {
-        // lock_rec_has_to_wait와 유사
         const auto conflict = locksys::rec_lock_check_conflict(
             trx, mode, lock, is_supremum, trx_locks_cache);
-
-        // fprintf(stderr, "[DEBUG] (%d) lock_rec_other_has_conflicting - %d %p: %d\n", trx->id, lock->trx->id, lock, conflict);
-
         if (conflict == locksys::Conflict::CAN_BYPASS) {
           bypassed = true;
         }
         return conflict == locksys::Conflict::HAS_TO_WAIT;
       });
-  return {wait_for, bypassed, false};
-}
-
-// [TPL] - Bamboo
-// [TPL]
-// return last_lock (tail of conflict chain)
-static locksys::Conflicting tpl_lock_rec_other_has_conflicting(
-  ulint mode, 
-  const buf_block_t *block, 
-  ulint heap_no, 
-  const trx_t *trx) 
-{
-
-  bool bypassed{false};
-
-  RecID rec_id{block, heap_no};
-  const bool is_supremum = rec_id.is_supremum();
-  locksys::Trx_locks_cache trx_locks_cache{};
-
-	const lock_t*		last_lock = nullptr;
-  bool updated = false;
-  bool aborting = false;
-
-  lock_sys->rec_hash.find_on_record(rec_id, [&](const lock_t *lock) {
-        // lock_rec_has_to_wait와 유사
-        const auto conflict = locksys::rec_lock_check_conflict(
-            trx, mode, lock, is_supremum, trx_locks_cache);
-
-        // fprintf(stderr, "[DEBUG] (%d) tpl_lock_rec_other_has_conflicting - %d %p: %d\n", trx->id, lock->trx->id, lock, conflict);
-
-        if (conflict == locksys::Conflict::CAN_BYPASS) {
-          bypassed = true;
-        }
-
-        if (!aborting && lock->trx->conflict_abort != TRX_NOT_ABORTED) {
-          // 누구 하나라도 abort 중이면 난 무조건 기다려야 한다
-          aborting = true;
-        }
-
-        if (trx == lock->trx) {
-          return false;
-        }
-        else if (conflict == locksys::Conflict::HAS_TO_WAIT) {
-          // fprintf(stderr, "[DEBUG] (%d) tpl_lock_rec_other_has_conflicting - has to wait\n", trx->id);
-          last_lock = lock;
-          if (lock_get_mode(lock) == LOCK_X || lock_get_mode(lock) == LOCK_XX) {
-            updated = true;
-          }
-        // [SR]
-        } else if (updated) {
-          // S_LOCK -> NO_CONFLICT -> 하지만 이전에 X_LOCK 있었으면 -> conflicter로
-          // fprintf(stderr, "[DEBUG] (%d) tpl_lock_rec_other_has_conflicting - updated\n", trx->id);
-          last_lock = lock;
-        } // end SR
-        return false; 
-      });
-  return {last_lock, bypassed, aborting};
-}  // end RCC
-
-// [TPL]
-// return last_lock (tail of conflict chain)
-// use when rollback
-static locksys::Conflicting tpl_lock_rec_other_has_conflicting_rollback(
-  ulint mode, 
-  RecID rec_id, 
-  const trx_t *trx) 
-{
-
-  bool bypassed{false};
-
-  const bool is_supremum = rec_id.is_supremum();
-  locksys::Trx_locks_cache trx_locks_cache{};
-
-	const lock_t*		last_lock = NULL;
-
-  const lock_t *wait_for =
-      lock_sys->rec_hash.find_on_record(rec_id, [&](const lock_t *lock) {
-        // lock_rec_has_to_wait와 유사
-        const auto conflict = locksys::rec_lock_check_conflict(
-            trx, mode, lock, is_supremum, trx_locks_cache);
-
-        // fprintf(stderr, "[DEBUG] (%d) tpl_lock_rec_other_has_conflicting_rollback - %d %p: %d\n", trx->id, lock->trx->id, lock, conflict);
-        if (trx == lock->trx) {
-          // 나 까지 옴, 뒤는 볼 필요X
-          return true;
-        }
-
-        if (conflict == locksys::Conflict::CAN_BYPASS) {
-          bypassed = true;
-        }
-        if (conflict == locksys::Conflict::HAS_TO_WAIT
-            && trx != lock->trx) {
-          last_lock = lock;
-          return false;
-
-        }
-        return false; 
-      });
-  return {last_lock, bypassed};
+  return {wait_for, bypassed};
 }
 
 /** Checks if the (-infinity,max_old_active_id] range contains an id of
@@ -1192,7 +1008,7 @@ static trx_t *lock_sec_rec_some_has_impl(const rec_t *rec, dict_index_t *index,
   ut_ad(!trx_sys_mutex_own());
   ut_ad(!index->is_clustered());
   ut_ad(page_rec_is_user_rec(rec));
-  // ut_ad(rec_offs_validate(rec, index, offsets));
+  ut_ad(rec_offs_validate(rec, index, offsets));
 
   max_trx_id = page_get_max_trx_id(page);
 
@@ -1310,12 +1126,7 @@ void RecLock::prepare() const {
   stopped anyway */
 
   if (que_thr_stop(m_thr)) {
-    // [TPL]
-		// Insert Waiting 헀을 때 lock.que_state == TRX_QUE_LOCK_WAIT
-		if (thr_get_trx(m_thr)->lock.que_state != TRX_QUE_LOCK_WAIT) {
-			ut_error;
-		}
-    //
+    ut_error;
   }
 
   switch (trx_get_dict_operation(m_trx)) {
@@ -1394,9 +1205,6 @@ lock_t *RecLock::lock_alloc(trx_t *trx, dict_index_t *index, ulint mode,
   MONITOR_INC(MONITOR_NUM_RECLOCK);
 
   MONITOR_INC(MONITOR_RECLOCK_CREATED);
-
-  // fprintf(stderr, "[DEBUG] (%d) lock_alloc: %p\n", trx->id, lock);
-  // trx_print_low(stderr, trx, 1000, 0, 0, 0);
 
   return (lock);
 }
@@ -1508,7 +1316,7 @@ lock_t *RecLock::create(trx_t *trx, const lock_prdt_t *prdt) {
   lock structures.
   It might be the case that we already hold trx->mutex because we got here from:
     - lock_rec_convert_impl_to_expl_for_trx
-    - add_to_ waitq
+    - add_to_waitq
   */
   ut_ad(trx_mutex_own(trx));
 
@@ -1536,7 +1344,6 @@ lock_t *RecLock::create(trx_t *trx, const lock_prdt_t *prdt) {
   }
 
   lock_add(lock);
-  // fprintf(stderr, "[DEBUG] (%d) create: %p %s\n", trx->id, lock, m_index->table->name.m_name);
 
   return (lock);
 }
@@ -1618,18 +1425,14 @@ static void lock_report_wait_for_edge_to_server(const lock_t *waiting_lock,
 @param[in]    waiting_lock    A lock waiting in queue, blocked by blocking_lock
 @param[in]    blocking_lock   A lock which is a reason the waiting_lock has to
                           wait */
-static void lock_create_wait_for_edge(
-  const lock_t *waiting_lock, //requestor
-  const lock_t *blocking_lock) //blocking lock
-{
+static void lock_create_wait_for_edge(const lock_t *waiting_lock,
+                                      const lock_t *blocking_lock) {
   trx_t *waiter = waiting_lock->trx;
   trx_t *blocker = blocking_lock->trx;
-
-  // ut_ad(trx_mutex_own(waiter));
-  // ut_ad(waiter->lock.wait_lock != nullptr);
-  // ut_ad(locksys::owns_lock_shard(waiter->lock.wait_lock));
-  // ut_ad(waiter->lock.blocking_trx.load() == nullptr);
-
+  ut_ad(trx_mutex_own(waiter));
+  ut_ad(waiter->lock.wait_lock != nullptr);
+  ut_ad(locksys::owns_lock_shard(waiter->lock.wait_lock));
+  ut_ad(waiter->lock.blocking_trx.load() == nullptr);
   /* We don't call lock_wait_request_check_for_cycles() here as it
   would be slightly premature: the trx is not yet inserted into a slot of
   lock_sys->waiting_threads at this point, and thus it would be invisible to
@@ -1637,13 +1440,7 @@ static void lock_create_wait_for_edge(
   lock_wait_table_reserve_slot() function be responsible for calling
   lock_wait_request_check_for_cycles() once it insert the trx to a
   slot.*/
-  // 여기서 cycle detection은 안 함, 그래프만 생성
-  // lock_sys->waiting_threads에 등록된 다음에 detection 대상이 됨 (lock_wait_table_reserve_slot()여기서 함)
-  // 즉 락을 얻기 전에는 데드락 검사 안 하고, suspend할 때 slot 단위로만 검색
-
-  // 나의 blocker 등록
   waiter->lock.blocking_trx.store(blocker);
-  // fprintf(stderr, "[DEBUG] lock_create_wait_for_edge: %d(%p) <- %d(%p)\n",blocker->id, blocker,waiter->id, waiter);
   lock_report_wait_for_edge_to_server(waiting_lock, blocking_lock);
 }
 
@@ -1667,8 +1464,7 @@ void RecLock::set_wait_state(lock_t *lock) {
   ut_a(stopped);
 }
 
-// // [TPL] - Bamboo
-dberr_t RecLock::add_to_waitq(const lock_t *wait_for, bool aborting, const lock_prdt_t *prdt) {
+dberr_t RecLock::add_to_waitq(const lock_t *wait_for, const lock_prdt_t *prdt) {
   ut_ad(locksys::owns_page_shard(m_rec_id.get_page_id()));
   ut_ad(m_trx == thr_get_trx(m_thr));
 
@@ -1691,118 +1487,17 @@ dberr_t RecLock::add_to_waitq(const lock_t *wait_for, bool aborting, const lock_
 
   /* Don't queue the lock to hash table, if high priority transaction. */
   lock_t *lock = create(m_trx, prdt);
-  // fprintf(stderr, "[DEBUG] (%d) add_to_waitq: %s\n", m_trx->id, lock_get_mode_str(lock));
 
-  
+  lock_create_wait_for_edge(lock, wait_for);
 
-  // [TPL]
-  trx_t* blocker = wait_for->trx;
-  
-  // [SR]
-  // 내 앞의 s lock이 lock-wait이면 나도 wait해야 한다
-  // SS conflict && T1이 wait for로 대기 중이면서 pre commit이 아님 == lock-wait == read 전
-  if (lock_get_mode(lock) == LOCK_S 
-      && blocker->lock.que_state == TRX_QUE_LOCK_WAIT 
-      && blocker->pre_commit != TRX_COMMIT_PRE
-      && blocker->lock.wait_lock.load() == wait_for) {
+  ut_ad(lock_get_wait(lock));
 
-    // fprintf(stderr, "[DEBUG] WAIT(S) %d(%p)(%p)<-%d(%p)(%p): %s\n", blocker->id, blocker, wait_for, m_trx->id, m_trx, lock, m_index->table_name);
-    lock_create_wait_for_edge(lock, wait_for);
-    ut_ad(lock_get_wait(lock));
-    set_wait_state(lock);
-    MONITOR_INC(MONITOR_LOCKREC_WAIT);
-    return (DB_LOCK_WAIT);
-      
-  }
-  // end SR
-  if(aborting == false
-    && !lock->is_insert_intention()
-    && (lock_get_mode(wait_for) != LOCK_X)
-    && (strcmp(m_index->table_name, "tpcc/order_line") != 0)
-    && (strcmp(m_index->table_name, "tpcc/orders") != 0)
-    && (blocker->conflict_abort == TRX_NOT_ABORTED)){
+  set_wait_state(lock);
 
-    // fprintf(stderr, "[DEBUG] CONFLICT %d: %d(%p)(%p)<-%d(%p)(%p): %s, %u vs %u\n", m_trx->lock.conf_lock_pool.size(), blocker->id, blocker, wait_for, m_trx->id, m_trx, lock, m_index->table_name, lock_rec_find_set_bit(wait_for), lock_rec_find_set_bit(lock));
+  MONITOR_INC(MONITOR_LOCKREC_WAIT);
 
-    add_conflict(m_trx, blocker, lock, m_rec_id.m_heap_no);
-    m_trx->lock.wait_lock.store(nullptr);
-
-    return (DB_CONFLICT_LOCKED_REC);
-  } else {
-      // fprintf(stderr, "[DEBUG] WAIT %d(%p %p)<-%d(%p %p) (%d%d%d%d%d%d): %s\n", blocker->id, blocker, wait_for, m_trx->id, m_trx, lock,
-      //   !(aborting == false),
-      //   !(!lock->is_insert_intention()),
-      //   !(lock_get_mode(wait_for) != LOCK_X),
-      //   !((strcmp(m_index->table_name, "tpcc/order_line") != 0)),
-      //   !(strcmp(m_index->table_name, "tpcc/orders") != 0),
-      //   blocker->conflict_abort,
-      //   m_index->table_name);
-      // fprintf(stderr, "%d%d%d%d%d%d\n", 
-      //   !(aborting == false),
-      //   !(!lock->is_insert_intention()),
-      //   !(lock_get_mode(wait_for) != LOCK_X),
-      //   !((strcmp(m_index->table_name, "tpcc/order_line") != 0)),
-      //   !(strcmp(m_index->table_name, "tpcc/orders") != 0),
-      //   !(blocker->conflict_abort == TRX_NOT_ABORTED));
-      
-
-
-    lock_create_wait_for_edge(lock, wait_for);
-    ut_ad(lock_get_wait(lock));
-    set_wait_state(lock);
-    MONITOR_INC(MONITOR_LOCKREC_WAIT);
-    return (DB_LOCK_WAIT);
-
-  }
-  //
+  return (DB_LOCK_WAIT);
 }
-
-// [TPL] - 락 생성 없이 기존 wait lock을 다른 트랜잭션에 dependency graph 생성
-// 주로 롤백 때 사용 (ex. T1<-T2<-T3 에서 T2만 롤백해야 한다면? T1도 롤백 중이라면 기다려야 함)
-dberr_t append_to_waitq(const lock_t *wait_for, lock_t* wait_lock, ulint heap_no) {
-
-  trx_t* trx = wait_lock->trx;
-  trx_t* blocker = wait_for->trx;
-
-  // [SR]
-  if (lock_get_mode(wait_lock) == LOCK_S) {
-    lock_create_wait_for_edge(wait_lock, wait_for);
-    return (DB_LOCK_WAIT);
-  }
-
-  if(!wait_lock->is_insert_intention()
-    && (lock_get_mode(wait_for) != LOCK_X)
-    && (blocker->conflict_abort == TRX_NOT_ABORTED)
-    && (strcmp(wait_lock->index->table_name, "tpcc/order_line") != 0)
-    && (strcmp(wait_lock->index->table_name, "tpcc/orders") != 0)) {
-
-    trx_mutex_enter(trx);
-    add_conflict(trx, blocker, wait_lock, heap_no);
-
-
-    // fprintf(stderr, "[DEBUG] new CONFLICT %d: %d(%p)(%p)<-%d(%p)(%p): %s\n", trx->lock.conf_lock_pool.size(), blocker->id,blocker, wait_for, trx->id, trx, wait_lock, wait_lock->index->table_name);
-
- 
-    trx->lock.wait_lock.store(nullptr);
-    trx->lock.blocking_trx.store(nullptr);
-    tpl_lock_wait_release_thread_if_suspended(wait_lock);
-
-    trx_mutex_exit(trx);
-
-    return (DB_CONFLICT_LOCKED_REC);
-  } else {
-      // fprintf(stderr, "[DEBUG] new WAIT %d(%p)(%p)<-%d(%p)(%p): %s\n", blocker->id, blocker, wait_for, trx->id, trx, wait_lock, wait_lock->index->table_name);
-
-    trx_mutex_enter(trx);
-    lock_create_wait_for_edge(wait_lock, wait_for);
-    trx_mutex_exit(trx);
-
-    return (DB_LOCK_WAIT);
-
-  }
-  //
-}
-// end RCC
 
 /** Moves a granted lock to the front of the queue for a given record by
 removing it adding it to the front. As a single lock can correspond to multiple
@@ -1818,7 +1513,6 @@ static void lock_rec_move_granted_to_front(lock_t *lock, const RecID &rec_id) {
   lock->hash_table().move_to_front(lock, rec_id.hash_value());
 }
 
-// 같은 페이지, 다른 레코드면 lock을 새로 만들지 말고 기존 lock 객체의 bitmap에 비트만 켜서 재사용 가능
 /** Adds a record lock request in the record queue. The request is normally
  added as the last in the queue, but if the request to be added is not a waiting
  request, we can reuse a suitable record lock object already existing on the
@@ -1836,6 +1530,27 @@ static void lock_rec_add_to_queue(ulint type_mode, const buf_block_t *block,
                                   const ulint heap_no, dict_index_t *index,
                                   trx_t *trx,
                                   const bool we_own_trx_mutex = false) {
+#ifdef UNIV_DEBUG
+  ut_ad(locksys::owns_page_shard(block->get_page_id()));
+  ut_ad(we_own_trx_mutex == trx_mutex_own(trx));
+
+  ut_ad(index->is_clustered() ||
+        dict_index_get_online_status(index) != ONLINE_INDEX_CREATION);
+  switch (type_mode & LOCK_MODE_MASK) {
+    case LOCK_X:
+    case LOCK_S:
+      break;
+    default:
+      ut_error;
+  }
+
+  if (!(type_mode & (LOCK_WAIT | LOCK_GAP))) {
+    lock_mode mode = (type_mode & LOCK_MODE_MASK) == LOCK_S ? LOCK_X : LOCK_S;
+    const lock_t *other_lock =
+        lock_rec_other_has_expl_req(mode, block, false, heap_no, trx);
+    ut_a(!other_lock);
+  }
+#endif /* UNIV_DEBUG */
 
   type_mode |= LOCK_REC;
 
@@ -1855,7 +1570,6 @@ static void lock_rec_add_to_queue(ulint type_mode, const buf_block_t *block,
 
   if (!(type_mode & LOCK_WAIT)) {
     {
-      // 대기 락 아니면 재사용
       /* Look for a similar record lock on the same page:
       if one is found we can just set the bit */
       bool found_waiter_before_lock = false;
@@ -1888,13 +1602,11 @@ static void lock_rec_add_to_queue(ulint type_mode, const buf_block_t *block,
         WAITING lock in the hash cell is if it was WAITING in the past and the
         only bit for the heap_no was cleared, so it no longer belongs to any
         queue.*/
-        // ut_ad(!found_waiter_before_lock ||
-        //       (ULINT_UNDEFINED == lock_rec_find_set_bit(lock)));
+        ut_ad(!found_waiter_before_lock ||
+              (ULINT_UNDEFINED == lock_rec_find_set_bit(lock)));
 
         if (!lock_rec_get_nth_bit(lock, heap_no)) {
-          // 해당 bit ON
           lock_rec_set_nth_bit(lock, heap_no);
-          add_conflict(trx, nullptr, lock, heap_no); // [TPL]
           if (found_waiter_before_lock) {
             lock_rec_move_granted_to_front(lock, RecID{lock, heap_no});
           }
@@ -1910,14 +1622,7 @@ static void lock_rec_add_to_queue(ulint type_mode, const buf_block_t *block,
   if (!we_own_trx_mutex) {
     trx_mutex_enter(trx);
   }
-  lock_t* new_lock = rec_lock.create(trx);
-  // [TPL]
-  if ((strstr(index->table->name.m_name, "mysql") == nullptr) 
-      && (strcmp(index->table_name, "tpcc/order_line") != 0)
-      && (strcmp(index->table_name, "tpcc/orders") != 0)) {
-    add_conflict(trx, nullptr, new_lock, heap_no);
-  }
-
+  rec_lock.create(trx);
   if (!we_own_trx_mutex) {
     trx_mutex_exit(trx);
   }
@@ -1959,7 +1664,6 @@ static inline lock_rec_req_status lock_rec_lock_fast(
   ut_ad(index->is_clustered() || !dict_index_is_online_ddl(index));
   ut_ad(!(mode & LOCK_PREDICATE));
   ut_ad(!(mode & LOCK_PRDT_PAGE));
-
   DBUG_EXECUTE_IF("innodb_report_deadlock", return (LOCK_REC_FAIL););
   lock_t *lock = nullptr;
   lock_t *other_lock =
@@ -1973,7 +1677,6 @@ static inline lock_rec_req_status lock_rec_lock_fast(
 
   trx_t *trx = thr_get_trx(thr);
   ut_ad(!trx_mutex_own(trx));
-  // fprintf(stderr, "[DEBUG] (%d) lock_rec_lock_fast\n", trx->id);
 
   lock_rec_req_status status = LOCK_REC_SUCCESS;
 
@@ -1982,13 +1685,7 @@ static inline lock_rec_req_status lock_rec_lock_fast(
       RecLock rec_lock(index, block, heap_no, mode);
 
       trx_mutex_enter(trx);
-      lock = rec_lock.create(trx);
-      // [TPL]
-      if ((strstr(index->table->name.m_name, "mysql") == nullptr)
-          && (strcmp(index->table_name, "tpcc/order_line") != 0)
-          && (strcmp(index->table_name, "tpcc/orders") != 0)) {
-        add_conflict(trx, nullptr, lock, heap_no);
-      }
+      rec_lock.create(trx);
       trx_mutex_exit(trx);
 
       status = LOCK_REC_SUCCESS_CREATED;
@@ -2007,7 +1704,6 @@ static inline lock_rec_req_status lock_rec_lock_fast(
       if (!lock_rec_get_nth_bit(lock, heap_no)) {
         lock_rec_set_nth_bit(lock, heap_no);
         status = LOCK_REC_SUCCESS_CREATED;
-        add_conflict(trx, nullptr, lock, heap_no); // [TPL]
       }
     }
 
@@ -2090,7 +1786,6 @@ static dberr_t lock_rec_lock_slow(bool impl, select_mode sel_mode, ulint mode,
   DBUG_EXECUTE_IF("innodb_report_deadlock", return (DB_DEADLOCK););
 
   trx_t *trx = thr_get_trx(thr);
-  // fprintf(stderr, "[DEBUG] (%d) lock_rec_lock_slow\n", trx->id);
 
   ut_ad(sel_mode == SELECT_ORDINARY ||
         (sel_mode != SELECT_ORDINARY && !trx_is_high_priority(trx)));
@@ -2115,16 +1810,11 @@ static dberr_t lock_rec_lock_slow(bool impl, select_mode sel_mode, ulint mode,
       (heap_no != PAGE_HEAP_NO_SUPREMUM && lock_mode_is_next_key_lock(mode))
           ? mode | LOCK_REC_NOT_GAP
           : mode;
-  // [TPL]
-  const auto *held_lock = tpl_lock_rec_has_expl(checked_mode, block, heap_no, trx, NULL);
+
+  const auto *held_lock = lock_rec_has_expl(checked_mode, block, heap_no, trx);
 
   if (held_lock != nullptr) {
-    if (lock_get_wait(held_lock)) {
-      return (DB_CONFLICT_LOCKED_REC);
-    }
-    //
-
-    else if (checked_mode == mode) {
+    if (checked_mode == mode) {
       /* The trx already has a strong enough lock on rec: do nothing */
       return (DB_SUCCESS);
     }
@@ -2133,12 +1823,11 @@ static dberr_t lock_rec_lock_slow(bool impl, select_mode sel_mode, ulint mode,
     emulated by implicit lock (which are LOCK_REC_NOT_GAP only). */
     ut_ad(!impl);
 
-    // held_lock이 GAP이 빠진 형태였다면 GAP 추가
     lock_reuse_for_next_key_lock(held_lock, mode, block, heap_no, index, trx);
     return (DB_SUCCESS);
   }
   const auto conflicting =
-      tpl_lock_rec_other_has_conflicting(mode, block, heap_no, trx);
+      lock_rec_other_has_conflicting(mode, block, heap_no, trx);
 
   if (conflicting.wait_for != nullptr) {
     switch (sel_mode) {
@@ -2155,11 +1844,12 @@ static dberr_t lock_rec_lock_slow(bool impl, select_mode sel_mode, ulint mode,
 
         trx_mutex_enter(trx);
 
-        dberr_t err = rec_lock.add_to_waitq(conflicting.wait_for, conflicting.aborting);
+        dberr_t err = rec_lock.add_to_waitq(conflicting.wait_for);
 
         trx_mutex_exit(trx);
 
-        ut_ad(err == DB_SUCCESS_LOCKED_REC || err == DB_LOCK_WAIT || err == DB_CONFLICT_LOCKED_REC || err == DB_DEADLOCK);
+        ut_ad(err == DB_SUCCESS_LOCKED_REC || err == DB_LOCK_WAIT ||
+              err == DB_DEADLOCK);
         return (err);
     }
   }
@@ -2239,7 +1929,7 @@ static const lock_t *lock_rec_has_to_wait_in_queue(
   ut_ad(lock_get_type_low(wait_lock) == LOCK_REC);
   const auto page_id = wait_lock->rec_lock.page_id;
   ut_ad(locksys::owns_page_shard(page_id));
-  // ut_ad(lock_get_wait(wait_lock));
+  ut_ad(lock_get_wait(wait_lock));
 
   const auto heap_no = (uint16_t)lock_rec_find_set_bit(wait_lock);
 
@@ -2263,8 +1953,6 @@ static void lock_grant(lock_t *lock) {
   ut_ad(locksys::owns_lock_shard(lock));
   ut_ad(!trx_mutex_own(lock->trx));
 
-  // fprintf(stderr, "[DEBUG] (%d) lock_grant - %p\n", lock->trx->id, lock);
-
   trx_mutex_enter(lock->trx);
 
   if (lock_get_mode(lock) == LOCK_AUTO_INC) {
@@ -2284,10 +1972,7 @@ static void lock_grant(lock_t *lock) {
   DBUG_PRINT("ib_lock", ("wait for trx " TRX_ID_FMT " ends",
                          trx_get_id_for_print(lock->trx)));
 
-  // [TPL]
-  tpl_lock_reset_wait_and_release_thread_if_suspended(lock);
-  //
-
+  lock_reset_wait_and_release_thread_if_suspended(lock);
   ut_ad(trx_mutex_own(lock->trx));
 
   trx_mutex_exit(lock->trx);
@@ -2324,13 +2009,8 @@ void lock_make_trx_hit_list(trx_t *hp_trx, hit_list_t &hit_list) {
           /* Check only for conflicting, granted locks on the current
           row. Currently, we don't rollback read only transactions,
           transactions owned by background threads. */
-          // [TPL] - trx_conf_lock_empty
-          if (trx == hp_trx 
-            || next->is_waiting() 
-            || trx->read_only 
-            || trx->mysql_thd == nullptr 
-            || !lock_has_to_wait(lock, next)
-            || !trx_conf_lock_empty(trx)) {
+          if (trx == hp_trx || next->is_waiting() || trx->read_only ||
+              trx->mysql_thd == nullptr || !lock_has_to_wait(lock, next)) {
             return false;
           }
 
@@ -2369,6 +2049,7 @@ static void lock_rec_cancel(
   lock_rec_reset_nth_bit(lock, lock_rec_find_set_bit(lock));
 
   trx_mutex_enter(lock->trx);
+
   lock_reset_wait_and_release_thread_if_suspended(lock);
 
   trx_mutex_exit(lock->trx);
@@ -2387,13 +2068,7 @@ static void lock_update_wait_for_edge(const lock_t *waiting_lock,
   ut_ad(waiting_lock->is_waiting());
   ut_ad(lock_has_to_wait(waiting_lock, blocking_lock));
   /* Still needs to wait, but perhaps the reason has changed */
-
-  // [TPL] - TRX_QUE_LOCK_WAIT 추가
-  // T1<-T2<-T3 인데, T1이 release
-  // 하지만 conf 관계 때문에 T3는 T2를 기다려야 한다
-  if ((waiting_lock->trx->lock.que_state == TRX_QUE_LOCK_WAIT) 
-      && (waiting_lock->trx->lock.blocking_trx.load() != blocking_lock->trx)) {
-    // fprintf(stderr, "[DEBUG] lock_update_wait_for_edge: %d(%p) <- %d(%p)\n", blocking_lock->trx->id, blocking_lock->trx, waiting_lock->trx->id,  waiting_lock->trx);
+  if (waiting_lock->trx->lock.blocking_trx.load() != blocking_lock->trx) {
     waiting_lock->trx->lock.blocking_trx.store(blocking_lock->trx);
     /* We call lock_wait_request_check_for_cycles() because the outgoing edge of
     wait_lock->trx has changed it's endpoint and we need to analyze the
@@ -2415,7 +2090,6 @@ static const lock_t *lock_rec_has_to_wait_for_granted(
     const size_t new_granted_index)
 
 {
-  // [5.7] 해당 page의 lock을 돌면서, 동일 레코드이고, compatible하면 grant 가능
   ut_ad(locksys::owns_page_shard(wait_lock->rec_lock.page_id));
   ut_ad(wait_lock->is_record_lock());
 
@@ -2429,16 +2103,13 @@ static const lock_t *lock_rec_has_to_wait_for_granted(
   deadlock, which is the next node on the deadlock cycle. */
   for (size_t i = new_granted_index; i--;) {
     const auto granted_lock = granted[i];
-    // fprintf(stderr, "[DEBUG] lock_rec_has_to_wait_for_granted 1: %d <- %d ?\n", granted_lock->trx->id, wait_lock->trx->id);
     if (lock_has_to_wait(wait_lock, granted_lock)) {
       return (granted_lock);
     }
   }
 
-  // new_granted_index 이후 즉, 이번 루프에서 새로 grant한 lock들 검사
   for (size_t i = new_granted_index; i < granted.size(); ++i) {
     const auto granted_lock = granted[i];
-    // fprintf(stderr, "[DEBUG] lock_rec_has_to_wait_for_granted 2: %d <- %d ?\n", granted_lock->trx->id, wait_lock->trx->id);
     ut_ad(granted_lock->trx->error_state != DB_DEADLOCK);
     ut_ad(!granted_lock->trx->lock.was_chosen_as_deadlock_victim);
 
@@ -2581,173 +2252,6 @@ static void lock_rec_grant_by_heap_no(lock_t *in_lock, ulint heap_no) {
   }
 }
 
-// [TPL]
-static void lock_rec_grant_by_heap_no_conflict(lock_t *in_lock, ulint heap_no) {
-  bool flag = false;
-
-  using LockDescriptorEx = std::pair<trx_schedule_weight_t, lock_t *>;
-  /* Preallocate for 1 lists with 64 locks. */
-  // 원래 4*32 이었는데 32/64/128 다 해보니까 큰 차이 없었음 -> 나중에 더 해보면 좋을듯
-  Scoped_heap heap(sizeof(lock_t*) * 64, UT_LOCATION_HERE);
-
-  RecID rec_id{in_lock, heap_no};
-  Locks<lock_t *> waiting{heap.get()};
-
-  const auto in_trx = in_lock->trx;
-  // fprintf(stderr, "[DEBUG] (%d) lock_rec_grant_by_heap_no_conflict - %p\n", in_trx->id, in_lock);
-
-  in_lock->hash_table().find_on_record(rec_id, [&](lock_t *lock) {
-    const auto trx = lock->trx;
-
-    if (!lock->is_waiting()) {
-      /* Granted locks should be before waiting locks. */
-      return false;
-    }
-    
-    if (trx->conflict_abort) {
-      // fprintf(stderr, "[DEBUG] (%d) lock_rec_grant_by_heap_no_conflict - continue %d: %d %d %s\n", in_trx->id, trx->id, trx->error_state, trx->lock.was_chosen_as_deadlock_victim, trx_get_que_state_str(trx));
-      return false;
-    }
-
-    waiting.push_back(lock);
-    return false;
-
-  }); // End-of-find_on_record()
-
-  if (waiting.empty()) return; /* Nothing to grant. */
-
-
-  for (lock_t *wait_lock : waiting) {
-    trx_t* wait_trx = wait_lock->trx;
-    // fprintf(stderr, "[DEBUG] (%d) lock_rec_grant_by_heap_no_conflict - wait_lock: %d %p (%p)\n", in_trx->id, wait_trx->id, wait_lock, wait_trx->lock.wait_lock.load());
-
-    // // [TPL] - group_commit
-    // if(wait_trx->pre_commit == TRX_COMMIT_ASYNC && trx_conf_lock_size(wait_trx) < 2) {
-    //   // Q. ASYNC면서 size==0인 경우가 있나?
-    //   // ASYNC COMMITTED 상태면서, 내가 마지막 conflict chain일 때
-    //   trx_mutex_enter(wait_trx);
-    //   fprintf(stderr, "[DEBUG] (%d) lock_rec_grant_by_heap_no_conflict - %d collect group(%d)\n", in_trx->id, wait_trx->id, trx_conf_lock_size(wait_trx));
-    //   wait_trx->pre_commit = TRX_COMMIT_GROUP;
-    //   in_trx->async_pending_list.push_back(wait_trx);
-    //   trx_mutex_exit(wait_trx);
-    // }
-    
-
-    // 1) wait_lock: T1<-T3(lockA), T2<-T3(lockB), T1은 lockA만 grant할 수 있음(blocking trx로 판단하면 안 됨!)
-    // 2) T0<-T1<-T2(X_LOCK 대기), T1 롤백이면 T2의 conflicter가 되기 전이므로 대기 락인 경우에도 grant 필요
-    //  - 이때 T0<-T2 graph 생성 필요
-    if((wait_trx->lock.wait_lock.load() == wait_lock && wait_trx->lock.blocking_trx.load() == in_trx)
-        || lock_conflicter(in_lock, wait_lock)) {
-      // 내가 Blocker 
-        
-      if (wait_trx->lock.que_state == TRX_QUE_LOCK_WAIT 
-          && lock_get_mode(wait_lock) == LOCK_X) {
-        const auto conflicting = tpl_lock_rec_other_has_conflicting_rollback(wait_lock->type_mode, rec_id, wait_trx);
-        if (conflicting.wait_for != nullptr) {
-          // fprintf(stderr, "[DEBUG] (%d) lock_rec_grant_by_heap_no_conflict - grant0: %d %p, conflicting: %d %p\n", in_trx->id, wait_trx->id, wait_lock, conflicting.wait_for->trx->id, conflicting.wait_for);
-          append_to_waitq(conflicting.wait_for, wait_lock, heap_no);
-        }
-        else {
-          // fprintf(stderr, "[DEBUG] (%d) lock_rec_grant_by_heap_no_conflict - grant01: %d %p\n", in_trx->id, wait_trx->id, wait_lock);
-          add_conflict(wait_trx, nullptr, wait_lock, heap_no);
-          lock_grant(wait_lock);
-        }
-        
-      } 
-      // [SR]
-      // S lock이면서 && T1이 wait_lock 때문에 대기 중이면서 pre commit이 아님 == lock-wait == read 전
-      // new wait 필요, 그 외엔 그냥 grant
-      else if (lock_get_mode(wait_lock) == LOCK_S 
-              && wait_trx->lock.que_state == TRX_QUE_LOCK_WAIT 
-              && wait_trx->pre_commit != TRX_COMMIT_PRE
-              && wait_trx->lock.wait_lock.load() == wait_lock) {
-        // future read 전이다 == lock wait임
-        const auto conflicting = tpl_lock_rec_other_has_conflicting_rollback(wait_lock->type_mode, rec_id, wait_trx);
-        if (conflicting.wait_for != nullptr) {
-          // fprintf(stderr, "[DEBUG] (%d) lock_rec_grant_by_heap_no_conflict - grant0s: %d %p, conflicting: %d %p (%p grant to %p)\n", in_trx->id, wait_trx->id, wait_lock, conflicting.wait_for->trx->id, conflicting.wait_for, in_trx, wait_trx);
-          append_to_waitq(conflicting.wait_for, wait_lock, heap_no);
-        } else {
-          // fprintf(stderr, "[DEBUG] (%d) lock_rec_grant_by_heap_no_conflict - grant0s: %d %p\n", in_trx->id, wait_trx->id, wait_lock);
-          add_conflict(wait_trx, nullptr, wait_lock, heap_no);
-          lock_grant(wait_lock);
-        }
-        
-          
-      } // end SR
-
-      else {
-        // // [TPL] - async commit
-        // // T2(in_trx)가 커밋하면 T1(blocker)을 찾아야 함. 찾아서 T1(blocker)<-T3(wait_trx)로
-        // trx_t* blocker = trx_conf_lock_conf(in_trx, in_lock);
-        // if (blocker) {
-        //   // Pre-Commit
-        //   // fprintf(stderr, "[DEBUG] (%d) lock_rec_grant_by_heap_no_conflict - %d<-%d(%p)\n", in_trx->id,blocker->id, wait_trx->id, wait_lock);
-        //   trx_conf_lock_set_blocker(wait_trx, wait_lock, blocker);
-        // } else {
-        //   // fprintf(stderr, "[DEBUG] (%d) lock_rec_grant_by_heap_no_conflict - grant11: %d %p\n", in_trx->id, wait_trx->id, wait_lock);
-        //   lock_grant(wait_lock);
-        // } 
-
-        // fprintf(stderr, "[DEBUG] (%d) lock_rec_grant_by_heap_no_conflict - grant11: %d %p\n", in_trx->id, wait_trx->id, wait_lock);
-        lock_grant(wait_lock);
-        // end async
-      } 
-      continue;
-    }
-
-  }
-}
-
-
-// [TPL]
-// Grant another trx after my lock X -> XX
-// Just end waiting, don't apply yet.
-static void tpl_lock_rec_grant_by_heap_no(lock_t *in_lock, ulint heap_no) {
-  ut_ad(in_lock->is_record_lock());
-  ut_ad(locksys::owns_page_shard(in_lock->rec_lock.page_id));
-  // fprintf(stderr, "[DEBUG] (%d) tpl_lock_rec_grant_by_heap_no\n", in_lock->trx->id);
-
-
-  const auto in_trx = in_lock->trx;
-  RecID rec_id{in_lock, heap_no};
-
-  // 해당 record의 Lock들 순회
-  in_lock->hash_table().find_on_record(rec_id, [&](lock_t *lock) {
-    // fprintf(stderr, "[DEBUG] (%d) tpl_lock_rec_grant_by_heap_no: %d %p\n", in_lock->trx->id, lock->trx->id, lock);
-    // 조건: LOCK_X/S, Waiting, 나 말고, TRX_QUE_LOCK_WAIT
-    if (lock_get_mode(lock) != LOCK_X && lock_get_mode(lock) != LOCK_S) {
-      // fprintf(stderr, "[DEBUG] (%d) tpl_lock_rec_grant_by_heap_no: %d %p, mode: %s\n", in_lock->trx->id, lock->trx->id, lock, lock_get_mode_str(lock));
-      return false;
-    }
-    
-
-    // 해당 lock이 대기하고 있는 이유가 나(in_lock) 때문이 아니면 무시
-    // memory_order_relaxed: atomicity만 보장, memory visibility 순서는 보장X (latch 얻기 전 수정된 값 볼 수 있음 -> race condition 피할 수 있음)
-    const auto trx = lock->trx;
-    const auto blocking_trx =
-        trx->lock.blocking_trx.load(std::memory_order_relaxed);
-    // fprintf(stderr, "[DEBUG] (%d) tpl_lock_rec_grant_by_heap_no: %d %p, blocking: %d\n", in_lock->trx->id, lock->trx->id, lock, blocking_trx->id);
-
-    if (blocking_trx == in_trx) {
-      // 내가 대기의 원인
-
-      trx_mutex_enter(trx);
-      // 대기 -> 충돌 상태로 바꿔주고 깨움
-      // fprintf(stderr, "[DEBUG] (%d) tpl_lock_rec_grant_by_heap_no: tpl_grant to %d %p\n", in_trx->id, trx->id, lock);
-
-      add_conflict(trx, in_trx, lock, heap_no);
-      trx->lock.wait_lock.store(nullptr);
-      trx->lock.blocking_trx.store(nullptr);
-
-
-      tpl_lock_wait_release_thread_if_suspended(lock);
-      trx_mutex_exit(trx);
-      return true;
-    }  
-    return false;      
-  });
-}
-
 /* Forward declaration to minimize the diff */
 static const lock_t *lock_has_to_wait_in_queue(const lock_t *wait_lock,
                                                const trx_t *blocking_trx);
@@ -2764,7 +2268,6 @@ static void lock_grant_or_update_wait_for_edge(lock_t *lock) {
     lock_grant(lock);
   } else {
     ut_ad(lock->trx != blocking_lock->trx);
-    // fprintf(stderr, "[DEBUG] (%d) lock_grant_or_update_wait_for_edge: %d <- %d\n", lock->trx->id, blocking_lock->trx->id, lock->trx->id);
     lock_update_wait_for_edge(lock, blocking_lock);
   }
 }
@@ -2805,14 +2308,12 @@ static void lock_rec_grant(lock_t *in_lock) {
   there are at least two waiters to arbitrate among, but in practice the current
   simple heuristic is good enough. */
 
-  // 레코드 페이지에서 waiting 중인 락이 하나라도 있는지 확인
-  // 실제로 대기 중인 애 없으면 바로 종료할 수 있게
   if (in_lock->hash_table().find_on_page(
           page_id, [](lock_t *lock) { return lock->is_waiting(); })) {
     mon_type_t grant_attempts = 0;
     for (ulint heap_no = 0; heap_no < lock_rec_get_n_bits(in_lock); ++heap_no) {
       if (lock_rec_get_nth_bit(in_lock, heap_no)) {
-        lock_rec_grant_by_heap_no_conflict(in_lock, heap_no);
+        lock_rec_grant_by_heap_no(in_lock, heap_no);
         ++grant_attempts;
       }
     }
@@ -3778,9 +3279,7 @@ static inline lock_t *lock_table_create(
   ut_ad(trx_mutex_own(trx));
   ut_ad(trx_can_be_handled_by_current_thread(trx));
 
-  // [TPL]
-  // check_trx_state(trx);
-  //
+  check_trx_state(trx);
   ++table->count_by_mode[type_mode & LOCK_MODE_MASK];
   /* For AUTOINC locking we reuse the lock instance only if
   there is no wait involved else we allocate the waiting lock
@@ -4116,10 +3615,8 @@ dberr_t lock_table(ulint flags, /*!< in: if BTR_NO_LOCKING_FLAG bit is set,
   to other transactions. Therefore we can keep them out
   of the read views. */
 
-  // [TPL] - || mode == LOCK_XX
-  if ((mode == LOCK_IX || mode == LOCK_X || mode == LOCK_XX) 
-      && !trx->read_only 
-      && trx->rsegs.m_redo.rseg == nullptr) {
+  if ((mode == LOCK_IX || mode == LOCK_X) && !trx->read_only &&
+      trx->rsegs.m_redo.rseg == nullptr) {
     trx_set_rw_mode(trx);
   }
 
@@ -4140,7 +3637,7 @@ dberr_t lock_table(ulint flags, /*!< in: if BTR_NO_LOCKING_FLAG bit is set,
   } else {
     lock_table_create(table, mode | flags, trx);
 
-    ut_a(!flags || mode == LOCK_S || mode == LOCK_X || mode == LOCK_XX);
+    ut_a(!flags || mode == LOCK_S || mode == LOCK_X);
 
     err = DB_SUCCESS;
   }
@@ -4303,6 +3800,7 @@ dberr_t lock_table_for_trx(dict_table_t *table, trx_t *trx,
 
   thr = static_cast<que_thr_t *>(que_fork_get_first_thr(
       static_cast<que_fork_t *>(que_node_get_parent(thr))));
+
   que_thr_move_to_run_state_for_mysql(thr, trx);
 
 run_again:
@@ -4388,6 +3886,7 @@ void lock_rec_unlock(
                lock_get_mode(lock2) == lock_mode &&
                lock_rec_get_rec_not_gap(lock2);
       }) == nullptr);
+
       lock_rec_release(lock, heap_no);
 
       trx_mutex_exit(trx);
@@ -4641,7 +4140,6 @@ namespace locksys {
   if (UT_LIST_GET_LEN(trx->lock.trx_locks) == 0) {
     return true;
   }
-  // fprintf(stderr, "[DEBUG] (%d) try_release_all_locks \n", trx->id);
   Global_shared_latch_guard shared_latch_guard{UT_LOCATION_HERE};
   /* In order to access trx->lock.trx_locks safely we need to hold trx->mutex.
   The transaction is already in TRX_STATE_COMMITTED_IN_MEMORY state and is no
@@ -4668,25 +4166,19 @@ namespace locksys {
   safe to access it),
   7. and only then perform any action on the lock.
   */
-  // trx_locks는 Btree split/merge 시에 수정될 수 있으므로 mutex 필요
-  // 하지만 락 획득 순서 제한 때문에 trx_mutex->lock_sys shard 순서 불가능!
-  // Sol. lock을 잠깐 추출하고 해당 lock에만 shared shard
   trx_mutex_enter(trx);
+
   ut_ad(trx->lock.wait_lock == nullptr);
   while ((lock = UT_LIST_GET_LAST(trx->lock.trx_locks)) != nullptr) {
     /* Following call temporarily releases trx->mutex */
     try_relatch_trx_and_shard_and_do(lock, [=]() {
       if (lock_get_type_low(lock) == LOCK_REC) {
-        // fprintf(stderr, "[DEBUG] (%d) try_release_all_locks - REC: %p\n", trx->id, lock);
         lock_rec_dequeue_from_page(lock);
       } else {
-        // fprintf(stderr, "[DEBUG] (%d) try_release_all_locks - TAB: %p\n", trx->id, lock);
         lock_table_dequeue(lock);
       }
     });
     if (shared_latch_guard.is_x_blocked_by_us()) {
-      // 내 shared lock 때문에 exclusive가 block 됐으면 중간에 해제 멈추고 false
-      // 날 기다리고 있던 애들을 위해 잠깐 풀어주고 나가기
       trx_mutex_exit(trx);
       return false;
     }
@@ -4695,7 +4187,6 @@ namespace locksys {
   trx_mutex_exit(trx);
   return true;
 }
-
 }  // namespace locksys
 
 /* True if a lock mode is S or X */
@@ -4859,7 +4350,7 @@ static void lock_table_print(FILE *file,         /*!< in: file where to print */
 
   if (lock_get_mode(lock) == LOCK_S) {
     fputs(" lock mode S", file);
-  } else if (lock_get_mode(lock) == LOCK_X || lock_get_mode(lock) == LOCK_XX) {
+  } else if (lock_get_mode(lock) == LOCK_X) {
     ut_ad(lock->trx->id != 0);
     fputs(" lock mode X", file);
   } else if (lock_get_mode(lock) == LOCK_IS) {
@@ -4904,9 +4395,7 @@ static void lock_rec_print(FILE *file,         /*!< in: file where to print */
     fputs(" lock mode S", file);
   } else if (lock_get_mode(lock) == LOCK_X) {
     fputs(" lock_mode X", file);
-  } else if (lock_get_mode(lock) == LOCK_XX) {
-		fputs(" lock_mode XX", file);
-	} else {
+  } else {
     ut_error;
   }
 
@@ -5416,7 +4905,7 @@ static void rec_queue_validate_latched(const buf_block_t *block,
   ut_ad(mutex_own(&trx_sys->mutex));
   ut_a(rec);
   ut_a(block->frame == page_align(rec));
-  // ut_ad(rec_offs_validate(rec, index, offsets));
+  ut_ad(rec_offs_validate(rec, index, offsets));
   ut_ad(!page_rec_is_comp(rec) == !rec_offs_comp(offsets));
   ut_ad(!index || index->is_clustered() || !dict_index_is_online_ddl(index));
 
@@ -5727,7 +5216,7 @@ dberr_t lock_rec_insert_check_and_lock(
 
         trx_mutex_enter(trx);
 
-        err = rec_lock.add_to_waitq(conflicting.wait_for, false);
+        err = rec_lock.add_to_waitq(conflicting.wait_for);
 
         trx_mutex_exit(trx);
       }
@@ -5800,16 +5289,11 @@ static void lock_rec_convert_impl_to_expl_for_trx(
 
     ut_ad(!trx_state_eq(trx, TRX_STATE_NOT_STARTED));
 
-    // [TPL] - LOCK_XX 추가
-    // [SR]
     if (!trx_state_eq(trx, TRX_STATE_COMMITTED_IN_MEMORY) &&
-        !lock_rec_has_expl(LOCK_XX | LOCK_REC_NOT_GAP, block, heap_no, trx)) { // end SR
-      // 내 선행 락이 implicit lock만 가지고 있었다면 그걸 x lock으로 생성해준다?
+        !lock_rec_has_expl(LOCK_X | LOCK_REC_NOT_GAP, block, heap_no, trx)) {
       ulint type_mode;
-      
-      // [TPL] - LOCK_XX
-      type_mode = (LOCK_REC | LOCK_XX | LOCK_REC_NOT_GAP);
-      // fprintf(stderr, "[DEBUG] (%d) lock_rec_convert_impl_to_expl_for_trx (%p %p)\n", trx->id, trx, rec);
+
+      type_mode = (LOCK_REC | LOCK_X | LOCK_REC_NOT_GAP);
 
       lock_rec_add_to_queue(type_mode, block, heap_no, index, trx, true);
     }
@@ -5828,7 +5312,7 @@ void lock_rec_convert_impl_to_expl(const buf_block_t *block, const rec_t *rec,
 
   ut_ad(!locksys::owns_exclusive_global_latch());
   ut_ad(page_rec_is_user_rec(rec));
-  // ut_ad(rec_offs_validate(rec, index, offsets));
+  ut_ad(rec_offs_validate(rec, index, offsets));
   ut_ad(!page_rec_is_comp(rec) == !rec_offs_comp(offsets));
 
   DEBUG_SYNC_C("lock_rec_convert_impl_to_expl");
@@ -5842,7 +5326,6 @@ void lock_rec_convert_impl_to_expl(const buf_block_t *block, const rec_t *rec,
   } else {
     ut_ad(!dict_index_is_online_ddl(index));
 
-    // 이 레코드에 x lock을 가지고 있는 트랜잭션 return
     trx = lock_sec_rec_some_has_impl(rec, index, offsets);
     if (trx) {
       DEBUG_SYNC_C("lock_rec_convert_impl_to_expl_will_validate");
@@ -5885,7 +5368,7 @@ dberr_t lock_clust_rec_modify_check_and_lock(
   dberr_t err;
   ulint heap_no;
 
-  // ut_ad(rec_offs_validate(rec, index, offsets));
+  ut_ad(rec_offs_validate(rec, index, offsets));
   ut_ad(index->is_clustered());
   ut_ad(block->frame == page_align(rec));
 
@@ -5993,7 +5476,7 @@ dberr_t lock_sec_rec_read_check_and_lock(
   ut_ad(!dict_index_is_online_ddl(index));
   ut_ad(block->frame == page_align(rec));
   ut_ad(page_rec_is_user_rec(rec) || page_rec_is_supremum(rec));
-  // ut_ad(rec_offs_validate(rec, index, offsets));
+  ut_ad(rec_offs_validate(rec, index, offsets));
   ut_ad(mode == LOCK_X || mode == LOCK_S);
 
   if (srv_read_only_mode || index->table->is_temporary()) {
@@ -6031,7 +5514,6 @@ dberr_t lock_sec_rec_read_check_and_lock(
   return (err);
 }
 
-// read 전에 lock 필요한지 확인하고 필요하면 Lock 획득
 dberr_t lock_clust_rec_read_check_and_lock(
     const lock_duration_t duration, const buf_block_t *block, const rec_t *rec,
     dict_index_t *index, const ulint *offsets, const select_mode sel_mode,
@@ -6044,7 +5526,7 @@ dberr_t lock_clust_rec_read_check_and_lock(
   ut_ad(page_rec_is_user_rec(rec) || page_rec_is_supremum(rec));
   ut_ad(gap_mode == LOCK_ORDINARY || gap_mode == LOCK_GAP ||
         gap_mode == LOCK_REC_NOT_GAP);
-  // ut_ad(rec_offs_validate(rec, index, offsets));
+  ut_ad(rec_offs_validate(rec, index, offsets));
 
   if (srv_read_only_mode || index->table->is_temporary()) {
     return (DB_SUCCESS);
@@ -6076,11 +5558,11 @@ dberr_t lock_clust_rec_read_check_and_lock(
   }
   DEBUG_SYNC_C("after_lock_clust_rec_read_check_and_lock");
 
-  // ut_d(locksys::rec_queue_latch_and_validate(block, rec, index, offsets));
+  ut_d(locksys::rec_queue_latch_and_validate(block, rec, index, offsets));
 
   ut_ad(err == DB_SUCCESS || err == DB_SUCCESS_LOCKED_REC ||
         err == DB_LOCK_WAIT || err == DB_DEADLOCK || err == DB_SKIP_LOCKED ||
-        err == DB_LOCK_NOWAIT || err == DB_CONFLICT_LOCKED_REC);
+        err == DB_LOCK_NOWAIT);
   return (err);
 }
 /** Checks if locks of other transactions prevent an immediate read, or passing
@@ -6359,10 +5841,6 @@ void lock_cancel_waiting_and_release(trx_t *trx) {
   const auto lock = trx->lock.wait_lock.load();
   ut_ad(locksys::owns_lock_shard(lock));
 
-  // if (!lock) {
-  //   fprintf(stderr, "[DEBUG] (%d) lock_cancel_waiting_and_release - !lock: %s, %d\n", trx->id, trx_get_que_state_str(trx), trx->abort);
-  // }
-
   if (lock_get_type_low(lock) == LOCK_REC) {
     lock_rec_dequeue_from_page(lock);
   } else {
@@ -6370,6 +5848,7 @@ void lock_cancel_waiting_and_release(trx_t *trx) {
 
     lock_table_dequeue(lock);
   }
+
   lock_reset_wait_and_release_thread_if_suspended(lock);
 }
 
@@ -6436,10 +5915,7 @@ void lock_trx_release_locks(trx_t *trx) /*!< in/out: transaction */
 
   trx_mutex_enter(trx);
 
-  // [TPL]
-  // check_trx_state(trx);
-  //
-
+  check_trx_state(trx);
   ut_ad(trx_state_eq(trx, TRX_STATE_COMMITTED_IN_MEMORY));
   ut_ad(!trx->in_rw_trx_list);
 
@@ -6493,14 +5969,12 @@ bool lock_cancel_if_waiting_and_release(const TrxVersion trx_version) {
     ut_ad(trx_mutex_own(&trx));
     ut_a(trx_version.m_version == trx.version.load());
     if ((trx.in_innodb & TRX_FORCE_ROLLBACK) != 0) {
-      // 락 대기 중 데드락 희생자로 선정된 척하여(wait path에서) 깨어나 롤백하도록
       /* A HP transaction wants to wake up and rollback trx by pretending it
       has been chosen a deadlock victim while waiting for a lock. */
 #ifdef UNIV_DEBUG
       ib::info(ER_IB_MSG_639, to_string(trx.killed_by).c_str(),
                ulonglong{trx.id});
 #endif /* UNIV_DEBUG */
-      // 대기 해제 후 알아서 victim 경로로 빠지게
       trx.lock.was_chosen_as_deadlock_victim = true;
     } else {
       /* This case is currently used by kill_connection. Canceling the
@@ -6592,7 +6066,7 @@ bool lock_trx_has_rec_x_lock(que_thr_t *thr, const dict_table_t *table,
   const trx_t *trx = thr_get_trx(thr);
   locksys::Shard_latch_guard guard{UT_LOCATION_HERE, block->get_page_id()};
   ut_a(lock_table_has(trx, table, LOCK_IX) || table->is_temporary());
-  ut_a(tpl_lock_rec_has_expl(LOCK_X | LOCK_REC_NOT_GAP, block, heap_no, trx, NULL) ||
+  ut_a(lock_rec_has_expl(LOCK_X | LOCK_REC_NOT_GAP, block, heap_no, trx) ||
        table->is_temporary());
   return (true);
 }
@@ -6700,16 +6174,16 @@ void Deadlock_notifier::notify(const ut::vector<const trx_t *> &trxs_on_cycle,
     const trx_t *blocked_trx = trxs_on_cycle[0 < i ? i - 1 : n - 1];
     const lock_t *blocking_lock =
         lock_has_to_wait_in_queue(blocked_trx->lock.wait_lock, trx);
-    // ut_a(blocking_lock);
+    ut_a(blocking_lock);
 
     print_title(i, "TRANSACTION");
     print(trx, 3000);
 
     print_title(i, "HOLDS THE LOCK(S)");
-    if (blocking_lock) print(blocking_lock); // [TPL]
+    print(blocking_lock);
 
     print_title(i, "WAITING FOR THIS LOCK TO BE GRANTED");
-    if (trx->lock.wait_lock) print(trx->lock.wait_lock); // [TPL]
+    print(trx->lock.wait_lock);
   }
   const auto victim_it =
       std::find(trxs_on_cycle.begin(), trxs_on_cycle.end(), victim_trx);
@@ -6793,8 +6267,6 @@ void lock_trx_alloc_locks(trx_t *trx) {
   trx->mutex. In theory nobody else should use the trx object while it is being
   constructed, but how can we (the lock-sys) "know" about it and why risk? */
   trx_mutex_enter(trx);
-
-  // sz = REC_LOCK_SIZE * REC_LOCK_CACHE 만큼 한 번에 할당하고
   ulint sz = REC_LOCK_SIZE * REC_LOCK_CACHE;
   byte *ptr = reinterpret_cast<byte *>(
       ut::malloc_withkey(UT_NEW_THIS_FILE_PSI_KEY, sz));
@@ -6803,10 +6275,8 @@ void lock_trx_alloc_locks(trx_t *trx) {
   the rest of the elements. The allocated chunk pointer is always
   at index 0. */
 
-  // ptr += REC_LOCK_SIZE로 쪼개서
   for (ulint i = 0; i < REC_LOCK_CACHE; ++i, ptr += REC_LOCK_SIZE) {
     ut_a(ut::is_aligned_as<lock_t>(ptr));
-    // trx->lock.rec_pool에 포인터들을 push_back
     trx->lock.rec_pool.push_back(reinterpret_cast<ib_lock_t *>(ptr));
   }
 
@@ -6825,766 +6295,3 @@ void lock_notify_about_deadlock(const ut::vector<const trx_t *> &trxs_on_cycle,
                                 const trx_t *victim_trx) {
   Deadlock_notifier::notify(trxs_on_cycle, victim_trx);
 }
-
-// [TPL]
-// Q. 8.4 스타일로 hash 적용해야 하나? page, space, heap_no 비교로 충분한지?
-bool
-tpl_lock_rec_on_heap(lock_t* lock, ulint heap_no, buf_block_t*	block) {
-  const page_id_t lock_page_id = lock->rec_lock.page_id;
-	const space_id_t lock_space_id = lock_page_id.space();
-	const space_id_t lock_page_no = lock_page_id.page_no();
-
-  const space_id_t space_id= block->page.id.space();
-	const space_id_t page_no = block->page.id.page_no();
-
-	if(lock_get_wait(lock)
-		&& (lock_space_id == space_id)
-		&& (lock_page_no == page_no)
-		&& lock_rec_get_nth_bit(lock, heap_no)) {
-		// 대기 필요
-		return true;
-	} 
-  // fprintf(stderr, "[DEBUG] (%d) tpl_lock_rec_on_heap - %d / %d %d / %d %d / %d\n", lock->trx->id, lock_get_wait(lock), lock_space_id, space_id, lock_page_no, page_no, lock_rec_get_nth_bit(lock, heap_no));
-	return false;
-}
-
-// [TPL] - lock_rec_lock_xx
-void
-lock_rec_lock_xx(
-/*===============*/
-	const buf_block_t*	block,	/*!< in: buffer block containing
-					the record */
-	ulint			heap_no,/*!< in: heap number of record */
-	dict_index_t*		index,	/*!< in: index of record */
-	que_thr_t*		thr)	/*!< in: query thread */
-{
-	
-	trx_t*	trx = thr_get_trx(thr);
-  lock_t* old_lock = nullptr;
-  // fprintf(stderr, "[DEBUG] (%d) lock_rec_lock_xx\n", trx->id);
-	
-  if (trx->conflict_abort) {
-    // cascading abort -> tpl grant 금지
-    return;
-  }
-	/* 1. Find existing old LOCK_X of this record */
-  // TODO: Latching Order: lock_sys -> trx
-  locksys::Shard_latch_guard guard{UT_LOCATION_HERE, block->get_page_id()};
-  old_lock = const_cast<lock_t*>(tpl_lock_rec_has_expl(LOCK_XX, block, heap_no, trx, LOCK_X));
- 
-	
-	if (old_lock == nullptr) {
-		/* It already has XX_LOCK. So no need to upgrade */
-    // fprintf(stderr, "[DEBUG] (%d) lock_rec_lock_xx - old_lock == NULL\n", trx->id);
-		return;
-	}
-	/* 2. Upgrade LOCK_X to LOCK_XX */
-	// fprintf(stderr, "[DEBUG] (%d) lock_rec_lock_xx - %p\n", old_lock->trx->id, old_lock);
-
-  if (lock_get_wait(old_lock)) {
-    old_lock->type_mode = (LOCK_REC | ((LOCK_XX | LOCK_REC_NOT_GAP) & ~LOCK_TYPE_MASK)) | LOCK_WAIT;
-  } else {
-    old_lock->type_mode = LOCK_REC | ((LOCK_XX | LOCK_REC_NOT_GAP) & ~LOCK_TYPE_MASK);
-  }
-
-	/* 3. Grant waiting locks */
-	// fprintf(stderr, "[DEBUG] lock_rec_lock_xx - %d, %p, wait: %d\n", old_lock->trx->id, old_lock, lock_get_wait(old_lock));
-	tpl_lock_rec_grant_by_heap_no(old_lock, heap_no);
-}
-
-// [TPL]
-// Loop in lock hash(heap_no) and find its log of rec
-// if log, apply to old_vers
-rec_t*
-lock_apply_log(const buf_block_t*	block, 
-				rec_t*			old_vers,
-				dict_index_t*	clust_index,
-				ulint*			offsets,
-				trx_t*			trx,
-        const rec_t*      rec) 
-{
-
-  // fprintf(stderr, "[DEBUG] (%d) lock_apply_log - START\n", trx->id);
-
-  // mysql 포함 or conf_pool 없으면 or customer 테이블이면
-  if ((std::strstr(clust_index->table_name, "mysql") != nullptr)  || !trx->lock.conf_lock_pool.size() || strcmp(clust_index->table_name, "tpcc/customer") == 0) {
-    // insert, update index 등등
-
-    // fprintf(stderr, "%s %d\n", clust_index->table_name, trx->lock.conf_lock_pool.size());
-    return nullptr;
-  }
-  bool flag = false;
-  rec_t* target_future_vers = nullptr;
-  ulint target_future_vers_size = 0;
-  lock_t* lock;
-  trx_t* blocker;
-  conflict_t* conf = nullptr;
-
-  // TODO: 이거 없애고 back()으로 가져올 것
-  for (conflict_t* elem : trx->lock.conf_lock_pool) {
-    // fprintf(stderr, "[DEBUG] (%d) lock_apply_log - conf: %p (%d vs %d)\n", trx->id, elem->conf_lock, elem->heap_no, page_rec_get_heap_no(rec));
-    if ((elem->conf_lock->rec_lock.page_id == block->get_page_id()) 
-        && (elem->heap_no == page_rec_get_heap_no(rec))) {
-      conf = elem;
-    }
-  }
-
-  if (!conf) {
-    // fprintf(stderr, "[DEBUG] (%d) lock_apply_log - return nullptr, %s (rec: %p)\n", trx->id, clust_index->table_name, rec);
-    return nullptr;
-  }
-  
-  if (conf->future_vers) {
-    // fprintf(stderr, "[DEBUG] (%d) lock_apply_log - read mine (%p) %s, lock: %p, rec: %p\n", trx->id, conf->future_vers, clust_index->table_name, conf->conf_lock, rec);
-    return conf->future_vers;
-  }
-
-
-	// no Conlfict -> 그냥 rec 읽어서 future ver 생성
-  // || conf 생성하자마자 바로 granted -> 그럼 apply됐다는 거니까 걍 rec 읽기
-  if (conf->blocker == nullptr || conf->deleted) {
-    // fprintf(stderr, "[DEBUG] (%d) lock_apply_log - no conf, lock: %p\n", trx->id, conf->conf_lock);
-    goto read_rec;
-	}
-  
-
-  // 첫 future read->heap 공간 생성 (trx_init 때 empty)
-  // WH, DT는 레코드 하나 당 103~105 (제일 많음)
-  // Stock: 320~330
-  // customer: 500~670
-  // future_heap에 메모리 할당
-  
-  // fprintf(stderr, "[DEBUG] (%d) lock_apply_log - malloc(%d)\n", trx->id, rec_offs_size(offsets));
-
-  // T1'<-T2: T2가 T1의 conf_lock(future_ver을 찾아야 함)
-  blocker = conf->blocker;
-  trx_mutex_enter(blocker);
-  for (auto elem : blocker->lock.conf_lock_pool) {
-    if (elem) {
-
-      lock = elem->conf_lock;
-      if (lock->rec_lock.page_id == block->get_page_id() && (elem->heap_no == page_rec_get_heap_no(rec))) {
-  
-        old_vers = elem->future_vers;
-
-        // [SR]
-        if(lock_get_mode(lock) == LOCK_S) {
-          if (elem->future_vers) {
-            target_future_vers = elem->future_vers;
-            target_future_vers_size = elem->future_vers_size;
-
-            // fprintf(stderr, "[DEBUG] (%d) lock_apply_log - copy from trx1 (%d %p at %p) %s\n", trx->id, blocker->id, elem->conf_lock, elem->future_vers, clust_index->table_name);
-            flag = true;
-            break; 
-            // continue; // [TPL] - async commit
-          } 
-        }
-        else { // end SR
-          if (elem->future_vers && elem->updated) {
-            // T1의 futue vers를 카피해서 읽기
-            target_future_vers = elem->future_vers;
-            target_future_vers_size = elem->future_vers_size;
-
-            // fprintf(stderr, "[DEBUG] (%d) lock_apply_log - copy from trx (%d %p), rec: %p %s, lock: %p\n", trx->id, blocker->id, elem->conf_lock, rec, clust_index->table_name, conf->conf_lock);
-            flag = true;
-            break;
-            // continue; // [TPL] - async commit
-          } 
-
-        }
-      }
-    } 
-    
-  }
-  // // [TPL] - async commit
-  // if (blocker->lock.conf_lock_pool_async.size() != 0) {
-  //   // fprintf(stderr, "[DEBUG] (%d) lock_apply_log ASYNC - %d (%d)\n", trx->id, blocker->id, blocker->lock.conf_lock_pool_async.size());
-  //   for (auto elem: blocker->lock.conf_lock_pool_async) {
-  //     // fprintf(stderr, "[DEBUG] (%d) lock_apply_log ASYNC - %u %u vs %u %u, %d vs %d\n", trx->id, elem->page_id.page_no(), elem->page_id.space(), block->get_page_id().page_no(), block->get_page_id().space(), elem->heap_no, page_rec_get_heap_no(rec));
-  //     if ((elem->page_id == block->get_page_id())) {
-  //       target_future_vers = elem->future_vers;
-  //       target_future_vers_size = elem->future_vers_size;
-  //       // fprintf(stderr, "[DEBUG] (%d) lock_apply_log ASYNC - %p, size: %u\n", trx->id, target_future_vers, target_future_vers_size);
-  //       flag = true;
-  //     }
-  //   }
-  // } // end async
-
-  trx_mutex_exit(blocker);
-read_rec:
-  if (!flag) {
-    target_future_vers = const_cast<rec_t*>(rec);
-    target_future_vers_size = rec_offs_size(offsets);
-    // fprintf(stderr, "[DEBUG] (%d) lock_apply_log - copy from rec of %d(rec: %p) %s, lock: %p\n", trx->id, row_get_rec_trx_id(rec, clust_index, offsets), rec, clust_index->table_name, conf->conf_lock);
-  }
-
-  if (target_future_vers_size) {
-    byte*	future_buf = static_cast<byte*>(mem_heap_alloc(trx->conflict_heap, target_future_vers_size));
-    conf->future_vers = rec_copy(future_buf, target_future_vers, offsets);
-    conf->future_vers_size = target_future_vers_size;
-    
-    // fprintf(stderr, "[DEBUG] (%d) lock_apply_log final - lock: %p, %p, size: %d\n", trx->id, conf->conf_lock, target_future_vers, target_future_vers_size);
-  }
-
-  // [SR]
-  lock_t* conf_lock = conf->conf_lock;
-  if (conf_lock && lock_get_mode(conf_lock) == LOCK_S) {
-    locksys::Shard_latch_guard guard{UT_LOCATION_HERE, conf_lock->rec_lock.page_id};
-    tpl_lock_rec_grant_by_heap_no(conf_lock, page_rec_get_heap_no(rec));
-  } // end SR
-
-  return conf->future_vers;
-
-}
-
-
-static inline void mark_conflict_abort(trx_t* t) {
-  t->abort = true;
-  t->error_state = DB_DEADLOCK;
-  t->conflict_abort = TRX_ABORT_MARKED;
-}
-
-void lock_cascade_abort(trx_t* in_trx) {
-
-  /* The length of the list is an atomic and the number of locks can't change
-  from zero to non-zero or vice-versa, see explanation below. */
-  if (UT_LIST_GET_LEN(in_trx->lock.trx_locks) == 0) {
-    return;
-  }
-
-  // hit_list_t abort_list;
-  abort_list_t abort_list;
-
-  lock_make_trx_abort_list(in_trx, abort_list);
-
-  if (abort_list.empty()) {
-    // fprintf(stderr, "[DEBUG] (%d) lock_cascade_abort - empty\n", in_trx->id);
-    return;
-  }
-
-  abort_list_t::reverse_iterator end = abort_list.rend();
-  for (abort_list_t::reverse_iterator it = abort_list.rbegin(); it != end; ++it) {
-
-    trx_t* trx = it->trx;
-    lock_t* lock = it->lock;
-    const auto mode = lock_get_mode(lock);
-
-    trx_mutex_enter(trx);
-    if (trx->conflict_abort != TRX_NOT_ABORTED) {
-      // fprintf(stderr, "[DEBUG] (%d) lock_cascade_abort - %d %p: PASS (ABORTED)\n", in_trx->id, trx->id, lock);
-      trx_mutex_exit(trx);
-      continue;
-    }
-
-    const auto que_state = trx->lock.que_state;      
-    lock_t* const wait_lock = trx->lock.wait_lock.load();
-
-
-    // [SR]
-   if(mode == LOCK_S) {
-      if (que_state == TRX_QUE_LOCK_WAIT
-          && trx->pre_commit != TRX_COMMIT_PRE
-          && wait_lock == lock) {
-        // fprintf(stderr, "[DEBUG] (%d) lock_cascade_abort - %d %p: PASS (S WAIT)\n", in_trx->id, trx->id, lock);
-        trx_mutex_exit(trx);
-        continue;
-      }
-      // fprintf(stderr, "[DEBUG] (%d) lock_cascade_abort - %d %p: ABORT (S), %s\n", in_trx->id, trx->id, lock, lock->index->table_name);
-      mark_conflict_abort(trx); // end SR
-    } else if((que_state == TRX_QUE_LOCK_WAIT) && (mode == LOCK_X)) {
-      // fprintf(stderr, "[DEBUG] (%d) lock_cascade_abort - %d %p: PASS (WAIT)\n", in_trx->id, trx->id, lock);
-      trx_mutex_exit(trx);
-      continue;
-    } else {
-      // fprintf(stderr, "[DEBUG] (%d) lock_cascade_abort - %d %p: ABORT, %s\n", in_trx->id, trx->id, lock, lock->index->table_name);
-      mark_conflict_abort(trx);
-    }
-
-    // if (que_state == TRX_QUE_LOCK_WAIT) {
-    //   fprintf(stderr, "[DEBUG] (%d) lock_cascade_abort - %d %p: WAKE UP!\n", in_trx->id, trx->id, lock);
-    //   lock_reset_wait_and_release_thread_if_suspended(trx->lock.wait_lock.load());
-    // }
-
-    trx_mutex_exit(trx);
-    if (que_state == TRX_QUE_LOCK_WAIT) {
-      locksys::tpl_run_if_waiting(trx, [&]() {
-        // trx_mutex_exit(victim_trx);
-        // fprintf(stderr, "[DEBUG] (%d) lock_cascade_abort - wake up!: %d %s\n", trx->id, victim_trx->id, trx_get_que_state_str(victim_trx));
-        // lock_cancel_waiting_and_release(victim_trx);
-        lock_reset_wait_and_release_thread_if_suspended(trx->lock.wait_lock.load());
-      });
-
-    }
-    // trx_mutex_exit(trx);
-  } 
-}
-
-// cc. try_release_all_locks
-void lock_make_trx_abort_list(trx_t *in_trx, abort_list_t &abort_list) {
-  // fprintf(stderr, "[DEBUG] (%d) lock_make_trx_abort_list\n", in_trx->id);
-
-  // trx_mutex_enter(in_trx);
-  locksys::Global_shared_latch_guard shared_latch_guard{UT_LOCATION_HERE}; //얘가 성능 더 낮음 뭐지??
-  // locksys::Global_exclusive_latch_guard guard{UT_LOCATION_HERE};
-  
-
-  lock_t* in_lock;
-
-  for (in_lock = UT_LIST_GET_FIRST(in_trx->lock.trx_locks);
-        in_lock != nullptr;
-        in_lock = UT_LIST_GET_NEXT(trx_locks, in_lock)) {
-    if (in_lock->hash_table().find_on_page(in_lock->rec_lock.page_id, [](lock_t *lock) { return (lock->is_waiting()); })) 
-    {
-      // in_lock은 여러 개의 heap_no를 동시에 커버할 수 있고,그 각각의 heap_no에 대해 대기 중인 트랜잭션도 다를 수 있기 때문에, bitmap을 순회하면서 heap_no 단위로 grant를 시도하는 방식이 필요
-      for (ulint heap_no = 0; heap_no < lock_rec_get_n_bits(in_lock); ++heap_no) {
-        if (lock_rec_get_nth_bit(in_lock, heap_no)) {
-          // fprintf(stderr, "[DEBUG] (%d) lock_cascade_abort\n", in_trx->id);
-          collect_cascade_rollback(abort_list, in_lock);
-        }
-      }
-    }
-  }
-  // trx_mutex_exit(in_trx);
-}
-
-void collect_cascade_rollback(abort_list_t &abort_list, lock_t* in_lock) {
-  trx_t* in_trx = in_lock->trx;
-
-  bool flag = false;
-
-  // fprintf(stderr, "[DEBUG] (%d) collect_cascade_rollback - from: %p\n", in_trx->id, in_lock);
-
-  in_lock->hash_table().find_on_record(
-    RecID{in_lock, lock_rec_find_set_bit(in_lock)}, [&](lock_t *lock_loop) {
-      trx_t *trx_loop = lock_loop->trx;
-
-      if (!flag) {
-        if (trx_loop == in_trx) {
-          // 발견, 내 뒤만 rollback
-          flag = true;
-        } 
-        return false;
-      }
-
-      // fprintf(stderr, "[DEBUG] (%d) collect_cascade_rollback - loop: %d %p\n", in_trx->id, trx_loop->id, lock_loop);
-
-      if ((trx_loop != in_trx) && (lock_loop->is_waiting())) {
-        // trx_mutex_enter(trx_loop);
-        if (trx_loop->conflict_abort == TRX_NOT_ABORTED) {
-          // fprintf(stderr, "[DEBUG] (%d) collect_cascade_rollback - push(%d %p)\n", in_trx->id, trx_loop->id, lock_loop);
-          abort_list.push_back(abort_t{trx_loop, lock_loop});
-          return false;
-        }
-      }
-  });
-  // fprintf(stderr, "CAS %d %s\n", depth, in_lock->index->table_name);
-}
-
-// if all conf locks are granted, return true
-bool trx_conf_lock_empty(trx_t* trx) {
-  for (auto* elem : trx->lock.conf_lock_pool) {
-    if (elem && !elem->deleted) {
-      // 아직 삭제되지 않은 Lock 존재
-      return false;
-    }
-  }
-  return true;
-}
-
-// [TPL] - group_commit
-// return size of conf_list
-// int trx_conf_lock_size(trx_t* trx) {
-//   int size = 0;
-//   for (auto* elem : trx->lock.conf_lock_pool) {
-//     if (elem && !elem->deleted) {
-//       // 아직 삭제되지 않은 Lock 존재
-//       size++;
-//     }
-//   }
-//   return size;
-// }
-
-// // if lock is in conf_list, return blocekr(trx)
-// trx_t* trx_conf_lock_conf(trx_t* trx, lock_t* lock) {
-//   for (auto* elem : trx->lock.conf_lock_pool) {
-//     if (elem && (!elem->deleted) && (elem->conf_lock == lock)) {
-//       // 해당 lock이 conf list에 존재
-//       return elem->blocker;
-//     }
-//   }
-//   return nullptr;
-// }
-
-// // [TPL] - async commit
-// // Copy T2's future_vers to T1's future_vers
-// trx_t* trx_conf_overwrite_future_vers(trx_t* t1, trx_t* t2, page_id_t page_id) {
-
-//   // 1. find T2's future_vers
-//   rec_t* t2_future_vers = nullptr;
-//   ulint t2_future_vers_size = 0;
-
-//   if(!t2->lock.conf_lock_pool_async.empty()) {
-//     for (conflict_t* elem : t2->lock.conf_lock_pool_async) {
-//       if (elem 
-//         && (!elem->deleted)
-//         && (elem->page_id == page_id)) {
-//         // 해당 lock이 conf list에 존재
-//         t2_future_vers = elem->future_vers;
-//         t2_future_vers_size = elem->future_vers_size;
-//         // fprintf(stderr, "[DEBUG] (%d) trx_conf_overwrite_future_vers: copy ASYNC  - %p %p\n", t2->id, t2_future_vers, t2_future_vers_size);
-//       }
-//     }
-//   } else {
-//     // Q. stock1, stock2 log 둘 다 있으면? -> heap no도 필요 (나중에 구현 필요)
-//     for (conflict_t* elem : t2->lock.conf_lock_pool) { // log3도 카피해야 하는데..
-//       if (elem 
-//         && (!elem->deleted)
-//         && (elem->conf_lock->rec_lock.page_id == page_id)) {
-//         // 해당 lock이 conf list에 존재
-//         t2_future_vers = elem->future_vers;
-//         t2_future_vers_size = elem->future_vers_size;
-//         // fprintf(stderr, "[DEBUG] (%d) trx_conf_overwrite_future_vers: copy  - %p %u\n", t2->id, t2_future_vers, t2_future_vers_size);
-//       }
-//     }
-
-//   }
-//   if (!t2_future_vers_size) return nullptr;
-
-//   byte*	future_buf = static_cast<byte*>(mem_heap_alloc(t1->conflict_heap, t2_future_vers_size));
-//   ut_memcpy(future_buf, t2_future_vers, t2_future_vers_size);
-
-//   conflict_t* c = static_cast<conflict_t*>(mem_heap_zalloc(t1->conflict_heap, sizeof(conflict_t)));
-//   c->future_vers = future_buf;
-//   c->future_vers_size = t2_future_vers_size;
-//   c->page_id = page_id;
-//   t1->lock.conf_lock_pool_async.push_back(c);
-//   fprintf(stderr, "[DEBUG] (%d) trx_conf_overwrite_future_vers: %p->%p %d to %d (%d)\n", t2->id, t2_future_vers,c->future_vers, c->future_vers_size, t1->id, t1->lock.conf_lock_pool_async.size());
-
-//   return nullptr;
-// }
-
-// // if lock is in conf_list, return true
-// trx_t* trx_page_lock_conf(trx_t* trx, page_id_t page_id) {
-//   for (auto* elem : trx->lock.conf_lock_pool) {
-//     // if (elem) fprintf(stderr, "[DEBUG] (%d) trx_page_lock_conf: %p %d %d\n", trx->id, elem->conf_lock, elem->blocker->id, elem->deleted);
-//     if (elem 
-//         && (!elem->deleted)
-//         && (elem->conf_lock->rec_lock.page_id == page_id)) {
-//       // 해당 page의 loc conf list에 존재
-//       // TODO: 같은 페이지의 다른 레코드에 대한 로그가 중복될 수도 있다. 하지만 TPCC 상에서는 그런 일이 없으니까 우선 임의로 구현
-//       return elem->blocker;
-//     }
-//   }
-//   return nullptr;
-// } // end async
-
-
-// // [TPL] - Group commit
-// future_apply_t trx_last_future_vers(lock_t* in_lock) {
-// 	rec_t* apply_vers = nullptr;
-// 	byte* apply_log = nullptr;
-//   int cnt = 0;
-
-// 	bool flag = false;
-
-//   locksys::Shard_latch_guard guard{UT_LOCATION_HERE, in_lock->rec_lock.page_id};
-//   in_lock->hash_table().find_on_record(RecID{in_lock, lock_rec_find_set_bit(in_lock)}, [&](lock_t *lock_loop) {
-
-//     trx_t *trx_loop = lock_loop->trx;
-//     // fprintf(stderr, "[DEBUG] (%d) trx_last_future_vers - lock: %p, trx_loop: %d\n", in_lock->trx->id, lock_loop, trx_loop->id);
-
-
-//     if (!flag) {
-//       if (trx_loop == in_lock->trx) {
-//       // 발견, 내 뒤부터 skip 가능 (근데 어차피 내가 제일 앞 lock일 것)
-//       flag = true;
-//       } 
-//       return false;
-//     }
-
-//     trx_mutex_enter(trx_loop);
-//     if (trx_loop->pre_commit == TRX_COMMIT_PRE_FINAL && trx_loop->conflict_abort == TRX_NOT_ABORTED) {
-//       // final commit이니까 남은 Log 바로 가져오면 됨
-//       for(conflict_t* elem: trx_loop->lock.conf_lock_pool) {
-//         // fprintf(stderr, "[DEBUG] (%d) trx_last_future_vers: %d %p, field_no: %u vs %u\n", trx->id, elem->blocker->id, elem->conf_lock, field_no, elem->field_no);
-//         if (elem && !elem->deleted) {
-//           apply_vers = elem->future_vers;
-//           apply_log = elem->future_log; // 이거 없으면 에러
-//           // fprintf(stderr, "[DEBUG] (%d) trx_last_future_vers - cur: %d, vers: %p\n", in_lock->trx->id, trx_loop->id, apply_vers);
-//           elem->future_log = nullptr;
-//           trx_mutex_exit(trx_loop); 
-//           // cnt++;
-//           return false;
-//         }
-//       }
-//     } 
-//     trx_mutex_exit(trx_loop); 
-//     return true;
-//   });
-
-//   // fprintf(stderr, "%d\n", cnt);
-//   future_apply_t fa;
-//   fa.future_vers = apply_vers;
-//   fa.future_log = apply_log;
-//   return fa;
-
-// }
-
-// // if lock is in conf_list, set new blocekr
-// trx_t* trx_conf_lock_set_blocker(trx_t* trx, lock_t* lock, trx_t* new_blocker) {
-//   for (auto* elem : trx->lock.conf_lock_pool) {
-//     if (elem && (!elem->deleted) && (elem->conf_lock == lock)) {
-//       // 해당 lock이 conf list에 존재
-//       elem->blocker = new_blocker;
-//     }
-//   }
-//   return nullptr;
-// }
-
-// set trx's wait_lock <- conf_lock.back(not deleted)
-// conf lock이 없을 때 쓰면 안 됨
-bool trx_set_latest_conf_to_wait(trx_t* trx) {
-  bool flag = false;
-  int size = 0;
-
-  for (auto* elem : trx->lock.conf_lock_pool) {
-    if (elem && (!elem->deleted) && (elem->blocker)) {
-      // fprintf(stderr, "[DEBUG] (%d) trx_set_latest_conf_to_wait: %d %p\n", trx->id, elem->blocker->id, elem->conf_lock);
-      trx->lock.blocking_trx.store(elem->blocker);
-      trx->lock.wait_lock.store(elem->conf_lock);
-
-      flag = true;
-      size++;
-      break;
-    }
-  }
-
-  // // [TPL] - group commit
-  // if (size == 1) {
-  //   trx->pre_commit = TRX_COMMIT_PRE_FINAL;
-  // } 
-  // //
-
-  return flag;
-}
-
-
-
-// Return true if lock1's trx is conflicter of lock2
-// Why not use trx as paramer?: 
-// ex) T1<-T3(lockA), T2<-T3(lockB)
-// When T1's release, T1 only can grant to lockA, not lockB
-// But T1 is also in T3's conf_lock_pool. So this function must check T1 is the 'real' conflicter of lock2
-// lock2's trx(T2)의 conf_lock_pool에 접근 -> lock2를 찾아서 -> lock2의 blocker가 lock2's trx(T1)이 맞는지 확인
-bool lock_conflicter(lock_t* lock1, lock_t* lock2) {
-  trx_t* t1 = lock1->trx;
-
-  for (auto* elem : lock2->trx->lock.conf_lock_pool) {
-    if (elem 
-        && (elem->conf_lock == lock2)
-        && (!elem->deleted)
-        && (elem->blocker == t1)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-
-// bool lock_conflict_blocker(trx_t* m_blocker, trx_t* m_trx) {
-//   if (m_blocker == nullptr || m_trx == nullptr) return false;
-//   if (m_blocker == m_trx) return true;
-
-//   conf_lock_pool_t stack;
-//   stack.reserve(m_blocker->lock.conf_lock_pool.size());
-
-//   // 트랜잭션 단위 방문 집합
-//   std::unordered_set<trx_t*> visited_trx;
-//   visited_trx.reserve(128); // 워크로드에 맞춰 적당히
-
-//   // m_blocker에서 1-hop seed 적재
-//   for (auto* elem : m_blocker->lock.conf_lock_pool) {
-//     if (elem->deleted || elem->blocker == nullptr) continue;
-//     if (elem->blocker == m_trx) return true; // fast-path
-//     stack.push_back(elem);
-//   }
-
-//   // 본 탐색 시작
-//   while (!stack.empty()) {
-//     conflict_t* ce = stack.back();
-//     stack.pop_back();
-
-//     trx_t* cur_trx  = ce->blocker;
-//     lock_t* cur_lck = ce->conf_lock;
-//     if (UNIV_LIKELY(cur_trx == nullptr)) {
-//       ut_error; // 유지 (디버깅 시점)
-//     }
-
-//     // 트랜잭션 단위 중복 방문 차단
-//     auto [it, inserted] = visited_trx.insert(cur_trx);
-//     if (!inserted) continue; // 이미 방문한 trx면 skip
-
-//     if (cur_trx == m_trx) return true;
-
-//     // 다음 레벨 확장
-//     const auto& pool = cur_trx->lock.conf_lock_pool;
-//     for (auto* next : pool) {
-//       if (next->deleted) continue;
-//       trx_t* nb = next->blocker;
-//       if (nb == nullptr || nb == cur_trx) continue; // 무의미/자가루프
-//       if (nb == m_trx) return true; // fast-path
-//       // visited_trx에 있으면 푸시 안 함 (스택 팽창 억제)
-//       if (visited_trx.find(nb) == visited_trx.end()) {
-//         stack.push_back(next);
-//       }
-//     }
-
-//     // 안전장치: 너무 커지면 중단
-//     if (UNIV_LIKELY(visited_trx.size() > 1000)) { // 워크로드 맞게 조정
-//       ut_error; // 또는 false 반환/로그
-//     }
-//   }
-//   return false;
-// }
-
-
-// Return true if wait_for's blocker is also m_trx
-// Chase the chain of this record
-bool lock_conflict_blocker(trx_t* m_blocker, trx_t* m_trx) {
-  // fprintf(stderr, "[DEBUG] (%d) lock_conflict_blocker: START - %d\n", m_trx->id, m_blocker->id);
-
-  conf_lock_pool_t lock_stack;
-  trx_t* current_blocker;
-  lock_t* current_lock;
-  int depth = 0;
-  std::vector<lock_t *, ut::allocator<lock_t *>> visited_lock;
-  bool exists = false;
-
-  for (auto* elem : m_blocker->lock.conf_lock_pool) {
-    if (elem->deleted) continue;
-    // fprintf(stderr, "[DEBUG] (%d) lock_conflict_blocker: %d - Push(%p %d)\n", m_trx->id, m_blocker->id, elem->conf_lock, elem->blocker->id);
-    lock_stack.push_back(elem);
-  }
-
-  while(!lock_stack.empty()) {
-    // fprintf(stderr, "[DEBUG] (%d) lock_conflict_blocker %d\n", m_trx->id, lock_stack.size());
-
-    current_lock = lock_stack.back()->conf_lock;
-    current_blocker = lock_stack.back()->blocker;
-    lock_stack.pop_back();
-
-    exists = std::find(visited_lock.begin(), visited_lock.end(), current_lock) != visited_lock.end();
-    if (exists) {
-      // fprintf(stderr, "[!DEBUG] (%d) lock_conflict_blocker - visited: %d\n", m_trx, current_blocker->id);
-			continue;
-		}
-    visited_lock.push_back(current_lock);
-
-    if (++depth >= 500) {
-      // fprintf(stderr, "[DEBUG] (%d) lock_conflict_blocker: %p %d\n", m_trx->id, current_blocker, depth);
-      ut_error;
-    }
-    // fprintf(stderr, "[DEBUG] (%d) lock_conflict_blocker: %d %p\n", m_trx->id, current_blocker->id, current_lock);
-
-    if (current_blocker == m_trx) {
-      // fprintf(stderr, "[DEBUG] (%d) lock_conflict_blocker: return TRUE\n", m_trx->id);
-      return true;
-    }
-    if(!current_blocker) {
-      ut_error;
-    }
-    
-
-    for (auto* elem : current_blocker->lock.conf_lock_pool) {
-      if (elem->deleted) continue;
-      // fprintf(stderr, "[DEBUG] (%d) lock_conflict_blocker: %d - Push(%d)\n", m_trx->id, current_blocker->id, elem->blocker->id);
-      lock_stack.push_back(elem);
-    }
-  }
-  // fprintf(stderr, "[DEBUG] (%d) lock_conflict_blocker: FALSE\n", m_trx->id);
-  return false;
-}
-
-conflict_t* lock_get_conf(trx_t* trx, page_id_t page_id, ulint heap_no) {
-  conflict_t* conf = nullptr;
-    for (conflict_t* elem : trx->lock.conf_lock_pool) {
-      if ((elem->conf_lock->rec_lock.page_id == page_id) 
-          && (elem->heap_no == heap_no)) {
-        conf = elem;
-      }
-    }
-    return conf;
-}
-
-// bool search_conflict_cycle(trx_t* trx) {
-//   bool exists;
-//   trx_t* current_blocker;
-
-//   conf_lock_pool_t lock_stack;
-//   std::vector<trx_t *, ut::allocator<trx_t *>> visited_trx;
-//   unsigned int depth = 0;
-
-//   for (auto* elem : trx->lock.conf_lock_pool) {
-//     lock_stack.push_back(elem);
-//   }
-
-
-//   locksys::Global_shared_latch_guard shared_latch_guard{UT_LOCATION_HERE}; 
-//   while (!lock_stack.empty()) {
-//     if(++depth >= LOCK_MAX_DEPTH_IN_CONF_CYCLE_CHECK) {
-//       /*
-// 				case: T1<->T2, T1<-T3, T3 commit
-// 				T3 would search T1 and T2 infinitely. -> visited로 판결됨
-// 			*/
-//       // fprintf(stderr, "[DEBUG] (%d) search_conflict_cycle - MAX_DEPTH: %d\n", trx->id, current_blocker->id);
-//       return true;
-//     }
-
-//     current_blocker = lock_stack.back()->blocker;
-//     lock_stack.pop_back();
-//     // fprintf(stderr, "[DEBUG] (%d) search_conflict_cycle(%d) - blocker: %d\n", trx->id,depth, current_blocker->id);
-
-//     // 이미 방문한 trx이면 스킵
-// 		exists = std::find(visited_trx.begin(), visited_trx.end(), current_blocker) != visited_trx.end();
-//     if (!current_blocker || exists) {
-//       // fprintf(stderr, "[!DEBUG] (%d) search_conflict_cycle - continue\n", trx->id);
-// 			continue;
-// 		}
-    
-// 		if (current_blocker->conflict_abort != TRX_NOT_ABORTED || current_blocker == trx) {
-// 			// 나의 선행 lock이 abort라면 결국 나도 cascading abort 되기 때문에 그냥 바로 롤백하면 된다
-//       // 사이클 발견
-//       // fprintf(stderr, "[!DEBUG] (%d) search_conflict_cycle - Cycle\n", trx->id);
-// 			return true;
-// 		}
-
-//     visited_trx.push_back(current_blocker);
-
-//     // 이거 필요한가??
-//     // wait_lock 존재하면 스택에 넣음
-// 		if (current_blocker->lock.que_state == TRX_QUE_LOCK_WAIT 
-//         && current_blocker->lock.wait_lock.load() != nullptr) {
-// 			/*
-// 				case: T1<-T2(conf)<-T1(wait) (ex. update orders table)
-// 				T2 would wait for T1's commit forever. So both conf-cycle and wait-cycle should be searched.
-// 			*/
-			
-//       auto* new_conf = static_cast<conflict_t*>(mem_heap_zalloc(trx->conflict_heap, sizeof(conflict_t)));
-//       new_conf->blocker   = current_blocker->lock.blocking_trx.load();
-//       new_conf->conf_lock = current_blocker->lock.wait_lock.load();
-//       new_conf->deleted   = false;
-//       new_conf->future_vers   = nullptr;
-// 			// fprintf(stderr, "[!DEBUG] (%d) search_conflict_cycle - Push-Wait(%p)\n", trx->id, new_conf->conf_lock);
-
-// 			lock_stack.push_back(new_conf);
-// 		}
-
-// 		// conflict_lock도 스택에 넣음
-//     for (auto* elem : current_blocker->lock.conf_lock_pool) {
-//       lock_stack.push_back(elem);
-// 			// fprintf(stderr, "[!DEBUG] (%d) search_conflict_cycle - Push-Conf(%p)\n", trx->id, elem->conf_lock);
-//     } 
-
-//   }
-//   return false; // 사이클 없음
-// }

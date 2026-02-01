@@ -621,7 +621,7 @@ static inline void btr_node_ptr_set_child_page_no(
   byte *field;
   ulint len;
 
-  // ut_ad(rec_offs_validate(rec, nullptr, offsets));
+  ut_ad(rec_offs_validate(rec, nullptr, offsets));
   ut_ad(!page_is_leaf(page_align(rec)));
   ut_ad(!rec_offs_comp(offsets) || rec_get_node_ptr_flag(rec));
 
@@ -642,7 +642,7 @@ static inline void btr_node_ptr_set_child_page_no(
 buf_block_t *btr_node_ptr_get_child(const rec_t *node_ptr, dict_index_t *index,
                                     const ulint *offsets, mtr_t *mtr,
                                     rw_lock_type_t type) {
-  // ut_ad(rec_offs_validate(node_ptr, index, offsets));
+  ut_ad(rec_offs_validate(node_ptr, index, offsets));
 
   const page_id_t page_id(page_get_space_id(page_align(node_ptr)),
                           btr_node_ptr_get_child_page_no(node_ptr, offsets));
@@ -2277,7 +2277,7 @@ static rec_t *btr_insert_into_right_sibling(uint32_t flags, btr_cur_t *cursor,
   btr_insert_on_non_leaf_level(flags, cursor->index, level + 1, node_ptr,
                                UT_LOCATION_HERE, mtr);
 
-  // ut_ad(rec_offs_validate(rec, cursor->index, *offsets));
+  ut_ad(rec_offs_validate(rec, cursor->index, *offsets));
 
   if (is_leaf && !cursor->index->is_clustered() &&
       !cursor->index->table->is_temporary()) {

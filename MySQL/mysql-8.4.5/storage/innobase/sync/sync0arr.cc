@@ -278,7 +278,6 @@ void sync_array_free_cell(
 
   cell = nullptr;
 }
-// recrod lock 말고, mutex 쪽 데드락 탐색
 void sync_array_detect_deadlock() {
   for (ulint i = 0; i < sync_array_size; ++i) {
     auto arr = sync_wait_array[i];
@@ -806,7 +805,6 @@ static bool sync_array_print_long_waits_low(
   fatal_timeout *= 10;
 #else
   constexpr std::chrono::minutes timeout{4};
-  // constexpr std::chrono::milliseconds timeout{10};
 #endif
 
   for (ulint i = 0; i < arr->next_free_slot; i++) {
@@ -946,10 +944,7 @@ void sync_array_init(ulint n_threads) /*!< in: Number of slots to
   ut_a(srv_sync_array_size > 0);
   ut_a(n_threads > 0);
 
-  // [TPL] - 1(default), 128(32core), 1024(256core)
   sync_array_size = srv_sync_array_size;
-  // sync_array_size = 128; //
-  //
 
   sync_wait_array = ut::new_arr_withkey<sync_array_t *>(
       UT_NEW_THIS_FILE_PSI_KEY, ut::Count{sync_array_size});
@@ -960,7 +955,6 @@ void sync_array_init(ulint n_threads) /*!< in: Number of slots to
     sync_wait_array[i] =
         ut::new_withkey<sync_array_t>(UT_NEW_THIS_FILE_PSI_KEY, n_slots);
   }
-  // fprintf(stderr, "[DEBUG] sync_array_size(%d), n_slots(%d)\n", sync_array_size, n_slots);
 }
 
 /** Close sync array wait sub-system. */

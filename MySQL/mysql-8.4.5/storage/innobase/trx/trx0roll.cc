@@ -56,12 +56,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "trx0undo.h"
 #include "usr0sess.h"
 
-// [TPL]
-#include "lock0lock.h"
 #include "current_thd.h"
-/* measure_recv */
-#include <sys/time.h>
-extern struct timeval recovery_start, recovery_end;
 
 /** This many pages must be undone before a truncate is tried within
 rollback */
@@ -87,13 +82,6 @@ static void trx_rollback_to_savepoint_low(
                           partial rollback requested, or NULL for
                           complete rollback */
 {
-  // fprintf(stderr, "[DEBUG] (%d) ROLLBACK (%d)\n", trx->id,trx->conflict_abort);
-  // [TPL]
-  // trx->abort = false;
-  trx->conflict_abort = TRX_ABORTING;
-	lock_cascade_abort(trx);
-  //
-
   que_thr_t *thr;
   mem_heap_t *heap;
   roll_node_t *roll_node;
@@ -112,7 +100,6 @@ static void trx_rollback_to_savepoint_low(
 
   trx->error_state = DB_SUCCESS;
 
-  const auto start_time = std::chrono::steady_clock::now(); // [TPL] - time
   if (trx_is_rseg_updated(trx)) {
     ut_ad(trx->rsegs.m_redo.rseg != nullptr ||
           trx->rsegs.m_noredo.rseg != nullptr);
@@ -130,11 +117,6 @@ static void trx_rollback_to_savepoint_low(
     /* Free the memory reserved by the undo graph. */
     que_graph_free(static_cast<que_t *>(roll_node->undo_thr->common.parent));
   }
-  // [TPL] - time
-  const auto diff_time = std::chrono::steady_clock::now() - start_time; 
-  srv_stats.rollback_time.add(std::chrono::duration_cast<std::chrono::microseconds>(diff_time).count());
-  srv_stats.rollback_count.inc();
-  //
 
   if (savept == nullptr) {
     trx_rollback_finish(trx);
@@ -144,8 +126,8 @@ static void trx_rollback_to_savepoint_low(
     MONITOR_INC(MONITOR_TRX_ROLLBACK_SAVEPOINT);
   }
 
-  // ut_a(trx->error_state == DB_SUCCESS);
-  // ut_a(trx->lock.que_state == TRX_QUE_RUNNING);
+  ut_a(trx->error_state == DB_SUCCESS);
+  ut_a(trx->lock.que_state == TRX_QUE_RUNNING);
 
   mem_heap_free(heap);
 
@@ -184,12 +166,11 @@ static dberr_t trx_rollback_for_mysql_low(
   object, and we set a dummy session that we use for all MySQL
   transactions. */
 
-
   trx_rollback_to_savepoint_low(trx, nullptr);
 
   trx->op_info = "";
 
-  // ut_a(trx->error_state == DB_SUCCESS);
+  ut_a(trx->error_state == DB_SUCCESS);
 
   return (trx->error_state);
 }
@@ -289,8 +270,6 @@ dberr_t trx_rollback_for_mysql(trx_t *trx) /*!< in/out: transaction */
 {
   /* Avoid the tracking of async rollback killer
   thread to enter into InnoDB. */
-  // Async rollback: 다른 스레드가 나를 victim으로 마킹하고 대신 롤백 수행해줌
-  // 즉시 롤백할 수 없는 상황일 수도 있을 때
   if (TrxInInnoDB::is_async_rollback(trx)) {
     return (trx_rollback_low(trx));
 
@@ -795,13 +774,6 @@ void trx_rollback_or_clean_recovered(
   if (all) {
     ib::info(ER_IB_MSG_TRX_RECOVERY_ROLLBACK_COMPLETED);
   }
-
-  /* measure_recv */
-  gettimeofday(&recovery_end, NULL);
-  fprintf(stderr, "undo_time: %f seconds\n",
-       (double)(recovery_end.tv_usec - recovery_start.tv_usec) / 1000000 +
-       (double)(recovery_end.tv_sec - recovery_start.tv_sec));
-       
 }
 
 /** Rollback or clean up any incomplete transactions which were
@@ -1128,39 +1100,7 @@ static que_thr_t *trx_rollback_start(trx_t &trx, ib_id_t roll_limit,
 /** Finishes a transaction rollback. */
 static void trx_rollback_finish(trx_t *trx) /*!< in: transaction */
 {
-  // [TPL]
-	// erase future log -> tpl_apply_trx -> do nothing
-	trx->in_memory_ppl_buf.erase();
-  if (trx->conflict_heap) {
-    mem_heap_empty(trx->conflict_heap);
-  }
-  trx->lock.conf_lock_pool.clear();
-  // trx->lock.conf_lock_pool_async.clear(); // [TPL] - async commit
-
-  trx->lock.wait_lock.store(nullptr); //commit wait에서 깨어나는 경우 wait lock reset 안 되는 경우도 있음 
-  
-  trx->conflict_abort = TRX_ABORTED;
-
-  // fprintf(stderr, "[DEBUG] (%d) ROLLBACK END: %s\n", trx->id, trx_get_que_state_str(trx));
-	//
-  
   trx_commit(trx);
-
-  // [TPL] - group_commit
-  // fprintf(stderr, "[DEBUG] (%d) group commit(abort) (%d)\n", trx->id, trx->async_pending_list.size());
-  // if (trx->async_pending_list.size() > 0) {
-  //   trx->pre_commit = TRX_COMMIT_GROUP;
-  //   trx_list_t::iterator end = trx->async_pending_list.end();
-  //   for(trx_list_t::iterator it = trx->async_pending_list.begin(); it != end; ++it) {
-  //       trx_t* ptrx = *it;
-  //       fprintf(stderr, "[DEBUG] (%d) async_pending_list(abort): %p %d\n", trx->id, ptrx, ptrx->id);
-
-  //       trx_rollback_for_mysql(ptrx);
-  //       ptrx->async_pending_list.clear();
-  //     }
-  //   trx->async_pending_list.clear();
-
-  // }
 
   trx->mod_tables.clear();
 

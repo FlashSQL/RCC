@@ -126,11 +126,6 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "ut0crc32.h"
 #include "ut0new.h"
 
- // [TPL]
-/* measure_recv */
-#include <sys/time.h>
-struct timeval recovery_start, recovery_end;
-
 /** fil_space_t::flags for hard-coded tablespaces */
 extern uint32_t predefined_flags;
 
@@ -1552,9 +1547,6 @@ dberr_t srv_start(bool create_new_db) {
   mtr_t mtr;
   purge_pq_t *purge_queue;
 
-  /* measure_recv */
-  gettimeofday(&recovery_start, NULL);
-
   /* Reset the start state. */
   srv_start_state = SRV_START_STATE_NONE;
 
@@ -1994,15 +1986,6 @@ dberr_t srv_start(bool create_new_db) {
     }
 
     err = recv_recovery_from_checkpoint_start(*log_sys, flushed_lsn);
-
-    /* measure_recv */
-    gettimeofday(&recovery_end, NULL);
-    fprintf(stderr, "scan_time: %f seconds\n",
-         (double)(recovery_end.tv_usec - recovery_start.tv_usec) / 1000000 +
-         (double)(recovery_end.tv_sec - recovery_start.tv_sec));
-    gettimeofday(&recovery_start, NULL);
-
-
     if (err != DB_SUCCESS) {
       return srv_init_abort(err);
     }
@@ -2052,13 +2035,6 @@ dberr_t srv_start(bool create_new_db) {
 
       recv_apply_hashed_log_recs(*log_sys,
                                  !recv_sys->is_cloned_db && !log_upgrade);
-
-      /* measure_recv */
-      gettimeofday(&recovery_end, NULL);
-      fprintf(stderr, "redo_time: %f seconds\n",
-           (double)(recovery_end.tv_usec - recovery_start.tv_usec) / 1000000 +
-           (double)(recovery_end.tv_sec - recovery_start.tv_sec));
-      gettimeofday(&recovery_start, NULL);
 
       if (recv_sys->found_corrupt_log) {
         err = DB_ERROR;

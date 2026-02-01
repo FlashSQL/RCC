@@ -208,7 +208,7 @@ static bool row_upd_index_is_referenced(dict_index_t *index) /*!< in: index */
   trx = thr_get_trx(thr);
 
   rec = pcur->get_rec();
-  // ut_ad(rec_offs_validate(rec, index, offsets));
+  ut_ad(rec_offs_validate(rec, index, offsets));
 
   heap = mem_heap_create(500, UT_LOCATION_HERE);
 
@@ -306,7 +306,7 @@ upd_node_t *upd_node_create(mem_heap_t *heap) /*!< in: mem heap where created */
 void row_upd_rec_sys_fields_in_recovery(rec_t *rec, page_zip_des_t *page_zip,
                                         const ulint *offsets, ulint pos,
                                         trx_id_t trx_id, roll_ptr_t roll_ptr) {
-  // ut_ad(rec_offs_validate(rec, nullptr, offsets));
+  ut_ad(rec_offs_validate(rec, nullptr, offsets));
 
   if (page_zip) {
     page_zip_write_trx_id_and_roll_ptr(page_zip, rec, offsets, pos, trx_id,
@@ -367,7 +367,7 @@ bool row_upd_changes_field_size_or_external(
   ulint n_fields;
   ulint i;
 
-  // ut_ad(rec_offs_validate(nullptr, index, offsets));
+  ut_ad(rec_offs_validate(nullptr, index, offsets));
   ut_ad(!index->table->skip_alter_undo);
 
   n_fields = upd_get_n_fields(update);
@@ -484,7 +484,7 @@ void row_upd_rec_in_place(
   ulint n_fields;
   ulint i;
 
-  // ut_ad(rec_offs_validate(rec, index, offsets));
+  ut_ad(rec_offs_validate(rec, index, offsets));
   ut_ad(!index->table->skip_alter_undo);
 
   if (rec_offs_comp(offsets)) {
@@ -771,7 +771,7 @@ upd_t *row_upd_build_sec_rec_difference_binary(
 
   /* This function is used only for a secondary index */
   ut_a(!index->is_clustered());
-  // ut_ad(rec_offs_validate(rec, index, offsets));
+  ut_ad(rec_offs_validate(rec, index, offsets));
   ut_ad(rec_offs_n_fields(offsets) == dtuple_get_n_fields(entry));
   ut_ad(!rec_offs_any_extern(offsets));
   ut_ad(!index->table->skip_alter_undo);
@@ -864,7 +864,7 @@ upd_t *row_upd_build_difference_binary(dict_index_t *index,
     offsets = rec_get_offsets(rec, index, offsets_, ULINT_UNDEFINED,
                               UT_LOCATION_HERE, &heap);
   } else {
-    // ut_ad(rec_offs_validate(rec, index, offsets));
+    ut_ad(rec_offs_validate(rec, index, offsets));
   }
 
   for (i = 0; i < n_fld; i++) {
@@ -2806,15 +2806,13 @@ static bool row_upd_check_autoinc_counter(const upd_node_t *node, mtr_t *mtr) {
   ut_ad(index->is_clustered());
   ut_ad(!thr_get_trx(thr)->in_rollback);
 
-  // fprintf(stderr, "[DEBUG] (%d) row_upd_clust_rec\n", trx->id);
-
   pcur = node->pcur;
   btr_cur = pcur->get_btr_cur();
 
   ut_ad(btr_cur->index == index);
   ut_ad(!rec_get_deleted_flag(btr_cur_get_rec(btr_cur),
                               dict_table_is_comp(index->table)));
-  // ut_ad(rec_offs_validate(btr_cur_get_rec(btr_cur), index, offsets));
+  ut_ad(rec_offs_validate(btr_cur_get_rec(btr_cur), index, offsets));
 
   if (dict_index_is_online_ddl(index)) {
     is_old_or_new_rec_extern = rec_offs_any_extern(offsets);
@@ -2823,9 +2821,7 @@ static bool row_upd_check_autoinc_counter(const upd_node_t *node, mtr_t *mtr) {
     if (row_log_table_get_error(index) == DB_INDEX_CORRUPT) {
       err = DB_CORRUPTION;
 
-      // [TPL]
-      // mtr->commit();
-      //
+      mtr->commit();
       goto func_exit;
     }
   }
@@ -2852,19 +2848,12 @@ static bool row_upd_check_autoinc_counter(const upd_node_t *node, mtr_t *mtr) {
     goto success;
   }
 
-  // [TPL]
-  // mtr->commit();
-  //
+  mtr->commit();
 
   if (buf_LRU_buf_pool_running_out()) {
     err = DB_LOCK_TABLE_FULL;
     goto func_exit;
   }
-
-  // [TPL]
-  mtr->commit();
-  //
-  
   /* We may have to modify the tree structure: do a pessimistic descent
   down the index tree */
 
@@ -2936,20 +2925,10 @@ static bool row_upd_check_autoinc_counter(const upd_node_t *node, mtr_t *mtr) {
                            rebuilt_old_pk, new_v_row, old_v_row);
     }
   }
-  // [TPL] in 5.7
-	// lock_rec_lock_xx -> lock_rec_get_first: ut_ad(rw_lock_own(&(((buf_block_t*) block)->lock), RW_LOCK_X)
-	// block에 latch 걸어야 lock 생성할 수 있음. mtr_commit을 xx 뒤로 미뤄서 latc를 나중에 풀 수 있도록 수정.
-  // mtr->commit();
-
-func_exit:
-  // [TPL]
-  if (err == DB_SUCCESS) {
-    lock_rec_lock_xx(btr_cur_get_block(btr_cur), page_rec_get_heap_no(btr_cur_get_rec(btr_cur)), index, thr);
-  }
 
   mtr->commit();
-  //
 
+func_exit:
   if (heap) {
     mem_heap_free(heap);
   }
@@ -3043,7 +3022,6 @@ func_exit:
 
   /* We have to restore the cursor to its position */
 
-
   mtr_start(&mtr);
 
   /* Disable REDO logging as lifetime of temp-tables is limited to
@@ -3104,8 +3082,6 @@ func_exit:
       goto exit_func;
     }
   }
-
-  // fprintf(stderr, "[DEBUG] (%d) Update: %p, %s(%d)\n", trx->id, rec, index->table_name, index->table->id);
 
   ut_ad(lock_trx_has_rec_x_lock(thr, index->table, pcur->get_block(),
                                 page_rec_get_heap_no(rec)));

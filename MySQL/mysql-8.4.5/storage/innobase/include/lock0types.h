@@ -58,7 +58,6 @@ enum lock_mode {
   LOCK_X,               /* exclusive */
   LOCK_AUTO_INC,        /* locks the auto-inc counter of a table
                         in an exclusive mode */
-	LOCK_XX,
   LOCK_NONE,            /* this is used elsewhere to note consistent read */
   LOCK_NUM = LOCK_NONE, /* number of lock modes */
   LOCK_NONE_UNSET = 255
@@ -83,8 +82,6 @@ inline const char *lock_mode_string(enum lock_mode mode) {
       return ("LOCK_NONE");
     case LOCK_NONE_UNSET:
       return ("LOCK_NONE_UNSET");
-    case LOCK_XX:
-      return("LOCK_XX");
     default:
       ut_error;
   }

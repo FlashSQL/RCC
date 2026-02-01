@@ -227,10 +227,6 @@ enum dberr_t {
   /** Column update or read failed because the types mismatch */
   DB_DATA_MISMATCH = 2000,
   /* Too many nested sub expression in full-text search string */
-  DB_FTS_TOO_MANY_NESTED_EXP,
-
-	// [TPL] - DB_CONFLICT 선언
-	DB_CONFLICT_LOCKED_REC = 3000	
-  //
+  DB_FTS_TOO_MANY_NESTED_EXP
 };
 #endif

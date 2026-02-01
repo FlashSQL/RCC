@@ -323,10 +323,6 @@ constexpr uint32_t TRX_QUE_STATE_STR_MAX_LEN = 12; /* "ROLLING BACK" */
 static inline const char *trx_get_que_state_str(
     const trx_t *trx); /*!< in: transaction */
 
-// [TPL]
-static inline const char *trx_get_abort_state_str(
-  const trx_t *trx);
-//
 /** Retreieves the transaction ID.
 In a given point in time it is guaranteed that IDs of the running
 transactions are unique. The values returned by this function for readonly
@@ -379,37 +375,8 @@ static inline bool trx_is_rseg_updated(const trx_t *trx);
 #endif /* !UNIV_HOTBACKUP */
 
 typedef std::vector<ib_lock_t *, ut::allocator<ib_lock_t *>> lock_pool_t;
-// [TPL]
-struct conflict_t {
-  trx_t* blocker;
-  lock_t* conf_lock;
-  bool deleted;  // conf 해제 시, 마킹만
-  rec_t *future_vers;
-  ulint future_vers_size; // future_vers's size
-  ulint heap_no; // 같은 page면 하나의 Lock이 여러 heap_no(레코드)를 커버하는 경우가 있음(bit ON) -> 레코드마다 future vers 만들어야 함
-  
-  bool updated; // [SR] // 내 future vers를 읽고 업데이트까지 했을 때
-  // page_id_t page_id; // [TPL] - async commit
-};
-typedef std::vector<conflict_t *, ut::allocator<conflict_t *>> conf_lock_pool_t;
 
-struct abort_t {
-  trx_t* trx;
-  lock_t* lock;
-};
-typedef std::vector<abort_t, ut::allocator<abort_t>> abort_list_t;
-
-// struct future_apply_t {
-//   rec_t* future_vers{};
-//   byte* future_log{};
-// };
-
-// [TPL] - group_commit
-// typedef std::vector<trx_t*, ut::allocator<trx_t*>> trx_list_t;
-
-//
-
-/** Latching protocol for ∂trx_lock_t::que_state.  trx_lock_t::que_state
+/** Latching protocol for trx_lock_t::que_state.  trx_lock_t::que_state
  captures the state of the query thread during the execution of a query.
  This is different from a transaction state. The query state of a transaction
  can be updated asynchronously by other threads.  The other threads can be
@@ -434,12 +401,6 @@ lock_sys latch (unless stated otherwise for particular field). */
 struct trx_lock_t {
   /** Default constructor. */
   trx_lock_t() = default;
-
-  // [TPL]
-  conf_lock_pool_t conf_lock_pool;
-  //
-  
-  // conf_lock_pool_t conf_lock_pool_async; // [TPL] - async commit
 
   ulint n_active_thrs; /*!< number of active query threads */
 
@@ -475,7 +436,6 @@ struct trx_lock_t {
   value, i.e. test if it is not-null, and points to a valid trx.
   To make any definite judgments one needs to latch the lock_sys shard
   containing the trx->lock.wait_lock. */
-  // 나를 blocking 하고 있는 트랜잭션
   std::atomic<trx_t *> blocking_trx;
 
   /** The lock request of this transaction is waiting for.
@@ -497,7 +457,6 @@ struct trx_lock_t {
   this field in advance, we can:
   - read without any latch if we believe the value should be NULL
   - read latching only the shard containing the wait_lock we expect */
-  // 내가 기다리고 있는 락, waiting lock
   std::atomic<lock_t *> wait_lock;
 
   /** Stores the type of the most recent lock for which this trx had to wait.
@@ -713,30 +672,6 @@ enum trx_rseg_type_t {
   TRX_RSEG_TYPE_NOREDO    /*!< non-redo rollback segment. */
 };
 
-enum trx_commit_t {
-	TRX_COMMIT_NOT_STARTED = 0,	
-	TRX_COMMIT_PRE,			/* pre commit with conflict */
-  // TRX_COMMIT_PRE_FINAL, // [TPL] - group commit
-	TRX_COMMIT,			/* pre commit with conflict */
-};
-
-// [TPL] - group_commit
-// enum trx_commit_t {
-// 	TRX_COMMIT_NOT_STARTED = 0,	
-// 	TRX_COMMIT_PRE,			/* pre commit with conflict */
-//   TRX_COMMIT_ASYNC,   /* Asynchronous committed before group committed */ 
-//   TRX_COMMIT_GROUP,   /* Confirmed as a group for commit */
-// 	TRX_COMMIT,			/* pre commit with conflict */
-// };
-
-
-enum trx_abort_t {
-	TRX_NOT_ABORTED = 0,	/* Default */
-	TRX_ABORT_MARKED,			/* Abort marked ~ rollback, deadlock victim */
-	TRX_ABORTING,			/* rollback ~ rollback end */
-	TRX_ABORTED,			/* rollback end ~ commit */
-};
-
 struct trx_t {
   enum isolation_level_t {
 
@@ -765,19 +700,6 @@ struct trx_t {
 
   /** Default constructor */
   trx_t() = default;
-
-  // [TPL] - trx_t
-	in_memory_ppl_buf_t in_memory_ppl_buf;	// redo log buffer
-  trx_commit_t pre_commit;
-  trx_abort_t conflict_abort;
-  mem_heap_t *conflict_heap;
-  // [TPL] - group_commit
-  // trx_list_t async_pending_list;
-  //
-
-  // int64_t lock_wait_time; // [TPL] - time
-  // int64_t lock_commit_time; // [TPL] - time
-
 
   /** Mutex protecting the fields `state` and `lock` (except some fields of
   `lock`,  which are protected by lock_sys latches) */
@@ -1511,7 +1433,7 @@ class TrxInInnoDB {
     ut_ad(srv_read_only_mode || trx->in_depth > 0);
     ut_ad(srv_read_only_mode || trx->in_innodb > 0);
 
-    return (trx->abort || trx_state == TRX_STATE_FORCED_ROLLBACK || trx->conflict_abort);
+    return (trx->abort || trx_state == TRX_STATE_FORCED_ROLLBACK);
   }
 
   /**

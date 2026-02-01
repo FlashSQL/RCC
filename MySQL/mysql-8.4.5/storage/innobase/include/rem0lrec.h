@@ -227,7 +227,7 @@ static inline void rec_set_nth_field_low(rec_t *rec, const ulint *offsets,
   ulint len2;
 
   ut_ad(rec);
-  // ut_ad(rec_offs_validate(rec, nullptr, offsets));
+  ut_ad(rec_offs_validate(rec, nullptr, offsets));
 
   auto fn = [&](const ulint *offsets, ulint n) {
     ulint n_drop = 0;

@@ -162,7 +162,7 @@ static inline void row_upd_rec_sys_fields(
                        can be 0 during IMPORT */
 {
   ut_ad(index->is_clustered());
-  // ut_ad(rec_offs_validate(rec, index, offsets));
+  ut_ad(rec_offs_validate(rec, index, offsets));
 
   if (page_zip) {
     ulint pos = index->get_sys_col_pos(DATA_TRX_ID);

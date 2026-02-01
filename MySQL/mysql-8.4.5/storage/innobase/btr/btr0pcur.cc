@@ -144,9 +144,6 @@ void btr_pcur_t::copy_stored_position(btr_pcur_t *dst, const btr_pcur_t *src) {
   dst->m_old_n_fields = src->m_old_n_fields;
 }
 
-// 디스크 I/O가 필요 없는 경우라면, 단순히 LRU 해시 탐색 후 이미 메모리에 있는 페이지 핸들 반환으로 끝
-// latch_mode에 따라 page latch 획득
-// 즉, hash lookup + latch 획득 + key 비교/검색
 bool btr_pcur_t::restore_position(ulint latch_mode, mtr_t *mtr,
                                   ut::Location location) {
   dtuple_t *tuple;

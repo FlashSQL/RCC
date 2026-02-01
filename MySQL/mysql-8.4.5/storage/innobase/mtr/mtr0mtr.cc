@@ -46,11 +46,6 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "log0test.h"
 #include "log0write.h"
 #include "mtr0log.h"
-
-// [TPL]
-#include "tpl0log.h"
-//
-
 #endif /* !UNIV_HOTBACKUP */
 #include "my_dbug.h"
 #ifndef UNIV_HOTBACKUP
@@ -577,11 +572,6 @@ void mtr_t::start(bool sync) {
 
   m_commit_lsn = 0;
 
-  // [TPL]
-  mtr_ppl_start_ptr = NULL;
-	blocking_tpl_pointer = NULL;
-  //
-
   new (&m_impl.m_log) mtr_buf_t();
   new (&m_impl.m_memo) mtr_buf_t();
 
@@ -772,7 +762,7 @@ ulint mtr_t::Command::prepare_write() {
       [[fallthrough]];
     case MTR_LOG_NO_REDO:
     case MTR_LOG_NONE:
-      // ut_ad(m_impl->m_log.size() == 0); // log write
+      ut_ad(m_impl->m_log.size() == 0);
       return 0;
     case MTR_LOG_ALL:
       break;
@@ -847,7 +837,7 @@ void mtr_t::Command::add_dirty_blocks_to_flush_list(lsn_t start_lsn,
 /** Write the redo log record, add dirty pages to the flush list and release
 the resources. */
 void mtr_t::Command::execute() {
-  // ut_ad(m_impl->m_log_mode != MTR_LOG_NONE); // log write
+  ut_ad(m_impl->m_log_mode != MTR_LOG_NONE);
 
 #ifndef UNIV_HOTBACKUP
   ulint len = prepare_write();
@@ -1029,79 +1019,6 @@ int mtr_t::Logging::wait_no_log_mtr(THD *thd) {
 
   return err;
 }
-
-// [TPL]
-ulint
-ipl_recv_parse_log_rec(
-	mlog_id_t*	type,
-	byte*		ptr,
-	byte*		end_ptr,
-	space_id_t*		space_id,
-	page_no_t*		page_no,
-	bool		apply,
-	byte**		body)
-{
-	byte*	new_ptr;
-
-	*body = NULL;
-
-	UNIV_MEM_INVALID(type, sizeof *type);
-	UNIV_MEM_INVALID(space_id, sizeof *space_id);
-	UNIV_MEM_INVALID(page_no, sizeof *page_no);
-	UNIV_MEM_INVALID(body, sizeof *body);
-
-	if (ptr == end_ptr) {
-		return(0);
-	}
-
-	new_ptr = const_cast<byte*>(mlog_parse_initial_log_record(ptr, end_ptr, type, space_id, page_no));
-	*body = new_ptr;
-
-	if (UNIV_UNLIKELY(!new_ptr)) {
-		return(0);
-	}
-
-	new_ptr = const_cast<byte*>(recv_parse_or_apply_log_rec_body(*type, new_ptr, end_ptr, *space_id, *page_no, NULL, NULL, NULL, NULL));
-
-	if (UNIV_UNLIKELY(new_ptr == NULL)) {
-		return(0);
-	}
-	return(new_ptr - ptr);
-}
-
-/* Parse the sequential log to single mtr_log
-   Get idea from log0recv.cc:recv_parse_log_recs() */
-void my_recv_parse_log_recs(
-  byte * ptr, 
-  ulint log_len, 
-  in_memory_ppl_buf_t* blocking_tpl_pointer, 
-  trx_t* m_trx)
-{
-	byte*		end_ptr;
-	ulint		len;
-	mlog_id_t	type;
-	space_id_t		space;
-	page_no_t		page_no;
-	byte*		body;
-
-	// fprintf(stderr, "[DEBUG] my_recv_parse_log_recs - len: %d\n", log_len);
-	
-	end_ptr = ptr + log_len;
-
-	if(ptr == end_ptr){
-		return ;
-	}
-
-	len = ipl_recv_parse_log_rec(&type, ptr, end_ptr, &space, &page_no, true, &body);
-	if (len == 0) {
-		return;
-	}
-	
-	page_id_t	page_id(space, page_no);
-	capture_redo_log_to_tpl(body, page_id, type, len + APPLY_LOG_HDR_SIZE, blocking_tpl_pointer, m_trx);
-}
-//
-
 
 #ifdef UNIV_DEBUG
 /** Check if memo contains the given item.

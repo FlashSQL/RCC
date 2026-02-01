@@ -547,7 +547,7 @@ void row_log_table_delete(
   }
 
   ut_ad(index->is_clustered());
-  // ut_ad(rec_offs_validate(rec, index, offsets));
+  ut_ad(rec_offs_validate(rec, index, offsets));
   ut_ad(rec_offs_n_fields(offsets) == dict_index_get_n_fields(index));
   ut_ad(rec_offs_size(offsets) <= sizeof index->online_log->tail.buf);
   ut_ad(rw_lock_own_flagged(&index->lock,
@@ -858,7 +858,7 @@ static void row_log_table_low(const rec_t *rec, const dtuple_t *ventry,
   ut_ad(index->is_clustered());
   ut_ad(new_index->is_clustered());
   ut_ad(!dict_index_is_online_ddl(new_index));
-  // ut_ad(rec_offs_validate(rec, index, offsets));
+  ut_ad(rec_offs_validate(rec, index, offsets));
   ut_ad(rec_offs_n_fields(offsets) == dict_index_get_n_fields(index));
   ut_ad(rec_offs_size(offsets) <= sizeof index->online_log->tail.buf);
   ut_ad(rw_lock_own_flagged(&index->lock,

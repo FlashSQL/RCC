@@ -73,7 +73,7 @@ inserted elsewhere in the index tree. In purge only the owner of
 externally stored field is allowed to free the field.
 @param[in]      update          update vector. */
 void BtrContext::disown_inherited_fields(const upd_t *update) {
-  // ut_ad(rec_offs_validate());
+  ut_ad(rec_offs_validate());
   ut_ad(!rec_offs_comp(m_offsets) || !rec_get_node_ptr_flag(m_rec));
   ut_ad(rec_offs_any_extern(m_offsets));
   ut_ad(m_mtr);
@@ -420,7 +420,7 @@ dberr_t btr_store_big_rec_extern_fields(trx_t *trx, btr_pcur_t *pcur,
   buf_block_t *rec_block = pcur->get_block();
   rec_t *rec = pcur->get_rec();
 
-  // ut_ad(rec_offs_validate(rec, index, offsets));
+  ut_ad(rec_offs_validate(rec, index, offsets));
   ut_ad(rec_offs_any_extern(offsets));
   ut_ad(btr_mtr);
   ut_ad(mtr_memo_contains_flagged(btr_mtr, dict_index_get_lock(index),
@@ -471,7 +471,7 @@ dberr_t btr_store_big_rec_extern_fields(trx_t *trx, btr_pcur_t *pcur,
     /* Cursor could have changed position. */
     rec = pcur->get_rec();
     rec_offs_make_valid(rec, index, offsets);
-    // ut_ad(rec_offs_validate(rec, index, offsets));
+    ut_ad(rec_offs_validate(rec, index, offsets));
 
     byte *field_ref = btr_rec_get_field_ref(index, rec, offsets, field_no);
 
@@ -964,7 +964,7 @@ void BtrContext::free_updated_extern_fields(trx_id_t trx_id, undo_no_t undo_no,
   ut_ad(big_rec_vec == nullptr || materialize_instant_default(m_index, m_rec));
 #endif
 
-  // ut_ad(rec_offs_validate());
+  ut_ad(rec_offs_validate());
   ut_ad(mtr_is_page_fix(m_mtr, m_rec, MTR_MEMO_PAGE_X_FIX, m_index->table));
   /* Assert that the cursor position and the record are matching. */
   ut_ad(!need_recalc());
@@ -1098,7 +1098,7 @@ void BtrContext::free_externally_stored_fields(trx_id_t trx_id,
                                                undo_no_t undo_no, bool rollback,
                                                ulint rec_type,
                                                purge_node_t *node) {
-  // ut_ad(rec_offs_validate());
+  ut_ad(rec_offs_validate());
   ut_ad(mtr_is_page_fix(m_mtr, m_rec, MTR_MEMO_PAGE_X_FIX, m_index->table));
   /* Assert that the cursor position and the record are matching. */
   ut_ad(!need_recalc());
@@ -1276,7 +1276,7 @@ bool rec_check_lobref_space_id(dict_index_t *index, const rec_t *rec,
   }
 
   ut_ad(index->is_clustered());
-  // ut_ad(rec_offs_validate(rec, nullptr, offsets));
+  ut_ad(rec_offs_validate(rec, nullptr, offsets));
 
   const ulint n = rec_offs_n_fields(offsets);
 

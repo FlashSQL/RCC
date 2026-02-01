@@ -10,7 +10,7 @@ generate_csv() {
     local VANILLA_LOG="$RESULTS_DIR/vanilla/output.log"
     local VANILLA_RC_LOG="$RESULTS_DIR/vanilla_rc/output.log"
     local RCC_LOG="$RESULTS_DIR/rcc/output.log"
-    local OUTPUT_CSV="$FIG_DIR/tps_distance_pg.csv"
+    local OUTPUT_CSV="$FIG_DIR/tps_distance_my.csv"
 
     if [[ ! -f "$VANILLA_LOG" ]] || [[ ! -f "$RCC_LOG" ]]; then
         echo "[ERROR] Result files not found"
@@ -69,7 +69,7 @@ generate_csv() {
 run_gnuplot() {
     cd "$FIG_DIR"
     gnuplot "$SCRIPT_DIR/templates/varying_hotspot_pos.gnu"
-    echo "[INFO] Generated: $FIG_DIR/single_hot_distance_mini_pg.pdf"
+    echo "[INFO] Generated: $FIG_DIR/single_hot_distance_mini_my.pdf"
 }
 
 echo "=== Plotting Fig5: Varying Hotspot Position ==="

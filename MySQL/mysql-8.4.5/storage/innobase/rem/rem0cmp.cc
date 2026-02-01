@@ -603,7 +603,7 @@ int cmp_dtuple_rec_with_match_low(const dtuple_t *dtuple, const rec_t *rec,
                                   const ulint *offsets, ulint n_cmp,
                                   ulint *matched_fields) {
   ut_ad(dtuple_check_typed(dtuple));
-  // ut_ad(rec_offs_validate(rec, index, offsets));
+  ut_ad(rec_offs_validate(rec, index, offsets));
 
   ut_ad(n_cmp > 0);
   ut_ad(*matched_fields == DISABLE_MIN_REC_FLAG_CHECK ||
@@ -738,7 +738,7 @@ int cmp_dtuple_rec_with_match_bytes(const dtuple_t *dtuple, const rec_t *rec,
   int ret; /* return value */
 
   ut_ad(dtuple_check_typed(dtuple));
-  // ut_ad(rec_offs_validate(rec, index, offsets));
+  ut_ad(rec_offs_validate(rec, index, offsets));
   ut_ad(!(REC_INFO_MIN_REC_FLAG & dtuple_get_info_bits(dtuple)));
   ut_ad(!(REC_INFO_MIN_REC_FLAG &
           rec_get_info_bits(rec, rec_offs_comp(offsets))));
@@ -992,8 +992,8 @@ int cmp_rec_rec_with_match(const rec_t *rec1, const rec_t *rec2,
   ut_ad(rec1 != nullptr);
   ut_ad(rec2 != nullptr);
   ut_ad(index != nullptr);
-  // ut_ad(rec_offs_validate(rec1, index, offsets1, cmp_btree_recs));
-  // ut_ad(rec_offs_validate(rec2, index, offsets2, cmp_btree_recs));
+  ut_ad(rec_offs_validate(rec1, index, offsets1, cmp_btree_recs));
+  ut_ad(rec_offs_validate(rec2, index, offsets2, cmp_btree_recs));
   ut_ad(rec_offs_comp(offsets1) == rec_offs_comp(offsets2));
 
   const auto comp = rec_offs_comp(offsets1);

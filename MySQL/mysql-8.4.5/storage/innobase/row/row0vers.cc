@@ -486,7 +486,7 @@ static inline trx_t *row_vers_impl_x_locked_low(
 
   DBUG_TRACE;
 
-  // ut_ad(rec_offs_validate(sec_rec, sec_index, sec_offsets));
+  ut_ad(rec_offs_validate(sec_rec, sec_index, sec_offsets));
 
   heap = mem_heap_create(1024, UT_LOCATION_HERE);
 
@@ -1264,10 +1264,9 @@ dberr_t row_vers_build_for_consistent_read(
         mtr_memo_contains_page(mtr, rec, MTR_MEMO_PAGE_S_FIX));
   ut_ad(!rw_lock_own(&(purge_sys->latch), RW_LOCK_S));
 
-  // ut_ad(rec_offs_validate(rec, index, *offsets));
+  ut_ad(rec_offs_validate(rec, index, *offsets));
 
   trx_id = row_get_rec_trx_id(rec, index, *offsets);
-  // fprintf(stderr, "[DEBUG] row_sel_build_prev_vers_for_mysql 1 - %p, read of %d\n", rec, trx_id);
 
   /* Reset the collected LOB undo information. */
   if (lob_undo != nullptr) {
@@ -1280,11 +1279,7 @@ dberr_t row_vers_build_for_consistent_read(
 
   version = rec;
 
-  // 내 ReadView에서 볼 수 있는 가장 최신 버전”을 찾기
-  // undo log를 따라가면서 이전 버전을 재구성 -> 이떄마다 trx id를 확인하고 visible 확인
   for (;;) {
-    // fprintf(stderr, "[DEBUG] row_sel_build_prev_vers_for_mysql 2 - %p, read of %d\n", rec, trx_id);
-    // view->print_limits(stderr);
     mem_heap_t *prev_heap = heap;
 
     heap = mem_heap_create(1024, UT_LOCATION_HERE);
@@ -1308,10 +1303,7 @@ dberr_t row_vers_build_for_consistent_read(
 
     if (prev_version == nullptr) {
       /* It was a freshly inserted version */
-      // undo log 체인의 끝에 도달
-      // 즉, 이 레코드는 insert된 거고 이전에는 존재X -> DB_MISSING_HISTORY 반환
       *old_vers = nullptr;
-      // fprintf(stderr, "[DEBUG] row_sel_build_prev_vers_for_mysql 22 - %p, read of --> %d: nullptr\n", rec, trx_id);
       ut_ad(!vrow || !(*vrow));
       break;
     }
@@ -1326,10 +1318,8 @@ dberr_t row_vers_build_for_consistent_read(
     trx_id = row_get_rec_trx_id(prev_version, index, *offsets);
 
     if (view->changes_visible(trx_id, index->table->name)) {
-      // fprintf(stderr, "[DEBUG] row_sel_build_prev_vers_for_mysql 22 - %p, read of --> %d: visible\n", rec, trx_id);
       /* The view already sees this version: we can copy
       it to in_heap and return */
-      // Visible! 이걸로 버전 복사해서 탈출
 
       buf =
           static_cast<byte *>(mem_heap_alloc(in_heap, rec_offs_size(*offsets)));
@@ -1337,14 +1327,12 @@ dberr_t row_vers_build_for_consistent_read(
       *old_vers = rec_copy(buf, prev_version, *offsets);
       rec_offs_make_valid(*old_vers, index, *offsets);
 
-
       if (vrow && *vrow) {
         *vrow = dtuple_copy(*vrow, in_heap);
         dtuple_dup_v_fld(*vrow, in_heap);
       }
       break;
     }
-    // fprintf(stderr, "[DEBUG] row_sel_build_prev_vers_for_mysql 22 - %p, read of --> %d: next\n", rec, trx_id);
 
     version = prev_version;
   }
@@ -1383,7 +1371,7 @@ void row_vers_build_for_semi_consistent_read(
         mtr_memo_contains_page(mtr, rec, MTR_MEMO_PAGE_S_FIX));
   ut_ad(!rw_lock_own(&(purge_sys->latch), RW_LOCK_S));
 
-  // ut_ad(rec_offs_validate(rec, index, *offsets));
+  ut_ad(rec_offs_validate(rec, index, *offsets));
 
   version = rec;
   ut_ad(!vrow || !(*vrow));

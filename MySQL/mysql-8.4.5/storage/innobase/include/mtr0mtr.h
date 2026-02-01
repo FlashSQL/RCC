@@ -46,11 +46,6 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "srv0srv.h"
 #include "trx0types.h"
 
-// [TPL]
-#define IN_MEMORY_PPL_BUF_MAX_SIZES 4096
-typedef dyn_buf_t<IN_MEMORY_PPL_BUF_MAX_SIZES> in_memory_ppl_buf_t;
-//
-
 /** Start a mini-transaction. */
 #define mtr_start(m) (m)->start()
 
@@ -482,11 +477,6 @@ struct mtr_t {
   positive. */
   void set_modified() { m_impl.m_modifications = true; }
 
-  // [TPL]
-  // deprecated in 8.4.5 (why??)
-  void discard_modifications() { m_impl.m_modifications = false; }
-  //
-
   /** Checks if this mtr has modified any buffer pool page.
   It errs on the safe side: may return true even if it didn't modify any page.
   This is used in MTR_LOG_NO_REDO mode to detect that pages should be added to
@@ -638,55 +628,6 @@ struct mtr_t {
     return (&m_impl.m_log);
   }
 
-  // [TPL]
-  void set_mtr_ipl_start_pointer(byte * ptr)
-	{
-		mtr_ppl_start_ptr = ptr;
-	}
-
-	void set_mtr_ipl_before_log_count(uint32_t count)
-	{
-		mtr_ppl_before_log_count = count;
-	}
-
-	void set_mtr_blocking_tpl_pointer(in_memory_ppl_buf_t* in_memory_ppl_buf)
-	{
-		blocking_tpl_pointer = in_memory_ppl_buf;
-	}
-
-
-	byte * get_mtr_ipl_start_pointer()
-	{
-		return mtr_ppl_start_ptr;
-	}
-
-	uint32_t get_mtr_ipl_before_log_count()
-	{
-		return mtr_ppl_before_log_count;
-	}
-
-	in_memory_ppl_buf_t* get_mtr_blocking_tpl_pointer()
-	{
-		return blocking_tpl_pointer;
-	}
-
-
-	uint32_t get_log_count()
-	{
-		return m_impl.m_n_log_recs;
-	}
-
-	void set_m_trx(trx_t* trx)
-	{
-		m_trx = trx;
-	}
-
-	trx_t* get_m_trx()
-	{
-		return m_trx;
-	}
-  //
-
   /** Push an object to an mtr memo stack.
   @param object object
   @param type   object type: MTR_MEMO_S_LOCK, ... */
@@ -736,20 +677,6 @@ struct mtr_t {
   /** true if it is synchronous mini-transaction */
   bool m_sync;
 
-  // [TPL]
-  //TPL Start pointer
-	byte * mtr_ppl_start_ptr;
-
-	//TPL Log count
-	uint32_t mtr_ppl_before_log_count;
-
-	//TPL blocking flags
-	in_memory_ppl_buf_t* blocking_tpl_pointer;
-
-	// conflict trx->conflict_lock for logging
-	trx_t* m_trx;
-  // end TPL
-
 #ifdef UNIV_DEBUG
   /** List of all non-committed MTR instances created in this thread. Used for
   debug purposes in the log_free_check(). */
@@ -760,24 +687,6 @@ struct mtr_t {
 
   friend class Command;
 };
-
-// [TPL]
-ulint
-ipl_recv_parse_log_rec(
-	mlog_id_t*	type,
-	byte*		ptr,
-	byte*		end_ptr,
-	space_id_t*		space,
-	page_no_t*		page_no,
-	bool		apply,
-	byte**		body);
-  
-void my_recv_parse_log_recs(
-  byte * ptr, 
-  ulint log_len, 
-  in_memory_ppl_buf_t* blocking_tpl_pointer, 
-  trx_t* m_trx);
-// end TPL
 
 #ifndef UNIV_HOTBACKUP
 #ifdef UNIV_DEBUG

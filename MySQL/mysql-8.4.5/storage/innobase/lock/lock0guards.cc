@@ -65,8 +65,6 @@ Shard_naked_latch_guard::Shard_naked_latch_guard(ut::Location location,
     : m_shard_mutex{shard_mutex} {
   ut_ad(owns_shared_global_latch());
   mutex_enter_inline(&m_shard_mutex, location);
-  // start_time = std::chrono::steady_clock::now();
-  // dir = std::string(location.basename()) + ":" + std::to_string(location.line);
 }
 
 Shard_naked_latch_guard::Shard_naked_latch_guard(ut::Location location,
@@ -88,8 +86,6 @@ Shard_naked_latch_guard::Shard_naked_latch_guard(ut::Location location,
           location, lock_sys->latches.page_shards.get_mutex(cell_id)} {}
 
 Shard_naked_latch_guard::~Shard_naked_latch_guard() {
-  // const auto diff_time = std::chrono::steady_clock::now() - start_time;
-  // fprintf(stderr, "%s %d\n", dir.c_str(), diff_time);
   mutex_exit(&m_shard_mutex);
 }
 

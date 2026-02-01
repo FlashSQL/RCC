@@ -1272,8 +1272,6 @@ static void row_undo_mod_parse_undo_rec(undo_node_t *node, THD *thd,
 dberr_t row_undo_mod(undo_node_t *node, /*!< in: row undo node */
                      que_thr_t *thr)    /*!< in: query thread */
 {
-  // UNDO POINT
-  // fprintf(stderr, "[DEBUG] (%d) row_undo_mod\n", node->trx.id); // 진짜 undo
   dberr_t err;
   MDL_ticket *mdl = nullptr;
 

@@ -67,12 +67,6 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "ut0pool.h"
 #include "ut0vec.h"
 
-// [TPL]
-#include "tpl0log.h"
-#include "pars0pars.h"
-#include "row0sel.h"
-//
-
 #include "my_dbug.h"
 #include "mysql/plugin.h"
 #include "sql/clone_handler.h"
@@ -246,21 +240,6 @@ static void trx_init(trx_t *trx) {
     trx->in_innodb &= TRX_FORCE_ROLLBACK_MASK;
   }
 
-  // [TPL] - trx 초기화
-	trx->in_memory_ppl_buf.erase();
-
-	trx->pre_commit = TRX_COMMIT_NOT_STARTED;
-  trx->conflict_abort = TRX_NOT_ABORTED;
-  trx->lock.n_active_thrs = 0; // rollback 시 얘가 이상한 값이 되는 경우가 있음.. 난 몰랑
-  if (trx->conflict_heap) {
-    mem_heap_empty(trx->conflict_heap);
-  }
-  trx->lock.conf_lock_pool.clear();
-  // trx->lock.conf_lock_pool_async.clear(); // [TPL] - async commit
-  // trx->lock_wait_time = 0;
-  // trx->lock_commit_time = 0;
-  //
-
   trx->flush_observer = nullptr;
 
   ++trx->version;
@@ -282,15 +261,7 @@ struct TrxFactory {
     allocated object. trx_t objects are allocated by
     ut::zalloc_withkey() in Pool::Pool() which would not call
     the constructors of the trx_t members. */
-    // conf_lock_pool 여기서 자동으로 초기화 됨
     new (trx) trx_t();
-
-    // [TPL]
-    // Q. 5.7에서는 mod_tables, rec_pool, hit_list 등을 이때 할당, 하지만 8.4에서는 필요할 때 함수에서 각자 할당하고 있음
-    // 이렇게 바꿔야 할까?
-    // 	trx_t 초기화 시 자동 생성 (기본 생성자)?
-    new(&(trx->in_memory_ppl_buf)) in_memory_ppl_buf_t();
-    //
 
     trx_init(trx);
 
@@ -313,17 +284,6 @@ struct TrxFactory {
     mutex_create(LATCH_ID_TRX_UNDO, &trx->undo_mutex);
 
     lock_trx_alloc_locks(trx);
-
-    // [TPL]
-    // TODO: 나중엔 conflict 발생할 때만 할당해도 괜찮을듯
-    // 128core, 128conn에서 실험적으로 확인하였을 때 최대 1300을 넘어서지 않았음
-    // 1000을 넘어선 것도 0.0001정도, 대부분 100~300
-    // 평균: 210 (min: 32)
-    // -> 실험해보니 1024보다 512이 성능 약간 우수
-    // 1024 = 1KB
-    trx->conflict_heap = mem_heap_create(4096, UT_LOCATION_HERE);
-    //
-
   }
 
   /** Release resources held by the transaction object.
@@ -361,8 +321,6 @@ struct TrxFactory {
     if (!trx->lock.rec_pool.empty()) {
       /* See lock_trx_alloc_locks() why we only free
       the first element. */
-      // Ans: 한 번에 malloc_withkey으로 할당하고 쪼개서 push_back
-      // free는 반드시 원본 포인터에만 호출해야 하므로 첫번째 원소만 free하는 게 맞음
 
       ut::free(trx->lock.rec_pool[0]);
     }
@@ -377,18 +335,6 @@ struct TrxFactory {
     trx->lock.rec_pool.~lock_pool_t();
 
     trx->lock.table_pool.~lock_pool_t();
-    
-    // [TPL]
-    trx->in_memory_ppl_buf.~in_memory_ppl_buf_t();
-    
-
-    if (trx->conflict_heap) {
-      mem_heap_free(trx->conflict_heap);
-    }
-    trx->conflict_heap = nullptr;
-
-    //
-    
   }
 
   /** Enforce any invariants here, this is called before the transaction
@@ -559,7 +505,6 @@ static void trx_free(trx_t *&trx) {
   }
 
   trx->mod_tables.clear();
-  // trx->in_memory_ppl_buf.erase();
 
   ut_ad(trx->read_view == nullptr);
   ut_ad(trx->is_dd_trx == false);
@@ -1360,19 +1305,19 @@ static void trx_start_low(
     trx_t *trx,      /*!< in: transaction */
     bool read_write) /*!< in: true if read-write transaction */
 {
-  // ut_ad(!trx->in_rollback);
-  // ut_ad(!trx->is_recovered);
-  // ut_ad(trx->start_line != 0);
-  // ut_ad(trx->start_file != nullptr);
-  // ut_ad(trx->roll_limit == 0);
-  // ut_ad(!trx->lock.in_rollback);
-  // ut_ad(trx->error_state == DB_SUCCESS);
-  // ut_ad(trx->rsegs.m_redo.rseg == nullptr);
-  // ut_ad(trx->rsegs.m_noredo.rseg == nullptr);
-  // ut_ad(trx_state_eq(trx, TRX_STATE_NOT_STARTED));
-  // ut_ad(UT_LIST_GET_LEN(trx->lock.trx_locks) == 0);
-  // ut_ad(!(trx->in_innodb & TRX_FORCE_ROLLBACK));
-  // ut_ad(trx_can_be_handled_by_current_thread_or_is_hp_victim(trx));
+  ut_ad(!trx->in_rollback);
+  ut_ad(!trx->is_recovered);
+  ut_ad(trx->start_line != 0);
+  ut_ad(trx->start_file != nullptr);
+  ut_ad(trx->roll_limit == 0);
+  ut_ad(!trx->lock.in_rollback);
+  ut_ad(trx->error_state == DB_SUCCESS);
+  ut_ad(trx->rsegs.m_redo.rseg == nullptr);
+  ut_ad(trx->rsegs.m_noredo.rseg == nullptr);
+  ut_ad(trx_state_eq(trx, TRX_STATE_NOT_STARTED));
+  ut_ad(UT_LIST_GET_LEN(trx->lock.trx_locks) == 0);
+  ut_ad(!(trx->in_innodb & TRX_FORCE_ROLLBACK));
+  ut_ad(trx_can_be_handled_by_current_thread_or_is_hp_victim(trx));
 
   ++trx->version;
 
@@ -1512,7 +1457,7 @@ static void trx_start_low(
     }
   }
 
-  // ut_a(trx->error_state == DB_SUCCESS);
+  ut_a(trx->error_state == DB_SUCCESS);
 
   MONITOR_INC(MONITOR_TRX_ACTIVE);
 }
@@ -1910,9 +1855,7 @@ static void trx_erase_lists(trx_t *trx) {
 }
 
 static void trx_release_impl_and_expl_locks(trx_t *trx, bool serialised) {
-  // [TPL] - DB_DEADLOCK
-  // check_trx_state(trx);
-  //
+  check_trx_state(trx);
   ut_ad(trx_state_eq(trx, TRX_STATE_ACTIVE) ||
         trx_state_eq(trx, TRX_STATE_PREPARED));
 
@@ -2206,19 +2149,13 @@ written */
   /* trx->in_mysql_trx_list would hold between
   trx_allocate_for_mysql() and trx_free_for_mysql(). It does not
   hold for recovered transactions or system transactions. */
-  // assert_trx_is_free(trx);
+  assert_trx_is_free(trx);
 
-  // fprintf(stderr, "[DEBUG] (%d) COMMIT END\n", trx->id);
-  // [TPL] - time
-  // if (!trx->abort && !trx->conflict_abort) {
-  //   srv_stats.n_lock_wait_time.add(trx->lock_wait_time);
-  //   srv_stats.n_lock_commit_time.add(trx->lock_commit_time);
-  // }
   trx_init(trx);
 
   trx_mutex_exit(trx);
 
-  // ut_a(trx->error_state == DB_SUCCESS);
+  ut_a(trx->error_state == DB_SUCCESS);
 }
 
 /** Commits a transaction and a mini-transaction.
@@ -2430,14 +2367,14 @@ void trx_commit_or_rollback_prepare(trx_t *trx) /*!< in/out: transaction */
 
         trx->lock.que_state = TRX_QUE_RUNNING;
       }
-      // if (trx->lock.n_active_thrs != 1) fprintf(stderr, "[DEBUG] (%d) trx_commit_or_rollback_prepare - %d\n", trx->id, trx->lock.n_active_thrs);
-      // ut_a(trx->lock.n_active_thrs == 1);
+
+      ut_a(trx->lock.n_active_thrs == 1);
       return;
 
     case TRX_STATE_COMMITTED_IN_MEMORY:
       break;
   }
-  fprintf(stderr, "[DEBUG] (%d) trx_commit_or_rollback_prepare - %d\n", trx->id, trx->state.load(std::memory_order_relaxed));
+
   ut_error;
 }
 
@@ -2505,13 +2442,11 @@ que_thr_t *trx_commit_step(que_thr_t *thr) /*!< in: query thread */
  @return DB_SUCCESS or error number */
 dberr_t trx_commit_for_mysql(trx_t *trx) /*!< in/out: transaction */
 {
-  // fprintf(stderr, "[DEBUG] (%d) COMMIT\n", trx->id);
   DEBUG_SYNC_C("trx_commit_for_mysql_checks_for_aborted");
   TrxInInnoDB trx_in_innodb(trx, true);
 
   if (trx_in_innodb.is_aborted() &&
       trx->killed_by != std::this_thread::get_id()) {
-      // fprintf(stderr, "[DEBUG] (%d) trx_commit_for_mysql - Abort 1\n", trx->id);
     return (DB_FORCED_ABORT);
   }
 
@@ -2520,106 +2455,6 @@ dberr_t trx_commit_for_mysql(trx_t *trx) /*!< in/out: transaction */
   started. */
 
   dberr_t db_err = DB_SUCCESS;
-
-  // [TPL]
-  trx->pre_commit = TRX_COMMIT_PRE;
-  for(;;) {
-    trx_mutex_enter(trx);
-
-    if(trx->conflict_abort == TRX_ABORT_MARKED) {
-      // Rollback: Don't apply (아직 롤백 완료 전)
-      // DB_DEADLOCK 17
-      trx_mutex_exit(trx);
-      // fprintf(stderr, "[DEBUG] (%d) trx_commit_for_mysql - Abort: %d\n", trx->id, trx->conflict_abort,);
-      trx_rollback_for_mysql(trx);
-      return(DB_SUCCESS);
-    }
-    // [TPL] - async commit
-    else if(trx_set_latest_conf_to_wait(trx)) { //
-      // if (search_conflict_cycle(trx)) {
-      //   fprintf(stderr, "[DEBUG] (%d) trx_commit_for_mysql - Cycle\n", trx->id);
-      //   // trx->lock.was_chosen_as_deadlock_victim = true;
-      //   trx->conflict_abort = TRX_ABORT_MARKED;
-      //   trx_mutex_exit(trx);
-      //   continue;
-      // } else {
-      //   trx_mutex_exit(trx);
-      //   tpl_apply_trx(trx);
-      //   break;
-      // }
-
-      // 선행 트랜잭션에게 log 전달
-
-      trx->lock.wait_started = std::chrono::system_clock::from_time_t(time(nullptr));
-      trx->lock.que_state = TRX_QUE_LOCK_WAIT;
-
-      // trx_set_latest_conf_to_wait(trx);
-     	que_thr_t*	thr;
-			mem_heap_t*	heap;
-      sel_node_t *node;
-			heap = mem_heap_create(512, UT_LOCATION_HERE);
-      node = sel_node_create(heap);
-      thr = pars_complete_graph_for_exec(node, trx, heap, nullptr);
-      thr->graph->state = QUE_FORK_ACTIVE;
-      thr = que_fork_get_first_thr(static_cast<que_fork_t *>(que_node_get_parent(thr)));
-
-      trx->lock.wait_thr = thr;
-			thr->state = QUE_THR_LOCK_WAIT;	
-      trx_mutex_exit(trx);
-
-      // fprintf(stderr, "[DEBUG] (%d)(%p) COMMIT_WAIT - blocker: %d(%p)\n", trx->id, trx, trx->lock.blocking_trx.load()->id, trx->lock.blocking_trx.load());
-
-      lock_wait_suspend_thread(thr);
-
-      que_thr_stop_for_mysql_no_error(thr, trx);
-      que_graph_free(thr->graph);
-
-      // fprintf(stderr, "[DEBUG] (%d) COMMIT_WAIT END\n", trx->id);
-      
-    } 
-    // end async
-    else {
-      trx_mutex_exit(trx);
-      // fprintf(stderr, "[DEBUG] (%d) trx_commit_for_mysql - Apply (%d)\n", trx->id, trx->in_memory_ppl_buf.size()); 
-      // fprintf(stderr, "%u\n", mem_heap_get_size(trx->conflict_heap)); 
-      tpl_apply_trx(trx);
-      break;
-    }
-  }
-  // // Total used payload
-  // size_t used = 0;
-  // for (auto block = UT_LIST_GET_FIRST(trx->conflict_heap->base);
-  //      block != nullptr;
-  //      block = UT_LIST_GET_NEXT(list, block)) {
-
-  //   const auto info = reinterpret_cast<const mem_block_info_t*>(block);
-
-  //   // start/free는 "user data" 관점의 사용량
-  //   if (info->free >= info->start) {
-  //     used += static_cast<size_t>(info->free - info->start);
-  //   }
-  // }
-  // fprintf(stderr, "%u\n",  used);
-
-  // // Length of dependency chain
-  // int size = 0;
-  // for (auto* elem : trx->lock.conf_lock_pool) {
-  //   if (elem) {
-  //     size++;
-  //   }
-  // }
-  // fprintf(stderr, "%d\n", size);
-
-
-  // fprintf(stderr, "%d\n",  trx->in_memory_ppl_buf.size());
-  
-  
-  // if (trx->conflict_heap->free - trx->conflict_heap->start > 10) {
-  //   fprintf(stderr, "%u\n",  trx->conflict_heap->free - trx->conflict_heap->start);
-  // }
-  // fprintf(stderr, "[DEBUG] (%d) COMMIT\n", trx->id);
-
-  trx->pre_commit = TRX_COMMIT;
 
   ut_ad(trx_can_be_handled_by_current_thread_or_is_hp_victim(trx));
 
@@ -2704,7 +2539,7 @@ void trx_mark_sql_stat_end(trx_t *trx) /*!< in: trx handle */
 
       return;
   }
-  // fprintf(stderr, "[DEBUG] (%d)trx_mark_sql_stat_end - %d\n", trx->id, trx->state.load(std::memory_order_relaxed));
+
   ut_error;
 }
 
@@ -2727,97 +2562,96 @@ void trx_print_low(FILE *f,
   bool newline;
   const char *op_info;
 
-  // ut_ad(trx_sys_mutex_own());
+  ut_ad(trx_sys_mutex_own());
 
-  fprintf(f, "-- (" TRX_ID_FMT, trx_get_id_for_print(trx));
-  fprintf(f, ") ");
+  fprintf(f, "TRANSACTION " TRX_ID_FMT, trx_get_id_for_print(trx));
 
   const auto trx_state = trx->state.load(std::memory_order_relaxed);
 
-  // if (const char *const state_string = trx_state_string(trx_state)) {
-  //   fprintf(f, ", %s", state_string);
-  // } else {
-  //   fprintf(f, ", state %d", to_int(trx_state));
-  // }
+  if (const char *const state_string = trx_state_string(trx_state)) {
+    fprintf(f, ", %s", state_string);
+  } else {
+    fprintf(f, ", state %d", to_int(trx_state));
+  }
 
-  // if (trx_state == TRX_STATE_ACTIVE || trx_state == TRX_STATE_PREPARED) {
-  //   unsigned long secs = std::chrono::duration_cast<std::chrono::seconds>(
-  //                            std::chrono::system_clock::now() -
-  //                            trx->start_time.load(std::memory_order_relaxed))
-  //                            .count();
-  //   fprintf(f, " %lu sec", secs);
-  // }
+  if (trx_state == TRX_STATE_ACTIVE || trx_state == TRX_STATE_PREPARED) {
+    unsigned long secs = std::chrono::duration_cast<std::chrono::seconds>(
+                             std::chrono::system_clock::now() -
+                             trx->start_time.load(std::memory_order_relaxed))
+                             .count();
+    fprintf(f, " %lu sec", secs);
+  }
 
-  // /* prevent a race condition */
-  // op_info = trx->op_info;
+  /* prevent a race condition */
+  op_info = trx->op_info;
 
-  // if (*op_info) {
-  //   putc(' ', f);
-  //   fputs(op_info, f);
-  // }
+  if (*op_info) {
+    putc(' ', f);
+    fputs(op_info, f);
+  }
 
-  // if (trx->is_recovered) {
-  //   fputs(" recovered trx", f);
-  // }
+  if (trx->is_recovered) {
+    fputs(" recovered trx", f);
+  }
 
-  // if (trx->declared_to_be_inside_innodb) {
-  //   fprintf(f, ", thread declared inside InnoDB %lu",
-  //           (ulong)trx->n_tickets_to_enter_innodb);
-  // }
+  if (trx->declared_to_be_inside_innodb) {
+    fprintf(f, ", thread declared inside InnoDB %lu",
+            (ulong)trx->n_tickets_to_enter_innodb);
+  }
 
-  // putc('\n', f);
+  putc('\n', f);
 
-  // if (trx->n_mysql_tables_in_use > 0 || trx->mysql_n_tables_locked > 0) {
-  //   fprintf(f, "mysql tables in use %lu, locked %lu\n",
-  //           (ulong)trx->n_mysql_tables_in_use,
-  //           (ulong)trx->mysql_n_tables_locked);
-  // }
+  if (trx->n_mysql_tables_in_use > 0 || trx->mysql_n_tables_locked > 0) {
+    fprintf(f, "mysql tables in use %lu, locked %lu\n",
+            (ulong)trx->n_mysql_tables_in_use,
+            (ulong)trx->mysql_n_tables_locked);
+  }
 
-  // newline = true;
+  newline = true;
 
-  // /* trx->lock.que_state of an ACTIVE transaction may change
-  // while we are not holding trx->mutex. We perform a dirty read
-  // for performance reasons. */
+  /* trx->lock.que_state of an ACTIVE transaction may change
+  while we are not holding trx->mutex. We perform a dirty read
+  for performance reasons. */
 
-  // switch (trx->lock.que_state) {
-  //   case TRX_QUE_RUNNING:
-  //     newline = false;
-  //     break;
-  //   case TRX_QUE_LOCK_WAIT:
-  //     fputs("LOCK WAIT ", f);
-  //     break;
-  //   case TRX_QUE_ROLLING_BACK:
-  //     fputs("ROLLING BACK ", f);
-  //     break;
-  //   case TRX_QUE_COMMITTING:
-  //     fputs("COMMITTING ", f);
-  //     break;
-  //   default:
-  //     fprintf(f, "que state %lu ", (ulong)trx->lock.que_state);
-  // }
+  switch (trx->lock.que_state) {
+    case TRX_QUE_RUNNING:
+      newline = false;
+      break;
+    case TRX_QUE_LOCK_WAIT:
+      fputs("LOCK WAIT ", f);
+      break;
+    case TRX_QUE_ROLLING_BACK:
+      fputs("ROLLING BACK ", f);
+      break;
+    case TRX_QUE_COMMITTING:
+      fputs("COMMITTING ", f);
+      break;
+    default:
+      fprintf(f, "que state %lu ", (ulong)trx->lock.que_state);
+  }
 
-  // if (n_trx_locks > 0 || heap_size > 400) {
-  //   newline = true;
+  if (n_trx_locks > 0 || heap_size > 400) {
+    newline = true;
 
-  //   fprintf(f,
-  //           "%lu lock struct(s), heap size %lu,"
-  //           " %lu row lock(s)",
-  //           (ulong)n_trx_locks, (ulong)heap_size, (ulong)n_rec_locks);
-  // }
+    fprintf(f,
+            "%lu lock struct(s), heap size %lu,"
+            " %lu row lock(s)",
+            (ulong)n_trx_locks, (ulong)heap_size, (ulong)n_rec_locks);
+  }
 
-  // if (trx->has_search_latch) {
-  //   newline = true;
-  //   fputs(", holds adaptive hash latch", f);
-  // }
+  if (trx->has_search_latch) {
+    newline = true;
+    fputs(", holds adaptive hash latch", f);
+  }
 
-  // if (trx->undo_no != 0) {
-  //   newline = true;
-  //   fprintf(f, ", undo log entries " TRX_ID_FMT, trx->undo_no);
-  // }
+  if (trx->undo_no != 0) {
+    newline = true;
+    fprintf(f, ", undo log entries " TRX_ID_FMT, trx->undo_no);
+  }
 
-  // if (newline) {
-  //   putc('\n', f);
-  // }
+  if (newline) {
+    putc('\n', f);
+  }
 
   if (trx_state != TRX_STATE_NOT_STARTED && trx->mysql_thd != nullptr) {
     innobase_mysql_print_thd(f, trx->mysql_thd,
@@ -3043,8 +2877,8 @@ void trx_before_mutex_enter(const trx_t *trx, bool first_of_two) {
       should already either latch trx->mutex (which we don't) or shard with
       trx->lock.wait_lock. But our claim is precisely that we have latched
       this shard, and we want to check that here. */
-      // ut_a(trx->lock.wait_lock != nullptr); //??
-      // ut_a(locksys::owns_lock_shard(trx->lock.wait_lock));
+      ut_a(trx->lock.wait_lock != nullptr);
+      ut_a(locksys::owns_lock_shard(trx->lock.wait_lock));
     }
   }
 }
@@ -3664,8 +3498,6 @@ void trx_kill_blocking(trx_t *trx) {
   ut_a(trx->dict_operation_lock_mode == 0);
 
   /** Kill the transactions in the lock acquisition order old -> new. */
-  // T3, T2, T1 순서대로 kill
-  // 가장 최근에 등장한 트랜잭션부터 죽이고, 가장 오래된 트랜잭션은 마지막까지 보호
   hit_list_t::reverse_iterator end = hit_list.rend();
 
   for (hit_list_t::reverse_iterator it = hit_list.rbegin(); it != end; ++it) {
@@ -3677,7 +3509,6 @@ void trx_kill_blocking(trx_t *trx) {
     ut_ad(victim_trx->mysql_thd != trx->mysql_thd);
 
     if (lock_cancel_if_waiting_and_release(*it)) {
-      // victim 마킹 했으니까 알아서 rollback
       continue;
     }
 

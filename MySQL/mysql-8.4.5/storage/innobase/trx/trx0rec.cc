@@ -57,10 +57,6 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "trx0rseg.h"
 #include "ut0mem.h"
 
-// [TPL]
-#include "tpl0log.h"
-//
-
 #include "my_dbug.h"
 
 namespace dd {
@@ -1192,7 +1188,7 @@ static ulint trx_undo_page_report_modify(
   bool first_v_col = true;
 
   ut_a(index->is_clustered());
-  // ut_ad(rec_offs_validate(rec, index, offsets));
+  ut_ad(rec_offs_validate(rec, index, offsets));
   ut_ad(mach_read_from_2(undo_page + TRX_UNDO_PAGE_HDR + TRX_UNDO_PAGE_TYPE) ==
         TRX_UNDO_UPDATE);
   table = index->table;
@@ -1280,23 +1276,14 @@ static ulint trx_undo_page_report_modify(
   /*----------------------------------------*/
   /* Store then the fields required to uniquely determine the
   record which will be modified in the clustered index */
-  // 변경 대상 레코드를 "유일하게 식별하기 위한 ordering column 값들"을 undo 로그에 저장하는 단계
-  // dict_index_get_n_unique(index): 유니크하게 레코드를 식별하는 key column 수
-
-  // fprintf(stderr, "[DEBUG] trx_undo_page_report_modify - rec: %p, %d\n", rec, dict_index_get_n_unique(index));
 
   for (i = 0; i < dict_index_get_n_unique(index); i++) {
     field = rec_get_nth_field(index, rec, offsets, i, &flen);
 
     /* The ordering columns must not be stored externally. */
-    // 정렬 키가 아닌 컬럼은 이 루프에서 나타나면 안 됨 (rollback이나 purge 시 이 레코드를 재구성/식별X)
     ut_ad(!rec_offs_nth_extern(index, offsets, i));
     ut_ad(!rec_offs_nth_default(index, offsets, i));
-
-    // InnoDB는 ClusteredIndex는 고유하게 식별하기 위해, ordering col로만으로 구성된다 -> undo에 얘만 저장해도 원래 레코드 찾을 수 있음
-		// if ord_part == true, 해당 칼럼이 인덱스에서 정렬 키로 사용된다는 의미(ordering) -> false인 애들은 식별자로 사용할 수 없음!
-		// Q. purge thread가 이 undo log로 인덱스 서치를 안 하면 이 assert를 생략해도 되지만, 아니면 purge 불가능
-    // ut_ad(index->get_col(i)->ord_part); // ord_part == true가 아니면 undo 로그로부터 다시 이 레코드를 찾을 수 없음
+    ut_ad(index->get_col(i)->ord_part);
 
     if (trx_undo_left(undo_page, ptr) < 5) {
       return 0;
@@ -1707,8 +1694,6 @@ static ulint trx_undo_page_report_modify(
 
   mach_write_to_2(undo_page + TRX_UNDO_PAGE_HDR + TRX_UNDO_PAGE_FREE,
                   ptr - undo_page);
-
-  // fprintf(stderr, "[DEBUG] (%d) trx_undo_page_report_modify - %d, rec: %p, undo_rec: %p\n", trx->id, ptr - undo_page, rec, undo_page + first_free);
 
   /* Write to the REDO log about this change in the UNDO log */
 
@@ -2332,7 +2317,6 @@ dberr_t trx_undo_report_row_operation(
       *roll_ptr =
           trx_undo_build_roll_ptr(op_type == TRX_UNDO_INSERT_OP,
                                   undo_ptr->rseg->space_id, page_no, offset);
-      // fprintf(stderr, "[DEBUG] (%d) trx_undo_report_row_operation - rec: %p, roll_ptr: %p\n", trx->id, rec, roll_ptr);
       return (DB_SUCCESS);
     }
 
@@ -2380,216 +2364,6 @@ err_exit:
   return (err);
 }
 
-// [TPL] - trx_parse_undo_report_row_operation
-dberr_t
-trx_parse_undo_report_row_operation(
-	trx_t*		trx,
-	ulint		flags,
-	ulint		op_type,
-	dict_index_t*	index,
-	const upd_t*	update,
-	const rec_t*	rec,
-	const ulint*	offsets,
-	roll_ptr_t*	roll_ptr,
-	ulint		cmpl_info
-){
-
-	// fprintf(stderr, "[DEBUG] (%d) trx_parse_undo_report_row_operation - rec: %p\n", trx->id, rec);
-
-	trx_undo_t*	undo;
-	ulint		page_no;
-	buf_block_t*	undo_block;
-	trx_undo_ptr_t*	undo_ptr;
-	mtr_t		mtr;
-	dberr_t		err		= DB_SUCCESS;
-
-
-	if (flags & BTR_NO_UNDO_LOG_FLAG) {
-		*roll_ptr = 0;
-		return(DB_SUCCESS);
-	}
-
-	bool is_temp_table = index->table->is_temporary();
-	/* Temporary tables do not go into INFORMATION_SCHEMA.TABLES,
-	so do not bother adding it to the list of modified tables by
-	the transaction - this list is only used for maintaining
-	INFORMATION_SCHEMA.TABLES.UPDATE_TIME. */
-	if (!is_temp_table) {
-		trx->mod_tables.insert(index->table);
-	}
-
-	/* If trx is read-only then only temp-tables can be written.
-	If trx is read-write and involves temp-table only then we
-	assign temporary rseg. */
-	if (is_temp_table && trx->rsegs.m_noredo.rseg == nullptr) {
-		trx_assign_rseg_temp(trx);
-	}
-
-	mtr_start(&mtr);
-
-  if (is_temp_table) {
-    /* If object is temporary, disable REDO logging that
-    is done to track changes done to UNDO logs. This is
-    feasible given that temporary tables and temporary
-    undo logs are not restored on restart. */
-    undo_ptr = &trx->rsegs.m_noredo;
-    mtr.set_log_mode(MTR_LOG_NO_REDO);
-  } else {
-    undo_ptr = &trx->rsegs.m_redo;
-  }
-
-	mutex_enter(&trx->undo_mutex);
-
-	switch (op_type) {
-	case TRX_UNDO_INSERT_OP:
-		// fprintf(stderr, "[DEBUG] (%d)trx_parse_undo_report_row_operation -- TRX_UNDO_INSERT_OP\n", trx->id);
-		undo = undo_ptr->insert_undo;
-
-		if (undo == NULL) {
-      err = trx_undo_assign_undo(trx, undo_ptr, TRX_UNDO_INSERT);
-			undo = undo_ptr->insert_undo;
-
-			if (undo == NULL) {
-				/* Did not succeed */
-				goto err_exit;
-			}
-		} 
-		break;
-	default:
-		// ut_ad(op_type == TRX_UNDO_MODIFY_OP);
-		undo = undo_ptr->update_undo;
-
-		if (undo == NULL) {
-      err = trx_undo_assign_undo(trx, undo_ptr, TRX_UNDO_UPDATE);
-			undo = undo_ptr->update_undo;
-
-			if (undo == NULL) {
-				/* Did not succeed */
-				goto err_exit;
-			}
-		} 
-	}
-
-	page_no = undo->last_page_no;
-  undo_block = buf_page_get_gen(page_id_t(undo->space, page_no),
-                                undo->page_size, RW_X_LATCH, undo->guess_block,
-                                Page_fetch::NORMAL, UT_LOCATION_HERE, &mtr);
-
-	buf_block_dbg_add_level(undo_block, SYNC_TRX_UNDO_PAGE);
-
-	do {
-		page_t*		undo_page;
-		ulint		offset;
-
-		undo_page = buf_block_get_frame(undo_block);
-
-		switch (op_type) {
-		case TRX_UNDO_INSERT_OP:
-      offset = trx_undo_page_report_insert(undo_page, trx, index, NULL, &mtr);
-			break;
-		default:
-			// ut_ad(op_type == TRX_UNDO_MODIFY_OP);
-			offset = trx_undo_page_report_modify(undo_page, trx, index, rec, offsets, update, cmpl_info, NULL, &mtr);
-      // fprintf(stderr, "[DEBUG] (%d) trx_parse_undo_report_row_operation - rec: %p, page: %p, offset: %d\n", trx->id, rec, undo_page, offset);
-		}
-
-		if (UNIV_UNLIKELY(offset == 0)) {
-			/* The record did not fit on the page. We erase the
-			end segment of the undo log page and write a log
-			record of it: this is to ensure that in the debug
-			version the replicate page constructed using the log
-			records stays identical to the original page */
-
-			if (!trx_undo_erase_page_end(undo_page, &mtr)) {
-				/* The record did not fit on an empty
-				undo page. Discard the freshly allocated
-				page and return an error. */
-
-				/* When we remove a page from an undo
-				log, this is analogous to a
-				pessimistic insert in a B-tree, and we
-				must reserve the counterpart of the
-				tree latch, which is the rseg
-				mutex. We must commit the mini-transaction
-				first, because it may be holding lower-level
-				latches, such as SYNC_FSP and SYNC_FSP_PAGE. */
-
-				mtr_commit(&mtr);
-				mtr_start(&mtr);
-        if (index->table->is_temporary()) {
-          mtr.set_log_mode(MTR_LOG_NO_REDO);
-        }
-
-				undo_ptr->rseg->latch();
-        trx_undo_free_last_page(trx, undo, &mtr);
-        undo_ptr->rseg->unlatch();
-
-				err = DB_UNDO_RECORD_TOO_BIG;
-				goto err_exit;
-			}
-
-			mtr_commit(&mtr);
-		} else {
-			/* Success */
-			undo->guess_block = undo_block;
-      mtr_commit(&mtr);
-
-			undo->empty = false;
-			undo->top_page_no = page_no;
-			undo->top_offset  = offset;
-			undo->top_undo_no = trx->undo_no;
-
-			trx->undo_no++;
-      trx->undo_rseg_space = undo_ptr->rseg->space_id;
-
-			mutex_exit(&trx->undo_mutex);
-
-      *roll_ptr =
-          trx_undo_build_roll_ptr(op_type == TRX_UNDO_INSERT_OP,
-                                  undo_ptr->rseg->space_id, page_no, offset);
-			return(DB_SUCCESS);
-		}
-
-		/* We have to extend the undo log by one page */
-
-		mtr_start(&mtr);
-    if (index->table->is_temporary()) {
-      mtr.set_log_mode(MTR_LOG_NO_REDO);
-    }
-
-		/* When we add a page to an undo log, this is analogous to
-		a pessimistic insert in a B-tree, and we must reserve the
-		counterpart of the tree latch, which is the rseg mutex. */
-
-		undo_ptr->rseg->latch();
-    undo_block = trx_undo_add_page(trx, undo, undo_ptr, &mtr);
-    undo_ptr->rseg->unlatch();
-
-		page_no = undo->last_page_no;
-
-	} while (undo_block != NULL);
-
-	ib_errf(trx->mysql_thd, IB_LOG_LEVEL_ERROR,
-		ER_INNODB_UNDO_LOG_FULL,
-		"No more space left over in %s tablespace for allocating UNDO"
-		" log pages. Please add new data file to the tablespace or"
-		" check if filesystem is full or enable auto-extension for"
-		" the tablespace",
-		((undo->space == srv_sys_space.space_id())
-		? "system" :
-		  ((fsp_is_system_temporary(undo->space))
-		   ? "temporary" : "undo")));
-
-	/* Did not succeed: out of space */
-	err = DB_OUT_OF_FILE_SPACE;
-
-err_exit:
-	mutex_exit(&trx->undo_mutex);
-	mtr_commit(&mtr);
-	// fprintf(stderr, "[DEBUG] (%d)trx_parse_undo_report_row_operation -- err: %d\n", trx->id, err);
-	return(err);
-}
-
 /*============== BUILDING PREVIOUS VERSION OF A RECORD ===============*/
 
 /** Copies an undo record to heap. This function can be called if we know that
@@ -2621,7 +2395,6 @@ err_exit:
   undo_page = trx_undo_page_get_s_latched(page_id_t(space_id, page_no),
                                           page_size, &mtr);
 
-  // fprintf(stderr, "[DEBUG] trx_undo_get_undo_rec_low 4 - roll_ptr: %p, page: %p, offset: %d\n",roll_ptr, undo_page, offset);
   undo_rec = trx_undo_rec_copy(undo_page, static_cast<uint32_t>(offset), heap);
 
   mtr_commit(&mtr);
@@ -2651,18 +2424,10 @@ err_exit:
 
   rw_lock_s_lock(&purge_sys->latch, UT_LOCATION_HERE);
 
-  // true이면: 과거 버전이 더 이상 필요 없거나 삭제된 상태 → undo log가 truncate되어 사라졌을 수 있음.
-  // false이면: 아직 변경사항이 가시하지 않음 → undo record 접근 가능.
   missing_history = purge_sys->view.changes_visible(trx_id, name);
   if (!missing_history) {
     *undo_rec = trx_undo_get_undo_rec_low(roll_ptr, heap, is_temp);
-    // [TPL]
-    if (*undo_rec == nullptr) {
-      // fprintf(stderr, "[DEBUG] trx_undo_get_undo_rec 3 - nullptr %p\n", roll_ptr);
-      missing_history = true;
-    }
   }
-  //
 
   rw_lock_s_unlock(&purge_sys->latch);
 
@@ -2701,7 +2466,7 @@ bool trx_undo_prev_version_build(
   ut_ad(!rw_lock_own(&purge_sys->latch, RW_LOCK_S));
   ut_ad(mtr_memo_contains_page(index_mtr, index_rec, MTR_MEMO_PAGE_S_FIX) ||
         mtr_memo_contains_page(index_mtr, index_rec, MTR_MEMO_PAGE_X_FIX));
-  // ut_ad(rec_offs_validate(rec, index, offsets));
+  ut_ad(rec_offs_validate(rec, index, offsets));
   ut_a(index->is_clustered());
 
   roll_ptr = row_get_rec_roll_ptr(rec, index, offsets);
@@ -2721,18 +2486,14 @@ bool trx_undo_prev_version_build(
 
   ut_ad(!index->table->skip_alter_undo);
 
-  // fprintf(stderr, "[DEBUG] trx_undo_prev_version_build 3 - roll_ptr: %p, rec: %p, rec_trx_id: %d\n", roll_ptr, rec, rec_trx_id);
-
   if (trx_undo_get_undo_rec(roll_ptr, rec_trx_id, heap, is_temp,
                             index->table->name, &undo_rec)) {
     if (v_status & TRX_UNDO_PREV_IN_PURGE) {
       /* We are fetching the record being purged */
       undo_rec = trx_undo_get_undo_rec_low(roll_ptr, heap, is_temp);
-      // fprintf(stderr, "[DEBUG] trx_undo_prev_version_build 3 - being purged: %p %d\n", undo_rec, rec_trx_id);
     } else {
       /* The undo record may already have been purged,
       during purge or semi-consistent read. */
-      // fprintf(stderr, "[DEBUG] trx_undo_prev_version_build 3 - purged: %p %d\n", undo_rec, rec_trx_id);
       return false;
     }
   }
@@ -2741,17 +2502,14 @@ bool trx_undo_prev_version_build(
   ptr = trx_undo_rec_get_pars(undo_rec, &type, &cmpl_info, &dummy_extern,
                               &undo_no, &table_id, type_cmpl);
 
-  // [TPL] - read prev_version(undo log) without table_id
-  // if (table_id != index->table->id) {
-  //   /* The table should have been rebuilt, but purge has
-  //   not yet removed the undo log records for the
-  //   now-dropped old table (table_id). */
-  //   return true;
-  // }
-  //
+  if (table_id != index->table->id) {
+    /* The table should have been rebuilt, but purge has
+    not yet removed the undo log records for the
+    now-dropped old table (table_id). */
+    return true;
+  }
 
   ptr = trx_undo_update_rec_get_sys_cols(ptr, &trx_id, &roll_ptr, &info_bits);
-  // fprintf(stderr, "[DEBUG] trx_undo_prev_version_build 33 - roll_ptr: %p, rec: %p, rec_trx_id: %d\n", roll_ptr, rec, trx_id);
 
   /* (a) If a clustered index record version is such that the
   trx id stamp in it is bigger than purge_sys->view, then the
@@ -2894,198 +2652,6 @@ bool trx_undo_prev_version_build(
 
   return true;
 }
-
-// [TPL] - tpl_redo_update_rec_get_update
-// Builds an update vector based on a remaining part of an redo log record.
-// @return remaining part of the record, NULL if an error detected
-// cc. trx_undo_update_rec_get_update(), row_upd_index_parse()
-byte*
-tpl_redo_update_rec_get_update(
-	const byte*	ptr,		// redo log
-	const byte*	end_ptr,		// redo log
-	dict_index_t*	index,		//clustered index
-	ulint		type,	
-	trx_t*		trx,
-	mem_heap_t*	heap,
-	upd_t**		update_out
-) 
-{
-  upd_t *update;
-  upd_field_t *upd_field;
-  dfield_t *new_val;
-  ulint len;
-  ulint n_fields;
-  ulint info_bits;
-  ulint i;
-
-  byte*		buf;
-
-	if (end_ptr < ptr + 1) {
-		return(NULL);
-	}
-
-	info_bits = mach_read_from_1(ptr);
-	ptr++;
-	n_fields = mach_parse_compressed(&ptr, end_ptr);
-
-	if (ptr == nullptr) {
-    return (nullptr);
-  }
-		
-	update = upd_create(n_fields + 2, heap);
-	update->info_bits = info_bits;
-
-  upd_field = upd_get_nth_field(update, n_fields);
-
-  buf = static_cast<byte *>(mem_heap_alloc(heap, DATA_TRX_ID_LEN));
-
-  trx_write_trx_id(buf, trx->id);
-  
-  upd_field_set_field_no(upd_field, index->get_sys_col_pos(DATA_TRX_ID), index);
-  dfield_set_data(&(upd_field->new_val), buf, DATA_TRX_ID_LEN);
-
-  upd_field = upd_get_nth_field(update, n_fields + 1);
-
-  buf = static_cast<byte *>(mem_heap_alloc(heap, DATA_ROLL_PTR_LEN));
-
-  trx_write_roll_ptr(buf, NULL);
-
-  upd_field_set_field_no(upd_field, index->get_sys_col_pos(DATA_ROLL_PTR),
-                         index);
-  dfield_set_data(&(upd_field->new_val), buf, DATA_ROLL_PTR_LEN);
-
-  for (i = 0; i < n_fields; i++) {
-    ulint field_no;
-    upd_field = upd_get_nth_field(update, i);
-    new_val = &(upd_field->new_val);
-
-    field_no = mach_parse_compressed(&ptr, end_ptr);
-
-    if (ptr == nullptr) {
-      return (nullptr);
-    }
-
-    /* Check if this is a virtual column, mark the prtype
-    if that is the case */
-    if (field_no >= REC_MAX_N_FIELDS) {
-      new_val->type.prtype |= DATA_VIRTUAL;
-      field_no -= REC_MAX_N_FIELDS;
-    }
-
-    upd_field->field_no = field_no;
-
-    len = mach_parse_compressed(&ptr, end_ptr);
-
-    if (ptr == nullptr) {
-      return (nullptr);
-    }
-
-    if (len != UNIV_SQL_NULL) {
-      if (end_ptr < ptr + len) {
-        return (nullptr);
-      }
-
-      dfield_set_data(new_val, mem_heap_dup(heap, ptr, len), len);
-      ptr += len;
-    } else {
-      dfield_set_null(new_val);
-    }
-  }
-
-  *update_out = update;
-
-  return (const_cast<byte *>(ptr));
-}
-
-// [TPL] - tpl_redo_future_version_build
-/*
- * build future version with redo log
-*/
-dberr_t
-tpl_redo_future_version_build(
-	dict_index_t*	index,
-	ulint**		offsets,
-	rec_t**		old_vers,
-	trx_t*		trx,
-	byte*     log_start) 
-{
-	// fprintf(stderr, "[DEBUG] (%d) tpl_redo_future_version_build\n", trx->id);
-	
-	mem_heap_t*	temp_heap		= NULL;
-	byte* ptr = log_start;
-	byte* end_ptr;
-
-	// buf_block_t* apply_block;
-	ulint body_len;
-	mlog_id_t log_type;
-
-	dict_index_t*	log_index	= NULL;
-
-	upd_t*		update;
-	ulint		pos;
-	trx_id_t	trx_id;
-	roll_ptr_t	roll_ptr;
-	ulint		rec_offset;
-	
-	ulint		val;
-
-  // ulint space = mach_read_from_4(ptr);
-  ptr += 4;
-  // ulint page_no = mach_read_from_4(ptr);
-  ptr += 4;
-  log_type = mlog_id_t(mach_read_from_1(ptr));
-  ptr += 1;
-  body_len = mach_read_from_2(ptr);
-  ptr += 2;
-  end_ptr = ptr + body_len;
-
-
-	// fprintf(stderr, "[DEBUG] (%d) tpl_redo_future_version_build 2 - Type : %d len: %lu, ptr: %p, end_ptr: %p\n", trx->id, log_type, body_len, ptr, end_ptr);
-	
-	switch (log_type) {
-		case MLOG_REC_UPDATE_IN_PLACE: 
-			if (nullptr != (ptr = const_cast<byte*>(mlog_parse_index(ptr, end_ptr, &index)))) {
-        // fprintf(stderr, "[DEBUG] (%d) tpl_redo_future_version_build - Type : %d len: %lu, ptr: %p, end_ptr: %p\n", trx->id, log_type, body_len, ptr, end_ptr);
-
-				// flags = mach_read_from_1(ptr);
-				ptr++;
-
-				ptr = row_upd_parse_sys_vals(ptr, end_ptr, &pos, &trx_id, &roll_ptr);
-
-				if (ptr == NULL) {
-          return DB_FAIL;
-        }
-				if (end_ptr < ptr + 2) {
-          return DB_FAIL;
-        }
-
-				rec_offset = mach_read_from_2(ptr);
-				ptr += 2;
-
-				ut_a(rec_offset <= UNIV_PAGE_SIZE);
-
-				temp_heap = mem_heap_create(1024, UT_LOCATION_HERE);
-				ptr = tpl_redo_update_rec_get_update(ptr, end_ptr, index, log_type, trx, temp_heap, &update);
-				
-				if (update == nullptr) {
-          return DB_DATA_MISMATCH;
-        }
-
-        rec_offs_make_valid(*old_vers, index, *offsets);
-				row_upd_rec_in_place(*old_vers, index, *offsets, update, nullptr);
-
-        update->reset();
-
-        mem_heap_free(temp_heap);
-				return DB_SUCCESS;
-			} 
-		default:
-			// fprintf(stderr, "[DEBUG] (%d) tpl_redo_future_version_build -- !UPDATE -- Type : %d len: %lu, temp_ptr: %p\n", trx->id, log_type, body_len, ptr);
-			return DB_FAIL;
-	}
-	return DB_FAIL;
-}
-//
 
 /** Read virtual column value from undo log
 @param[in]      table           the table

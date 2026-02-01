@@ -194,13 +194,7 @@ static monitor_info_t innodb_counter_info[] = {
      " (innodb_row_lock_time)",
      static_cast<monitor_type_t>(MONITOR_EXISTING | MONITOR_DEFAULT_ON),
      MONITOR_DEFAULT_START, MONITOR_OVLD_LOCK_WAIT_TIME},
-    
-    {"lock_row_commit_time", "lock",
-    "Time spent in acquiring row commit, in milliseconds"
-    " (innodb_row_commit_time)",
-    static_cast<monitor_type_t>(MONITOR_EXISTING | MONITOR_DEFAULT_ON),
-    MONITOR_DEFAULT_START, MONITOR_OVLD_LOCK_COMMIT_TIME}, // [TPL] - time
-      
+
     {"lock_row_lock_time_max", "lock",
      "The maximum time to acquire a row lock, in milliseconds"
      " (innodb_row_lock_time_max)",
@@ -1881,10 +1875,6 @@ void srv_mon_process_existing_counter(
     /* innodb_row_lock_time */
     case MONITOR_OVLD_LOCK_WAIT_TIME:
       value = srv_stats.n_lock_wait_time / 1000;
-      break;
-    
-    case MONITOR_OVLD_LOCK_COMMIT_TIME:
-      value = srv_stats.n_lock_commit_time / 1000;
       break;
 
     /* innodb_row_lock_time_max */

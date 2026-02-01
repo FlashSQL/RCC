@@ -79,7 +79,6 @@ SET(INNOBASE_ZIP_DECOMPRESS_SOURCES
   ut/ut0new.cc)
 
 SET(INNOBASE_SOURCES
-  tpl/tpl0log.cc
   api/api0api.cc
   api/api0misc.cc
   arch/arch0arch.cc

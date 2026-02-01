@@ -662,13 +662,7 @@ bool row_mysql_handle_errors(
   dberr_t err;
 
 handle_new_error:
-  // [TPL]
-  // fprintf(stderr, "[DEBUG] (%d) row_mysql_handle_errors - %d\n", trx->id, trx->conflict_abort);
-  if (trx->conflict_abort == TRX_ABORT_MARKED) {
-    err = DB_DEADLOCK;
-  }
-  else err = trx->error_state;
-  //
+  err = trx->error_state;
 
   ut_a(err != DB_SUCCESS);
 
@@ -705,7 +699,6 @@ handle_new_error:
         /* Roll back the latest, possibly incomplete insertion
         or update */
 
-        // fprintf(stderr, "[DEBUG] (%d) row_mysql_handle_errors: %d\n", trx->id, err);
         trx_rollback_to_savepoint(trx, savept);
       }
       /* MySQL will roll back the latest SQL statement */
@@ -734,11 +727,6 @@ handle_new_error:
 
       trx_rollback_to_savepoint(trx, nullptr);
       break;
-    // [TPL]
-    case DB_MISSING_HISTORY:
-      trx_rollback_to_savepoint(trx, nullptr);
-      break;
-    //
 
     case DB_MUST_GET_MORE_FILE_SPACE:
       ib::fatal(UT_LOCATION_HERE, ER_IB_MSG_972)
@@ -767,7 +755,7 @@ handle_new_error:
       break;
     default:
       ib::fatal(UT_LOCATION_HERE, ER_IB_MSG_975)
-          << "Unknown error code " << err << ": " ;
+          << "Unknown error code " << err << ": " << ut_strerr(err);
   }
 
   if (trx->error_state != DB_SUCCESS) {
@@ -1184,6 +1172,7 @@ dberr_t row_lock_table_autoinc_for_mysql(
   in the lock module call */
 
   thr = que_fork_get_first_thr(prebuilt->ins_graph);
+
   que_thr_move_to_run_state_for_mysql(thr, trx);
 
 run_again:
@@ -1600,8 +1589,7 @@ run_again:
 
   err = trx->error_state;
 
-  if (err != DB_SUCCESS && err != DB_CONFLICT_LOCKED_REC) {
-  // if (err != DB_SUCCESS) {
+  if (err != DB_SUCCESS) {
   error_exit:
     que_thr_stop_for_mysql(thr);
 

@@ -553,7 +553,7 @@ static inline bool rec_field_not_null_not_add_col_def(ulint len) {
 static inline bool rec_offs_comp(
     const ulint *offsets) /*!< in: array returned by rec_get_offsets() */
 {
-  // ut_ad(rec_offs_validate(nullptr, nullptr, offsets));
+  ut_ad(rec_offs_validate(nullptr, nullptr, offsets));
   return (*rec_offs_base(offsets) & REC_OFFS_COMPACT) != 0;
 }
 
@@ -563,7 +563,7 @@ static inline bool rec_offs_comp(
 static inline bool rec_offs_any_extern(
     const ulint *offsets) /*!< in: array returned by rec_get_offsets() */
 {
-  // ut_ad(rec_offs_validate(nullptr, nullptr, offsets));
+  ut_ad(rec_offs_validate(nullptr, nullptr, offsets));
   return (*rec_offs_base(offsets) & REC_OFFS_EXTERNAL);
 }
 
@@ -571,7 +571,7 @@ static inline const byte *rec_offs_any_null_extern(const dict_index_t *index,
                                                    const rec_t *rec,
                                                    const ulint *offsets) {
   ulint i;
-  // ut_ad(rec_offs_validate(rec, nullptr, offsets));
+  ut_ad(rec_offs_validate(rec, nullptr, offsets));
 
   if (!rec_offs_any_extern(offsets)) {
     return (nullptr);
@@ -665,7 +665,7 @@ static inline ulint rec_offs_data_size(
 {
   ulint size;
 
-  // ut_ad(rec_offs_validate(nullptr, nullptr, offsets));
+  ut_ad(rec_offs_validate(nullptr, nullptr, offsets));
   size = rec_offs_base(offsets)[rec_offs_n_fields(offsets)] & REC_OFFS_MASK;
   ut_ad(size < UNIV_PAGE_SIZE);
   return (size);
@@ -679,7 +679,7 @@ static inline ulint rec_offs_extra_size(
     const ulint *offsets) /*!< in: array returned by rec_get_offsets() */
 {
   ulint size;
-  // ut_ad(rec_offs_validate(nullptr, nullptr, offsets));
+  ut_ad(rec_offs_validate(nullptr, nullptr, offsets));
   size = *rec_offs_base(offsets) & ~(REC_OFFS_COMPACT | REC_OFFS_EXTERNAL);
   ut_ad(size < UNIV_PAGE_SIZE);
   return (size);
@@ -695,12 +695,12 @@ static inline ulint rec_offs_size(
 
 #ifdef UNIV_DEBUG
 static inline byte *rec_get_end(const rec_t *rec, const ulint *offsets) {
-  // ut_ad(rec_offs_validate(rec, nullptr, offsets));
+  ut_ad(rec_offs_validate(rec, nullptr, offsets));
   return (const_cast<rec_t *>(rec + rec_offs_data_size(offsets)));
 }
 
 static inline byte *rec_get_start(const rec_t *rec, const ulint *offsets) {
-  // ut_ad(rec_offs_validate(rec, nullptr, offsets));
+  ut_ad(rec_offs_validate(rec, nullptr, offsets));
   return (const_cast<rec_t *>(rec - rec_offs_extra_size(offsets)));
 }
 #endif /* UNIV_DEBUG */
@@ -717,7 +717,7 @@ static inline rec_t *rec_copy(void *buf, const rec_t *rec,
 
   ut_ad(rec != nullptr);
   ut_ad(buf != nullptr);
-  // ut_ad(rec_offs_validate(rec, nullptr, offsets));
+  ut_ad(rec_offs_validate(rec, nullptr, offsets));
   ut_ad(rec_validate(rec, offsets));
 
   extra_len = rec_offs_extra_size(offsets);
@@ -841,7 +841,7 @@ static inline uint64_t rec_hash(const rec_t *rec, const ulint *offsets,
   ulint len;
   ulint n_fields_rec;
 
-  // ut_ad(rec_offs_validate(rec, nullptr, offsets));
+  ut_ad(rec_offs_validate(rec, nullptr, offsets));
   ut_ad(rec_validate(rec, offsets));
   ut_ad(n_fields > 0 || n_bytes > 0);
 
