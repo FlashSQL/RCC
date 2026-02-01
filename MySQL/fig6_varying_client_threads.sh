@@ -48,6 +48,8 @@ for BUILD_MODE in "${BUILD_MODES[@]}"; do
     echo "[INFO] Building MySQL ($BUILD_MODE mode)..."
     bash run_server.sh --$BUILD_MODE
 
+    cd $BASE_DIR/tpcc-mysql/src && make
+
     $MYSQL -u root -e "CREATE DATABASE tpcc;"
     $MYSQL -u root tpcc < $BASE_DIR/tpcc-mysql/create_table.sql
     $MYSQL -u root tpcc < $BASE_DIR/tpcc-mysql/add_fkey_idx.sql
