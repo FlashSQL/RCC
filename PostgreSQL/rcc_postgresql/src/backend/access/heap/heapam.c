@@ -3516,8 +3516,20 @@ skip_visibility_check:
 					INSTR_TIME_SUBTRACT(txwait_end, txwait_start);
 					xact_count_tuple_update_wait_time(INSTR_TIME_GET_MICROSEC(txwait_end));
 					/* Breakdown Code End */
-					LockBuffer(buffer, BUFFER_LOCK_EXCLUSIVE);
-					goto l2;
+					if (have_tuple_lock)
+						UnlockTupleTuplock(relation, &(oldtup.t_self), *lockmode);
+					if (vmbuffer != InvalidBuffer)
+						ReleaseBuffer(vmbuffer);
+					bms_free(hot_attrs);
+					bms_free(sum_attrs);
+					bms_free(key_attrs);
+					bms_free(id_attrs);
+					bms_free(modified_attrs);
+					bms_free(interesting_attrs);
+					ereport(ERROR,
+							(errcode(ERRCODE_T_R_SERIALIZATION_FAILURE),
+							 errmsg("aborting due to aborted xmin during spin-wait in heap_update, xmin=%u, xwait=%u, TX_ID=%u",
+									HeapTupleHeaderGetRawXmin(oldtup.t_data), xwait, GetTopTransactionIdIfAny())));
 				}
 				if(CheckAbortedDependencies()){
 					/* Breakdown Code - ereport 전에 측정 */
@@ -5935,8 +5947,14 @@ skip_visibility_check_in_lock:
 						INSTR_TIME_SUBTRACT(txwait_end, txwait_start);
 						xact_count_tuple_update_wait_time(INSTR_TIME_GET_MICROSEC(txwait_end));
 						/* Breakdown Code End */
-						LockBuffer(*buffer, BUFFER_LOCK_EXCLUSIVE);
-						goto l3;
+						if (have_tuple_lock)
+							UnlockTupleTuplock(relation, tid, mode);
+						if (vmbuffer != InvalidBuffer)
+							ReleaseBuffer(vmbuffer);
+						ereport(ERROR,
+								(errcode(ERRCODE_T_R_SERIALIZATION_FAILURE),
+								 errmsg("aborting due to aborted xmin during spin-wait in heap_lock_tuple, xmin=%u, xwait=%u, TX_ID=%u",
+										xmin, xwait, GetTopTransactionIdIfAny())));
 					}
 					// if(mode == LockTupleKeyShare){
 					// 	if(GetTopTransactionIdIfAny() == xmin){

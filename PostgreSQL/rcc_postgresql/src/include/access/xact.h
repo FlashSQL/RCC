@@ -531,6 +531,8 @@ extern bool IsInParallelMode(void);
 extern void xact_count_tuplock_wait_time(int64 time_us);
 extern void xact_count_txwait_time(int64 time_us);
 extern void xact_count_tuple_update_wait_time(int64 time_us);
+/* Breakdown Code - Dependency chain stats */
+extern void xact_count_dep_chain_stats(int max_depth, int visited_nodes);
 /* Breakdown Code End */
 
 #endif							/* XACT_H */

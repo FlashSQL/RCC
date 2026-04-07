@@ -175,13 +175,16 @@ IsCircularDependency(TransactionId depxid, TransactionId myxid)
      */
     TransactionId stack[MAX_DEP];
     TransactionId parent[MAX_DEP];  /* Track parent for path reconstruction */
+    int depthStack[MAX_DEP];        /* Track DFS depth for chain length measurement */
     int stackSize = 0;
     int visitedCount = 0;
+    int maxDepth = 0;               /* Maximum dependency chain length observed */
     TransactionId visitedXids[MAX_DEP];
     TransactionId visitedParent[MAX_DEP];  /* Parent of each visited node */
 
     stack[stackSize] = myxid;
     parent[stackSize] = InvalidTransactionId;
+    depthStack[stackSize] = 0;
     stackSize++;
     bool found = false;
 
@@ -190,6 +193,11 @@ IsCircularDependency(TransactionId depxid, TransactionId myxid)
         stackSize--;
         TransactionId current = stack[stackSize];
         TransactionId currentParent = parent[stackSize];
+        int currentDepth = depthStack[stackSize];
+
+        /* Track maximum chain depth */
+        if (currentDepth > maxDepth)
+            maxDepth = currentDepth;
 
         /* Found depxid! It depends on myxid (transitively) */
         if (current == depxid)
@@ -251,6 +259,7 @@ IsCircularDependency(TransactionId depxid, TransactionId myxid)
                 }
                 stack[stackSize] = from;
                 parent[stackSize] = current;
+                depthStack[stackSize] = currentDepth + 1;
                 stackSize++;
             }
         }
@@ -312,7 +321,27 @@ WaitForTxnDependencies(void)
     TransactionId myxid = GetTopTransactionIdIfAny();
     if (!TransactionIdIsValid(myxid))
         return false;
-        //커밋하기 전에도 자신이 abort되지 않았는지 마지막으로 체크함.
+
+    /* Record dep counts: forward (내가 디펜딩하는 애들), reverse (나를 디펜딩하는 애들) */
+    {
+        int forward_count = MyReadDependenciesCount;
+        int reverse_count = 0;
+
+        if (forward_count > 0)
+        {
+            /* Look up how many txns depend on me */
+            int part = DEP_PARTITION(myxid);
+            DepGraphPartition *partition = &TxnReverseDepPartitions[part];
+            LWLockAcquire(partition->lock, LW_SHARED);
+            TxnReverseDepEntry *rev = hash_search(partition->graph, &myxid, HASH_FIND, NULL);
+            if (rev)
+                reverse_count = rev->nfroms;
+            LWLockRelease(partition->lock);
+        }
+
+        xact_count_dep_chain_stats(forward_count, reverse_count);
+    }
+
 #ifdef RCC_DEBUG
     if (MyReadDependenciesCount == 0)
     {
@@ -328,7 +357,7 @@ WaitForTxnDependencies(void)
     appendStringInfoChar(&buf, '\n');
     fputs(buf.data, stderr);
     pfree(buf.data);
-#endif    
+#endif
 
     for (int i = 0; i < MyReadDependenciesCount; i++)
     {

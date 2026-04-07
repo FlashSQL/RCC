@@ -528,6 +528,12 @@ tuple_lock_retry:
 												break;
 											}
 										}
+										if(TransactionIdDidAbort(HeapTupleHeaderGetRawXmin(tuple->t_data))){
+											ereport(ERROR,
+													(errcode(ERRCODE_T_R_SERIALIZATION_FAILURE),
+													 errmsg("aborting due to aborted xmin during spin-wait in heapam_handler, xmin=%u, priorXmax=%u, TX_ID=%u",
+															HeapTupleHeaderGetRawXmin(tuple->t_data), priorXmax, GetTopTransactionIdIfAny())));
+										}
 									}
 
 									INSTR_TIME_SET_CURRENT(txwait_end);

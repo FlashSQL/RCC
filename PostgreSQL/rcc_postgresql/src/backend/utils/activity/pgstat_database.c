@@ -42,6 +42,16 @@ PgStat_Counter pgStatTupleUpdateWaitTime = 0;
 PgStat_Counter pgStatTupleUpdateWaitCount = 0;
 PgStat_Counter pgStatAbortedTupleUpdateWaitTime = 0;
 PgStat_Counter pgStatAbortedTupleUpdateWaitCount = 0;
+/* Breakdown Code - dependency chain stats (committed) */
+PgStat_Counter pgStatDepChainMaxLength = 0;
+PgStat_Counter pgStatDepChainTotalLength = 0;
+PgStat_Counter pgStatDepChainCheckCount = 0;
+PgStat_Counter pgStatDepChainTotalVisited = 0;
+/* Breakdown Code - dependency chain stats (aborted) */
+PgStat_Counter pgStatAbortedDepChainMaxLength = 0;
+PgStat_Counter pgStatAbortedDepChainTotalLength = 0;
+PgStat_Counter pgStatAbortedDepChainCheckCount = 0;
+PgStat_Counter pgStatAbortedDepChainTotalVisited = 0;
 /* Breakdown Code End */
 PgStat_Counter pgStatActiveTime = 0;
 PgStat_Counter pgStatTransactionIdleTime = 0;
@@ -319,6 +329,18 @@ pgstat_update_dbstats(TimestampTz ts)
 	dbentry->tuple_update_wait_count += pgStatTupleUpdateWaitCount;
 	dbentry->aborted_tuple_update_wait_time += pgStatAbortedTupleUpdateWaitTime;
 	dbentry->aborted_tuple_update_wait_count += pgStatAbortedTupleUpdateWaitCount;
+	/* Breakdown Code - dependency chain stats (committed) */
+	if (pgStatDepChainMaxLength > dbentry->dep_chain_max_length)
+		dbentry->dep_chain_max_length = pgStatDepChainMaxLength;
+	dbentry->dep_chain_total_length += pgStatDepChainTotalLength;
+	dbentry->dep_chain_check_count += pgStatDepChainCheckCount;
+	dbentry->dep_chain_total_visited += pgStatDepChainTotalVisited;
+	/* Breakdown Code - dependency chain stats (aborted) */
+	if (pgStatAbortedDepChainMaxLength > dbentry->aborted_dep_chain_max_length)
+		dbentry->aborted_dep_chain_max_length = pgStatAbortedDepChainMaxLength;
+	dbentry->aborted_dep_chain_total_length += pgStatAbortedDepChainTotalLength;
+	dbentry->aborted_dep_chain_check_count += pgStatAbortedDepChainCheckCount;
+	dbentry->aborted_dep_chain_total_visited += pgStatAbortedDepChainTotalVisited;
 	/* Breakdown Code End */
 
 	if (pgstat_should_report_connstat())
@@ -356,6 +378,15 @@ pgstat_update_dbstats(TimestampTz ts)
 	pgStatTupleUpdateWaitCount = 0;
 	pgStatAbortedTupleUpdateWaitTime = 0;
 	pgStatAbortedTupleUpdateWaitCount = 0;
+	/* Breakdown Code - reset dependency chain stats */
+	pgStatDepChainMaxLength = 0;
+	pgStatDepChainTotalLength = 0;
+	pgStatDepChainCheckCount = 0;
+	pgStatDepChainTotalVisited = 0;
+	pgStatAbortedDepChainMaxLength = 0;
+	pgStatAbortedDepChainTotalLength = 0;
+	pgStatAbortedDepChainCheckCount = 0;
+	pgStatAbortedDepChainTotalVisited = 0;
 	/* Breakdown Code End */
 	pgStatActiveTime = 0;
 	pgStatTransactionIdleTime = 0;
@@ -480,6 +511,18 @@ pgstat_database_flush_cb(PgStat_EntryRef *entry_ref, bool nowait)
 	PGSTAT_ACCUM_DBCOUNT(tuple_update_wait_count);
 	PGSTAT_ACCUM_DBCOUNT(aborted_tuple_update_wait_time);
 	PGSTAT_ACCUM_DBCOUNT(aborted_tuple_update_wait_count);
+	/* Breakdown Code - dependency chain stats (committed) */
+	if ((pendingent)->dep_chain_max_length > (sharedent)->stats.dep_chain_max_length)
+		(sharedent)->stats.dep_chain_max_length = (pendingent)->dep_chain_max_length;
+	PGSTAT_ACCUM_DBCOUNT(dep_chain_total_length);
+	PGSTAT_ACCUM_DBCOUNT(dep_chain_check_count);
+	PGSTAT_ACCUM_DBCOUNT(dep_chain_total_visited);
+	/* Breakdown Code - dependency chain stats (aborted) */
+	if ((pendingent)->aborted_dep_chain_max_length > (sharedent)->stats.aborted_dep_chain_max_length)
+		(sharedent)->stats.aborted_dep_chain_max_length = (pendingent)->aborted_dep_chain_max_length;
+	PGSTAT_ACCUM_DBCOUNT(aborted_dep_chain_total_length);
+	PGSTAT_ACCUM_DBCOUNT(aborted_dep_chain_check_count);
+	PGSTAT_ACCUM_DBCOUNT(aborted_dep_chain_total_visited);
 	/* Breakdown Code End */
 
 	PGSTAT_ACCUM_DBCOUNT(sessions);
