@@ -3528,55 +3528,37 @@ tpl_update_only_log(
 	trx_t*	trx = thr_get_trx(thr);
   trx_mutex_enter(trx); // to protect trx->lock.conflict_lock
 
-  // || trx->lock.conf_lock_pool.size() != 0
-	// const lock_t* wait_for = tpl_lock_rec_other_has_conflicting(
-	// 		LOCK_X, block, heap_no, trx);
-
-
-	// 충돌을 일으킨 page에 대해서만 log 써야 함, que_state나 cnt로 관리하면 안 됨
-	// conflict lock과 heap_no 비교
   char * table_name = const_cast<char*>(index->table_name);
-  if (std::strstr(table_name, "tpcc") != nullptr 
-      && strcmp(table_name, "tpcc/customer")!= 0
-      && strcmp(table_name, "tpcc/orders") != 0
-      && strcmp(table_name, "tpcc/order_line") != 0) {
-  // if ((trx->lock.conf_lock_pool.size() != 0) 
-  //     && (tpl_lock_rec_on_heap(trx->lock.conf_lock_pool.back()->conf_lock, heap_no, block))) {
-		// fprintf(stderr, "[DEBUG] (%d) Log write (upd) in %p (%p)\n", trx->id, rec, trx->lock.conf_lock_pool.back()->future_vers);
-    rec_t* future_vers = trx->lock.conf_lock_pool.back()->future_vers;
+  if ((std::strstr(table_name, "mysql") == nullptr) ){
 
+    conflict_t* conf = lock_get_conf(trx, block->get_page_id(), heap_no);
+    if (!conf) {
+      trx_mutex_exit(trx);
+		  return (DB_FAIL);
+    }
 
-
-		/* 	Capture Redo log
-			1. 기존 MTR을 사용시, Dirty page, Log buffer write 등의 문제가 발생할 수 있어 sub_mtr 생성
-			2. sub_mtr안에 충돌난 Trx의 TPL pointer 저장
-			3. mtr heap에 작성된 Log를 TPL에 memcpy + memory write (추후 Log write 위치를 mtr_heap -> TPL로 switching할 수 있도록 최적화)
-				-> Memory Copy overhead 제거하여 최적화 가능
-				-> 현재는 빠른 구현을 위해서 기존 structure를 그대로 사용
-			4. Dirty Page들을 Flush list에 삽입 X, Redo Log buffer에 write하지 않기 위해서 mtr_log_mode를 변경
-		*/
+    rec_t* future_vers = conf->future_vers;
+    if (!future_vers) {
+      trx_mutex_exit(trx);
+		  return (DB_FAIL);
+    }
 		mtr_t		tpl_mtr;
 		tpl_mtr.start();
 		tpl_mtr.set_mtr_blocking_tpl_pointer(&trx->in_memory_ppl_buf);
 		tpl_mtr.set_m_trx(trx);
-    // Write redo log
-		btr_cur_update_in_place_log(flags, rec, index, update, trx_id, roll_ptr, &tpl_mtr);
+		btr_cur_update_in_place_log(flags, rec, index, update, trx_id, roll_ptr, &tpl_mtr); // Write redo log
 
-    // apply to my future version
-    dberr_t err;
 
 		// fprintf(stderr, "[DEBUG] (%d) Log write - rec: %p, %s, lock: %p, future: %p, size: %d, %p\n", trx->id, rec, index->table_name, trx->lock.conf_lock_pool.back()->conf_lock, future_vers, trx->in_memory_ppl_buf.size(), index);
     
     row_upd_rec_in_place(future_vers, index, offsets, update, page_zip);
-    trx->lock.conf_lock_pool.back()->updated = true;
+    conf->updated = true;
     tpl_mtr.set_mtr_ipl_start_pointer(NULL);
 
-		mtr_set_log_mode(&tpl_mtr, MTR_LOG_NONE); // WAL log 작성
-		tpl_mtr.discard_modifications(); // WAL log 작성
+		mtr_set_log_mode(&tpl_mtr, MTR_LOG_NONE); 
+		tpl_mtr.discard_modifications(); 
 		tpl_mtr.commit();
     trx_mutex_exit(trx);
-
-    
 		return (DB_SUCCESS);
 	} else {
     // fprintf(stderr, "[DEBUG] (%d) Log write FAIL - rec: %p, %s (%d %d)\n", trx->id, rec, index->table_name, block->page.id.space(), block->page.id.page_no());
@@ -3584,6 +3566,7 @@ tpl_update_only_log(
 		return (DB_FAIL);
 	}
 }
+
 
 /** Updates a record when the update causes no size changes in its fields.
 @param[in] flags Undo logging and locking flags
@@ -3818,16 +3801,16 @@ dberr_t btr_cur_optimistic_update(ulint flags, btr_cur_t *cursor,
        trx_is_recv(thr_get_trx(thr)));
 #endif /* UNIV_DEBUG || UNIV_BLOB_LIGHT_DEBUG */
  
-  // // [TPL] - Bamboo
-	// err = tpl_update_only_log(flags, cursor, update, thr, trx_id, *offsets);
-	// if(err == DB_SUCCESS) {
-	// 	if (row_upd_changes_field_size_or_external(index, *offsets, update)) {
-	// 		// fprintf(stderr, "[!DEBUG] <ERR> (%d) btr_cur_optimistic_update -- err\n", trx_id);
-	// 		// ut_error;
-	// 	}
-	// 	return err;
-	// }
-	// //
+  // [TPL] - Bamboo
+	err = tpl_update_only_log(flags, cursor, update, thr, trx_id, *offsets);
+	if(err == DB_SUCCESS) {
+		if (row_upd_changes_field_size_or_external(index, *offsets, update)) {
+			// fprintf(stderr, "[!DEBUG] <ERR> (%d) btr_cur_optimistic_update -- err\n", trx_id);
+			// ut_error;
+		}
+		return err;
+	}
+	//
 
   if (!row_upd_changes_field_size_or_external(index, *offsets, update)) {
     /* The simplest and the most common case: the update does not

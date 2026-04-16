@@ -383,12 +383,12 @@ typedef std::vector<ib_lock_t *, ut::allocator<ib_lock_t *>> lock_pool_t;
 struct conflict_t {
   trx_t* blocker;
   lock_t* conf_lock;
-  bool deleted;  // conf 해제 시, 마킹만
+  bool deleted; 
   rec_t *future_vers;
-  ulint future_vers_size; // future_vers's size
-  
-  bool updated; // [SR] // 내 future vers를 읽고 업데이트까지 했을 때
-  // page_id_t page_id; // [TPL] - async commit
+  ulint future_vers_size; 
+  ulint heap_no; 
+
+  bool updated; 
 };
 typedef std::vector<conflict_t *, ut::allocator<conflict_t *>> conf_lock_pool_t;
 
@@ -397,16 +397,6 @@ struct abort_t {
   lock_t* lock;
 };
 typedef std::vector<abort_t, ut::allocator<abort_t>> abort_list_t;
-
-// struct future_apply_t {
-//   rec_t* future_vers{};
-//   byte* future_log{};
-// };
-
-// [TPL] - group_commit
-// typedef std::vector<trx_t*, ut::allocator<trx_t*>> trx_list_t;
-
-//
 
 /** Latching protocol for ∂trx_lock_t::que_state.  trx_lock_t::que_state
  captures the state of the query thread during the execution of a query.

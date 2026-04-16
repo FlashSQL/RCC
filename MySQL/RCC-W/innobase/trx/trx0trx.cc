@@ -256,9 +256,7 @@ static void trx_init(trx_t *trx) {
     mem_heap_empty(trx->conflict_heap);
   }
   trx->lock.conf_lock_pool.clear();
-  // trx->lock.conf_lock_pool_async.clear(); // [TPL] - async
-  // trx->lock_wait_time = 0;
-  // trx->lock_commit_time = 0;
+  trx->lock_wait_time = 0;
   //
 
   trx->flush_observer = nullptr;
@@ -2208,11 +2206,9 @@ written */
   hold for recovered transactions or system transactions. */
   // assert_trx_is_free(trx);
 
-  // fprintf(stderr, "[DEBUG] (%d) COMMIT END\n", trx->id);
-  // if (!trx->abort && !trx->conflict_abort) {
-  //   srv_stats.n_lock_wait_time.add(trx->lock_wait_time);
-  //   srv_stats.n_lock_commit_time.add(trx->lock_commit_time);
-  // }
+  if (!trx->conflict_abort) {
+    srv_stats.n_lock_wait_time.add(trx->lock_wait_time);
+  }
   trx_init(trx);
 
   trx_mutex_exit(trx);

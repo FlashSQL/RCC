@@ -263,7 +263,7 @@ lock_apply_log(const buf_block_t*	block,
 bool
 tpl_lock_rec_on_heap(lock_t* lock, ulint heap_no, buf_block_t*	block);
 
-dberr_t append_to_waitq(const lock_t *wait_for, lock_t* wait_lock);
+dberr_t append_to_waitq(const lock_t *wait_for, lock_t* wait_lock, ulint heap_no);
 void
 lock_rec_lock_xx(
 /*===============*/
@@ -283,6 +283,7 @@ trx_t* trx_conf_lock_conf(trx_t* trx, lock_t* lock);
 trx_t* trx_conf_lock_set_blocker(trx_t* trx, lock_t* lock, trx_t* new_blocker);
 bool trx_set_latest_conf_to_wait(trx_t* trx);
 bool lock_conflicter(lock_t* lock1, lock_t* lock2);
+conflict_t* lock_get_conf(trx_t* trx, page_id_t page_id, ulint heap_no);
 // future_apply_t trx_last_future_vers(lock_t* in_lock); // [TPL] - group commit
 // // [TPL] - async commit
 // trx_t* trx_conf_overwrite_future_vers(trx_t* t1, trx_t* t2, page_id_t page_id);
