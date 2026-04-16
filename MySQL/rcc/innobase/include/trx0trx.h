@@ -323,10 +323,10 @@ constexpr uint32_t TRX_QUE_STATE_STR_MAX_LEN = 12; /* "ROLLING BACK" */
 static inline const char *trx_get_que_state_str(
     const trx_t *trx); /*!< in: transaction */
 
-
+// [TPL]
 static inline const char *trx_get_abort_state_str(
   const trx_t *trx);
-
+//
 /** Retreieves the transaction ID.
 In a given point in time it is guaranteed that IDs of the running
 transactions are unique. The values returned by this function for readonly
@@ -379,15 +379,16 @@ static inline bool trx_is_rseg_updated(const trx_t *trx);
 #endif /* !UNIV_HOTBACKUP */
 
 typedef std::vector<ib_lock_t *, ut::allocator<ib_lock_t *>> lock_pool_t;
-
+// [TPL]
 struct conflict_t {
   trx_t* blocker;
   lock_t* conf_lock;
-  bool deleted; 
+  bool deleted;  // conf 해제 시, 마킹만
   rec_t *future_vers;
-  ulint future_vers_size;
-  ulint heap_no; 
-  bool updated; 
+  ulint future_vers_size; // future_vers's size
+  ulint heap_no; // 같은 page면 하나의 Lock이 여러 heap_no(레코드)를 커버하는 경우가 있음(bit ON) -> 레코드마다 future vers 만들어야 함
+  
+  bool updated; // [SR] // 내 future vers를 읽고 업데이트까지 했을 때
 };
 typedef std::vector<conflict_t *, ut::allocator<conflict_t *>> conf_lock_pool_t;
 
@@ -424,7 +425,9 @@ struct trx_lock_t {
   /** Default constructor. */
   trx_lock_t() = default;
 
+  // [TPL]
   conf_lock_pool_t conf_lock_pool;
+  //
   
 
   ulint n_active_thrs; /*!< number of active query threads */
@@ -742,10 +745,13 @@ struct trx_t {
   /** Default constructor */
   trx_t() = default;
 
+  // [TPL] - trx_t
 	in_memory_ppl_buf_t in_memory_ppl_buf;	// redo log buffer
   trx_commit_t pre_commit;
   trx_abort_t conflict_abort;
   mem_heap_t *conflict_heap;
+
+  int64_t lock_wait_time; // [TPL] - time
 
 
   /** Mutex protecting the fields `state` and `lock` (except some fields of

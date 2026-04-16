@@ -1188,9 +1188,6 @@ struct export_var_t {
   ulint innodb_row_lock_current_waits; /*!< srv_n_lock_wait_current_count */
   int64_t innodb_row_lock_time;        /*!< srv_n_lock_wait_time
                                        / 1000 */
-  int64_t innodb_row_commit_time;      // [TPL] - time
-  int64_t innodb_row_lock_time_no;      // [TPL] - time no
-  int64_t innodb_row_commit_time_no;      // [TPL] - time no
   ulint innodb_row_lock_time_avg;      /*!< srv_n_lock_wait_time
                                        / 1000
                                        / srv_n_lock_wait_count */

@@ -52,7 +52,9 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "lock0prdt.h"
 #include "ut0sharded_bitset.h"
 
+// [TPL]
 #include "trx0trx.h"
+//
 
 /**
 @page PAGE_INNODB_LOCK_SYS Innodb Lock-sys
@@ -270,6 +272,10 @@ lock_rec_lock_xx(
 	ulint			heap_no,/*!< in: heap number of record */
 	dict_index_t*		index,	/*!< in: index of record */
 	que_thr_t*		thr);	/*!< in: query thread */
+
+bool search_conflict_cycle(trx_t* trx);
+bool lock_search_conflict_cycle(lock_t* in_lock, trx_t* blocker);
+bool trx_search_conflict_cycle(trx_t* trx);
 
 void lock_cascade_abort(trx_t* trx);
 void lock_make_trx_abort_list(trx_t *in_trx, abort_list_t &abort_list);

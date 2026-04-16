@@ -251,14 +251,12 @@ static void trx_init(trx_t *trx) {
 
 	trx->pre_commit = TRX_COMMIT_NOT_STARTED;
   trx->conflict_abort = TRX_NOT_ABORTED;
-  trx->lock.n_active_thrs = 0; // rollback 시 얘가 이상한 값이 되는 경우가 있음.. 난 몰랑
+  trx->lock.n_active_thrs = 0; 
   if (trx->conflict_heap) {
     mem_heap_empty(trx->conflict_heap);
   }
   trx->lock.conf_lock_pool.clear();
-  // trx->lock.conf_lock_pool_async.clear(); // [TPL] - async commit
-  // trx->lock_wait_time = 0;
-  // trx->lock_commit_time = 0;
+  trx->lock_wait_time = 0;
   //
 
   trx->flush_observer = nullptr;
@@ -2210,10 +2208,10 @@ written */
 
   // fprintf(stderr, "[DEBUG] (%d) COMMIT END\n", trx->id);
   // [TPL] - time
-  // if (!trx->abort && !trx->conflict_abort) {
-  //   srv_stats.n_lock_wait_time.add(trx->lock_wait_time);
-  //   srv_stats.n_lock_commit_time.add(trx->lock_commit_time);
-  // }
+  if (!trx->abort && !trx->conflict_abort) {
+    // fprintf(stderr, "[DEBUG] (%d) COMMIT END: %u %u\n", trx->id, trx->lock_wait_time, trx->lock_commit_time);
+    srv_stats.n_lock_wait_time.add(trx->lock_wait_time);
+  }
   trx_init(trx);
 
   trx_mutex_exit(trx);
@@ -2530,25 +2528,12 @@ dberr_t trx_commit_for_mysql(trx_t *trx) /*!< in/out: transaction */
       // Rollback: Don't apply (아직 롤백 완료 전)
       // DB_DEADLOCK 17
       trx_mutex_exit(trx);
-      // fprintf(stderr, "[DEBUG] (%d) trx_commit_for_mysql - Abort: %d\n", trx->id, trx->conflict_abort,);
+      // fprintf(stderr, "[DEBUG] (%d) trx_commit_for_mysql - Abort: %d\n", trx->id, trx->conflict_abort);
       trx_rollback_for_mysql(trx);
       return(DB_SUCCESS);
     }
-    // [TPL] - async commit
-    else if(trx_set_latest_conf_to_wait(trx)) { //
-      // if (search_conflict_cycle(trx)) {
-      //   fprintf(stderr, "[DEBUG] (%d) trx_commit_for_mysql - Cycle\n", trx->id);
-      //   // trx->lock.was_chosen_as_deadlock_victim = true;
-      //   trx->conflict_abort = TRX_ABORT_MARKED;
-      //   trx_mutex_exit(trx);
-      //   continue;
-      // } else {
-      //   trx_mutex_exit(trx);
-      //   tpl_apply_trx(trx);
-      //   break;
-      // }
-
-      // 선행 트랜잭션에게 log 전달
+  
+    else if(trx_set_latest_conf_to_wait(trx)) { 
 
       trx->lock.wait_started = std::chrono::system_clock::from_time_t(time(nullptr));
       trx->lock.que_state = TRX_QUE_LOCK_WAIT;
@@ -2586,38 +2571,6 @@ dberr_t trx_commit_for_mysql(trx_t *trx) /*!< in/out: transaction */
       break;
     }
   }
-  // // Total used payload
-  // size_t used = 0;
-  // for (auto block = UT_LIST_GET_FIRST(trx->conflict_heap->base);
-  //      block != nullptr;
-  //      block = UT_LIST_GET_NEXT(list, block)) {
-
-  //   const auto info = reinterpret_cast<const mem_block_info_t*>(block);
-
-  //   // start/free는 "user data" 관점의 사용량
-  //   if (info->free >= info->start) {
-  //     used += static_cast<size_t>(info->free - info->start);
-  //   }
-  // }
-  // fprintf(stderr, "%u\n",  used);
-
-  // // Length of dependency chain
-  // int size = 0;
-  // for (auto* elem : trx->lock.conf_lock_pool) {
-  //   if (elem) {
-  //     size++;
-  //   }
-  // }
-  // fprintf(stderr, "%d\n", size);
-
-
-  // fprintf(stderr, "%d\n",  trx->in_memory_ppl_buf.size());
-  
-  
-  // if (trx->conflict_heap->free - trx->conflict_heap->start > 10) {
-  //   fprintf(stderr, "%u\n",  trx->conflict_heap->free - trx->conflict_heap->start);
-  // }
-  // fprintf(stderr, "[DEBUG] (%d) COMMIT\n", trx->id);
 
   trx->pre_commit = TRX_COMMIT;
 

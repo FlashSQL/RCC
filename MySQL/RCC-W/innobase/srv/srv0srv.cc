@@ -1677,9 +1677,6 @@ void srv_export_innodb_status(void) {
       srv_stats.n_lock_wait_current_count;
 
   export_vars.innodb_row_lock_time = srv_stats.n_lock_wait_time / 1000;
-  export_vars.innodb_row_commit_time = srv_stats.n_lock_commit_time / 1000;  // [TPL] - time
-  export_vars.innodb_row_lock_time_no = srv_stats.n_lock_row_time_no / 1000;  // [TPL] - time no
-  export_vars.innodb_row_commit_time_no = srv_stats.n_lock_commit_time_no / 1000;  // [TPL] - time no
 
   if (srv_stats.n_lock_wait_count > 0) {
     export_vars.innodb_row_lock_time_avg =

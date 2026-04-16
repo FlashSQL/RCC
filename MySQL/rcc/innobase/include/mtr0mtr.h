@@ -46,9 +46,10 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "srv0srv.h"
 #include "trx0types.h"
 
+// [TPL]
 #define IN_MEMORY_PPL_BUF_MAX_SIZES 4096
 typedef dyn_buf_t<IN_MEMORY_PPL_BUF_MAX_SIZES> in_memory_ppl_buf_t;
-
+//
 
 /** Start a mini-transaction. */
 #define mtr_start(m) (m)->start()
@@ -481,8 +482,10 @@ struct mtr_t {
   positive. */
   void set_modified() { m_impl.m_modifications = true; }
 
+  // [TPL]
+  // deprecated in 8.4.5 (why??)
   void discard_modifications() { m_impl.m_modifications = false; }
-
+  //
 
   /** Checks if this mtr has modified any buffer pool page.
   It errs on the safe side: may return true even if it didn't modify any page.
@@ -635,7 +638,7 @@ struct mtr_t {
     return (&m_impl.m_log);
   }
 
-
+  // [TPL]
   void set_mtr_ipl_start_pointer(byte * ptr)
 	{
 		mtr_ppl_start_ptr = ptr;
@@ -682,7 +685,7 @@ struct mtr_t {
 	{
 		return m_trx;
 	}
-
+  //
 
   /** Push an object to an mtr memo stack.
   @param object object
@@ -733,7 +736,7 @@ struct mtr_t {
   /** true if it is synchronous mini-transaction */
   bool m_sync;
 
-
+  // [TPL]
   //TPL Start pointer
 	byte * mtr_ppl_start_ptr;
 
@@ -745,7 +748,7 @@ struct mtr_t {
 
 	// conflict trx->conflict_lock for logging
 	trx_t* m_trx;
-
+  // end TPL
 
 #ifdef UNIV_DEBUG
   /** List of all non-committed MTR instances created in this thread. Used for
@@ -758,7 +761,7 @@ struct mtr_t {
   friend class Command;
 };
 
-
+// [TPL]
 ulint
 ipl_recv_parse_log_rec(
 	mlog_id_t*	type,

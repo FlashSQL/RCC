@@ -271,7 +271,7 @@ const byte *mlog_parse_index_8027(const byte *ptr, const byte *end_ptr,
 
 /** Insert, update, and maybe other functions may use this value to define an
 extra mlog buffer size for variable size data */
-
+// [TPL] - 256->2048
 constexpr auto MLOG_BUF_MARGIN = 2048; // 256
 
 #include "mtr0log.ic"

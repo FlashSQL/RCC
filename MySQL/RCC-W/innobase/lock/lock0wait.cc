@@ -343,25 +343,7 @@ void lock_wait_suspend_thread(que_thr_t *thr) {
   const auto start_time = slot->suspend_time;
   lock_wait_table_release_slot(slot);
 
-  // [TPL] - time
-  if (trx->pre_commit == TRX_COMMIT_PRE) {
-    const auto diff_time = std::chrono::steady_clock::now() - start_time;
-    trx->lock_commit_time += std::chrono::duration_cast<std::chrono::microseconds>(diff_time).count();
-
-    if (diff_time > lock_sys->n_lock_max_wait_time) {
-      lock_sys->n_lock_max_wait_time = diff_time;
-    }
-
-    /* Record the lock wait time for this thread */
-    thd_set_lock_wait_time(trx->mysql_thd, diff_time);
-
-    DBUG_EXECUTE_IF("lock_instrument_slow_query_log",
-                    std::this_thread::sleep_for(std::chrono::milliseconds(1)););
-
-  }
-  if (trx->pre_commit != TRX_COMMIT_PRE && thr->lock_state == QUE_THR_LOCK_ROW) {
-  // end time
-  // if (thr->lock_state == QUE_THR_LOCK_ROW) {
+  if (thr->lock_state == QUE_THR_LOCK_ROW) {
     const auto diff_time = std::chrono::steady_clock::now() - start_time;
     trx->lock_wait_time += std::chrono::duration_cast<std::chrono::microseconds>(diff_time).count();
 

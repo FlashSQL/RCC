@@ -1677,7 +1677,6 @@ void srv_export_innodb_status(void) {
       srv_stats.n_lock_wait_current_count;
 
   export_vars.innodb_row_lock_time = srv_stats.n_lock_wait_time / 1000;
-  export_vars.innodb_row_commit_time = srv_stats.n_lock_commit_time / 1000;  // [TPL] - time
 
   if (srv_stats.n_lock_wait_count > 0) {
     export_vars.innodb_row_lock_time_avg =
@@ -1688,10 +1687,6 @@ void srv_export_innodb_status(void) {
     export_vars.innodb_row_lock_time_avg = 0;
   }
 
-  // // [TPL] - time
-  // export_vars.innodb_row_lock_time = srv_stats.rollback_time / 1000;
-  // export_vars.innodb_row_lock_waits = srv_stats.rollback_count;
-  // //
 
   export_vars.innodb_row_lock_time_max =
       std::chrono::duration_cast<std::chrono::milliseconds>(

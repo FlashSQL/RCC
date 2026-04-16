@@ -112,7 +112,6 @@ static void trx_rollback_to_savepoint_low(
 
   trx->error_state = DB_SUCCESS;
 
-  // const auto start_time = std::chrono::steady_clock::now(); // [TPL] - time
   if (trx_is_rseg_updated(trx)) {
     ut_ad(trx->rsegs.m_redo.rseg != nullptr ||
           trx->rsegs.m_noredo.rseg != nullptr);
@@ -130,12 +129,6 @@ static void trx_rollback_to_savepoint_low(
     /* Free the memory reserved by the undo graph. */
     que_graph_free(static_cast<que_t *>(roll_node->undo_thr->common.parent));
   }
-  // // [TPL] - time
-  // const auto diff_time = std::chrono::steady_clock::now() - start_time; 
-  // srv_stats.rollback_time.add(std::chrono::duration_cast<std::chrono::microseconds>(diff_time).count());
-  // srv_stats.rollback_count.inc();
-  // //
-
   if (savept == nullptr) {
     trx_rollback_finish(trx);
     MONITOR_INC(MONITOR_TRX_ROLLBACK);

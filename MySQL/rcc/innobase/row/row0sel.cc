@@ -4923,6 +4923,7 @@ dberr_t row_search_mvcc(byte *buf, page_cur_mode_t mode,
       err = sel_set_rec_lock(pcur, next_rec, index, offsets,
                              prebuilt->select_mode, prebuilt->select_lock_type,
                              LOCK_GAP, thr, &mtr);
+      // fprintf(stderr, "[DEBUG] (%d) row_search_mvc4 - sel_set_rec_lock (rec: %p): %d, %s\n", trx->id,rec, err, index->table_name);
 
       switch (err) {
         case DB_SUCCESS_LOCKED_REC:
@@ -4933,6 +4934,31 @@ dberr_t row_search_mvcc(byte *buf, page_cur_mode_t mode,
         case DB_LOCK_NOWAIT:
           ut_d(ut_error);
           ut_o(goto next_rec);
+        // [TPL]
+        case DB_CONFLICT_LOCKED_REC: {
+
+          rec_t *old_vers2;
+          byte*		buf2;
+          old_vers2 = lock_apply_log(pcur->get_block(), old_vers2, index, offsets, trx, rec);
+          if (old_vers2 == nullptr)
+          {
+            // Nothing to read, read buffer
+            // Ex. lock 획득 -> conf -> grant -> read 시도
+            err = DB_SUCCESS;
+            break;
+          }
+          else  
+          {
+            rec = old_vers2;
+            prev_rec = rec;
+            ut_d(prev_rec_debug = row_search_debug_copy_rec_order_prefix(
+                    pcur, index, prev_rec, &prev_rec_debug_n_fields,
+                    &prev_rec_debug_buf, &prev_rec_debug_buf_size));
+            err = DB_SUCCESS;
+            break;
+          }
+        }
+        //
         default:
           goto lock_wait_or_error;
       }
@@ -5036,6 +5062,7 @@ rec_loop:
       err = sel_set_rec_lock(pcur, rec, index, offsets, prebuilt->select_mode,
                              prebuilt->select_lock_type, LOCK_ORDINARY, thr,
                              &mtr);
+      // fprintf(stderr, "[DEBUG] (%d) row_search_mvc3 - sel_set_rec_lock (rec: %p): %d, %s\n", trx->id,rec, err, index->table_name);
 
       switch (err) {
         case DB_SUCCESS_LOCKED_REC:
@@ -5045,6 +5072,31 @@ rec_loop:
         case DB_SKIP_LOCKED:
         case DB_LOCK_NOWAIT:
           ut_d(ut_error);
+        // [TPL]
+        case DB_CONFLICT_LOCKED_REC: {
+
+          rec_t *old_vers2;
+          byte*		buf2;
+          old_vers2 = lock_apply_log(pcur->get_block(), old_vers2, index, offsets, trx, rec);
+          if (old_vers2 == nullptr)
+          {
+            // Nothing to read, read buffer
+            // Ex. lock 획득 -> conf -> grant -> read 시도
+            err = DB_SUCCESS;
+            break;
+          }
+          else  
+          {
+            rec = old_vers2;
+            prev_rec = rec;
+            ut_d(prev_rec_debug = row_search_debug_copy_rec_order_prefix(
+                    pcur, index, prev_rec, &prev_rec_debug_n_fields,
+                    &prev_rec_debug_buf, &prev_rec_debug_buf_size));
+            err = DB_SUCCESS;
+            break;
+          }
+        }
+        //
         default:
           goto lock_wait_or_error;
       }
@@ -5155,6 +5207,7 @@ rec_loop:
           !dict_index_is_spatial(index)) {
         err = sel_set_rec_lock(pcur, rec, index, offsets, prebuilt->select_mode,
                                prebuilt->select_lock_type, LOCK_GAP, thr, &mtr);
+        // fprintf(stderr, "[DEBUG] (%d) row_search_mvc2 - sel_set_rec_lock (rec: %p): %d, %s\n", trx->id,rec, err, index->table_name);
 
         switch (err) {
           case DB_SUCCESS_LOCKED_REC:
@@ -5163,6 +5216,31 @@ rec_loop:
           case DB_SKIP_LOCKED:
           case DB_LOCK_NOWAIT:
             ut_d(ut_error);
+          // [TPL]
+          case DB_CONFLICT_LOCKED_REC: {
+
+            rec_t *old_vers2;
+            byte*		buf2;
+            old_vers2 = lock_apply_log(pcur->get_block(), old_vers2, index, offsets, trx, rec);
+            if (old_vers2 == nullptr)
+            {
+              // Nothing to read, read buffer
+              // Ex. lock 획득 -> conf -> grant -> read 시도
+              err = DB_SUCCESS;
+              break;
+            }
+            else  
+            {
+              rec = old_vers2;
+              prev_rec = rec;
+              ut_d(prev_rec_debug = row_search_debug_copy_rec_order_prefix(
+                      pcur, index, prev_rec, &prev_rec_debug_n_fields,
+                      &prev_rec_debug_buf, &prev_rec_debug_buf_size));
+              err = DB_SUCCESS;
+              break;
+            }
+          }
+          //
           default:
             goto lock_wait_or_error;
         }
@@ -5189,6 +5267,7 @@ rec_loop:
           !dict_index_is_spatial(index)) {
         err = sel_set_rec_lock(pcur, rec, index, offsets, prebuilt->select_mode,
                                prebuilt->select_lock_type, LOCK_GAP, thr, &mtr);
+        // fprintf(stderr, "[DEBUG] (%d) row_search_mvc1 - sel_set_rec_lock (rec: %p): %d, %s\n", trx->id,rec, err, index->table_name);
 
         switch (err) {
           case DB_SUCCESS_LOCKED_REC:
@@ -5197,6 +5276,31 @@ rec_loop:
           case DB_SKIP_LOCKED:
           case DB_LOCK_NOWAIT:
             ut_d(ut_error);
+          // [TPL]
+          case DB_CONFLICT_LOCKED_REC: {
+
+            rec_t *old_vers2;
+            byte*		buf2;
+            old_vers2 = lock_apply_log(pcur->get_block(), old_vers2, index, offsets, trx, rec);
+            if (old_vers2 == nullptr)
+            {
+              // Nothing to read, read buffer
+              // Ex. lock 획득 -> conf -> grant -> read 시도
+              err = DB_SUCCESS;
+              break;
+            }
+            else  
+            {
+              rec = old_vers2;
+              prev_rec = rec;
+              ut_d(prev_rec_debug = row_search_debug_copy_rec_order_prefix(
+                      pcur, index, prev_rec, &prev_rec_debug_n_fields,
+                      &prev_rec_debug_buf, &prev_rec_debug_buf_size));
+              err = DB_SUCCESS;
+              break;
+            }
+          }
+          //
           default:
             goto lock_wait_or_error;
         }

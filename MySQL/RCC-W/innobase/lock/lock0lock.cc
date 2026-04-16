@@ -4642,10 +4642,6 @@ this program; if not, write to the Free Software Foundation, Inc.,
      try_relatch_trx_and_shard_and_do(lock, [=]() {
        if (lock_get_type_low(lock) == LOCK_REC) {
          // fprintf(stderr, "[DEBUG] (%d) try_release_all_locks - REC: %p\n", trx->id, lock);
-          // [TPL] - time no
-          if (strcmp(lock->index->table_name, "tpcc/stock") == 0) {
-            trx->is_no=true;
-          }
          lock_rec_dequeue_from_page(lock);
        } else {
          // fprintf(stderr, "[DEBUG] (%d) try_release_all_locks - TAB: %p\n", trx->id, lock);

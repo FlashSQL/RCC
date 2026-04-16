@@ -3259,7 +3259,8 @@ func_exit:
   return (ptr);
 }
 
-
+// [TPL]
+// cc. btr_cur_parse_update_in_place
  const byte *tpl_btr_cur_parse_update_in_place(
   const byte *ptr,          /*!< in: buffer */
   const byte *end_ptr,      /*!< in: buffer end */
@@ -3402,6 +3403,7 @@ out_of_space:
   return (false);
 }
 
+// [TPL] - tpl_update_only_log
 /* Write only redo log without buffer update if it conflicted */
 dberr_t
 tpl_update_only_log(
@@ -3431,7 +3433,7 @@ tpl_update_only_log(
   trx_mutex_enter(trx); // to protect trx->lock.conflict_lock
 
   char * table_name = const_cast<char*>(index->table_name);
-  if (std::strstr(table_name, "mysql") == nullptr && strcmp(table_name, "tpcc/customer")!= 0 && strcmp(table_name, "tpcc/orders") != 0 && strcmp(table_name, "tpcc/order_line") != 0) {
+  if (std::strstr(table_name, "mysql") == nullptr) {
 
     conflict_t* conf = lock_get_conf(trx, block->get_page_id(), heap_no);
     if (!conf) {

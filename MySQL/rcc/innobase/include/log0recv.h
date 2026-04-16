@@ -149,7 +149,7 @@ block.
 bool log_block_checksum_is_ok(const byte *block);
 #else /* UNIV_HOTBACKUP */
 
-
+// [TPL]
 const byte *recv_parse_or_apply_log_rec_body(
   mlog_id_t type, 
   const byte *ptr, 

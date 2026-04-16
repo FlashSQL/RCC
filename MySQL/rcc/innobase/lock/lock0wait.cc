@@ -201,26 +201,6 @@ static srv_slot_t *lock_wait_table_reserve_slot(
   ut_error;
 }
 
-void print_cycle(trx_t* trx) {
-  trx_t* from;
-  // trx_t* to;
-  int count = 0;
-
-  fprintf(stderr, "[DEBUG] DEADLOCK (%d) \n", trx->id);
-  from = trx;
-  while(from) {
-    count ++;
-    fprintf(stderr, "%d(%p)->", from->id,from);
-    // trx_print_low(stderr, from, 1000, 0, 0, 0); 
-    from = from->lock.blocking_trx.load();
-    if (from == trx) {
-      fprintf(stderr, "%d END\n", from->id);
-      break;
-    }
-
-  }
-}
-
 void lock_wait_request_check_for_cycles() { lock_set_timeout_event(); }
 
 void lock_wait_suspend_thread(que_thr_t *thr) {
@@ -343,42 +323,25 @@ void lock_wait_suspend_thread(que_thr_t *thr) {
   const auto start_time = slot->suspend_time;
   lock_wait_table_release_slot(slot);
 
-  // // [TPL] - time
-  // if (trx->pre_commit == TRX_COMMIT_PRE) {
-  //   const auto diff_time = std::chrono::steady_clock::now() - start_time;
-  //   trx->lock_commit_time += std::chrono::duration_cast<std::chrono::microseconds>(diff_time).count();
+  if (thr->lock_state == QUE_THR_LOCK_ROW) {
 
-  //   if (diff_time > lock_sys->n_lock_max_wait_time) {
-  //     lock_sys->n_lock_max_wait_time = diff_time;
-  //   }
+    const auto diff_time = std::chrono::steady_clock::now() - start_time;
+    trx->lock_wait_time += std::chrono::duration_cast<std::chrono::microseconds>(diff_time).count();
 
-  //   /* Record the lock wait time for this thread */
-  //   thd_set_lock_wait_time(trx->mysql_thd, diff_time);
+    // srv_stats.n_lock_wait_time.add(
+    //     std::chrono::duration_cast<std::chrono::microseconds>(diff_time)
+    //         .count());
 
-  //   DBUG_EXECUTE_IF("lock_instrument_slow_query_log",
-  //                   std::this_thread::sleep_for(std::chrono::milliseconds(1)););
+    if (diff_time > lock_sys->n_lock_max_wait_time) {
+      lock_sys->n_lock_max_wait_time = diff_time;
+    }
 
-  // }
-  // if (trx->pre_commit != TRX_COMMIT_PRE && thr->lock_state == QUE_THR_LOCK_ROW) {
-  // // end time
-  // // if (thr->lock_state == QUE_THR_LOCK_ROW) {
-  //   const auto diff_time = std::chrono::steady_clock::now() - start_time;
-  //   trx->lock_wait_time += std::chrono::duration_cast<std::chrono::microseconds>(diff_time).count();
+    /* Record the lock wait time for this thread */
+    thd_set_lock_wait_time(trx->mysql_thd, diff_time);
 
-  //   // srv_stats.n_lock_wait_time.add(
-  //   //     std::chrono::duration_cast<std::chrono::microseconds>(diff_time)
-  //   //         .count());
-
-  //   if (diff_time > lock_sys->n_lock_max_wait_time) {
-  //     lock_sys->n_lock_max_wait_time = diff_time;
-  //   }
-
-  //   /* Record the lock wait time for this thread */
-  //   thd_set_lock_wait_time(trx->mysql_thd, diff_time);
-
-  //   DBUG_EXECUTE_IF("lock_instrument_slow_query_log",
-  //                   std::this_thread::sleep_for(std::chrono::milliseconds(1)););
-  // }
+    DBUG_EXECUTE_IF("lock_instrument_slow_query_log",
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1)););
+  }
 
   /* The transaction is chosen as deadlock victim during sleep. */
   if (trx->error_state == DB_DEADLOCK) {
@@ -614,6 +577,29 @@ sorting criterion which is based on trx only. We use the pointer address, as
 any deterministic rule without ties will do. */
 bool operator<(const waiting_trx_info_t &a, const waiting_trx_info_t &b) {
   return std::less<trx_t *>{}(a.trx, b.trx);
+}
+
+static void print_cycle(const ut::vector<uint> &cycle_ids,
+                         const ut::vector<waiting_trx_info_t> &infos) {
+  std::string msg;
+  msg.append("[DEBUG] DEADLOCK CYCLE (len=");
+  msg.append(std::to_string(cycle_ids.size()));
+  msg.append("): ");
+
+  for (size_t i = 0; i < cycle_ids.size(); ++i) {
+    const auto &info = infos[cycle_ids[i]];
+    msg.append(std::to_string(info.trx->id));
+    msg.append("(");
+    char buf[32];
+    snprintf(buf, sizeof(buf), "%p", info.trx);
+    msg.append(buf);
+    msg.append(")->");
+  }
+  const auto &first = infos[cycle_ids[0]];
+  msg.append(std::to_string(first.trx->id));
+  msg.append(" END\n");
+
+  fprintf(stderr, "%s", msg.c_str());
 }
 
 /** Check all slots for user threads that are waiting on locks, and if they have

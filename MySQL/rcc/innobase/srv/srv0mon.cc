@@ -194,12 +194,6 @@ static monitor_info_t innodb_counter_info[] = {
      " (innodb_row_lock_time)",
      static_cast<monitor_type_t>(MONITOR_EXISTING | MONITOR_DEFAULT_ON),
      MONITOR_DEFAULT_START, MONITOR_OVLD_LOCK_WAIT_TIME},
-    
-    {"lock_row_commit_time", "lock",
-    "Time spent in acquiring row commit, in milliseconds"
-    " (innodb_row_commit_time)",
-    static_cast<monitor_type_t>(MONITOR_EXISTING | MONITOR_DEFAULT_ON),
-    MONITOR_DEFAULT_START, MONITOR_OVLD_LOCK_COMMIT_TIME}, // [TPL] - time
       
     {"lock_row_lock_time_max", "lock",
      "The maximum time to acquire a row lock, in milliseconds"

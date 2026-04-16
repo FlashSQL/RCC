@@ -60,6 +60,8 @@ void capture_redo_log_to_tpl(unsigned char *log, page_id_t page_id, mlog_id_t ty
 buf_block_t * tpl_get_block(byte * start_ptr);
 
 void tpl_apply(byte * start_ptr, byte * end_ptr, trx_t * trx);
+// void tpl_apply_or_move(byte * start_ptr, byte * end_ptr, trx_t * trx);
+// void tpl_install(trx_t* trx);
 
 struct tpl_apply_t{
 	trx_t * trx;
@@ -69,7 +71,10 @@ struct tpl_apply_t{
 
 	bool operator()(const mtr_buf_t::block_t* block)
 	{
+    // [TPL] - async commit
 		tpl_apply((byte *)(block->begin()), (byte *)(block->end()), this->trx);
+		// tpl_apply_or_move((byte *)(block->begin()), (byte *)(block->end()), this->trx); // async
+    // end async
 		return(true);
 	}
 };

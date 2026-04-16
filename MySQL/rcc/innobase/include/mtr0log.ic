@@ -50,7 +50,7 @@ static inline bool mlog_open_metadata(mtr_t *mtr, ulint size, byte *&buffer) {
     return (false);
   }
 
-
+  // [TPL]
   byte * mtr_ipl_start_pointer = mtr->get_log()->open(size);
 	mtr->set_mtr_ipl_start_pointer(mtr_ipl_start_pointer);
 	mtr->set_mtr_ipl_before_log_count(mtr->get_log_count());
@@ -64,11 +64,12 @@ static inline void mlog_close(
     mtr_t *mtr, /*!< in: mtr */
     byte *ptr)  /*!< in: buffer space from ptr up was not used */
 {
-
+  // ut_ad(mtr_get_log_mode(mtr) != MTR_LOG_NONE);
+  // ut_ad(mtr_get_log_mode(mtr) != MTR_LOG_NO_REDO);
 
   mtr->get_log()->close(ptr);
 
-
+  // [TPL]
 	byte * mtr_ipl_start_pointer = mtr->get_mtr_ipl_start_pointer();
 	if(mtr_ipl_start_pointer != NULL 
 		&& (mtr->get_mtr_ipl_before_log_count() + 1) == mtr->get_log_count() 
@@ -81,6 +82,7 @@ static inline void mlog_close(
     mtr->set_mtr_ipl_start_pointer(NULL);
   }
 
+  //
 }
 
 /** Concatenates 1 - 4 bytes to the mtr log. The value is not compressed. */
