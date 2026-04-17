@@ -1,25 +1,25 @@
 #!/bin/bash
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BASE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-FIG_DIR="$BASE_DIR/fig4_varying_transaction_length"
+FIG_DIR="$SCRIPT_DIR/fig4_varying_transaction_length"
 RESULTS_DIR="$FIG_DIR/results"
 
-# Parse output.log and generate CSV
-generate_csv() {
-    local VANILLA_LOG="$RESULTS_DIR/vanilla/output.log"
-    local RCC_LOG="$RESULTS_DIR/rcc/output.log"
-    local OUTPUT_CSV="$FIG_DIR/ratio_by_threads_my.csv"
+# ==========================================
+# Shared CSV generator (ratio = RCC TPS / Vanilla TPS)
+# ==========================================
+# $1: vanilla log, $2: rcc log, $3: output csv path
+generate_ratio_csv() {
+    local VANILLA_LOG="$1"
+    local RCC_LOG="$2"
+    local OUTPUT_CSV="$3"
 
     if [[ ! -f "$VANILLA_LOG" ]] || [[ ! -f "$RCC_LOG" ]]; then
-        echo "[ERROR] Result files not found"
+        echo "[WARN] Skipping $OUTPUT_CSV: result files not found"
         echo "  Expected: $VANILLA_LOG"
         echo "  Expected: $RCC_LOG"
-        exit 1
+        return 1
     fi
 
-    # Extract TPS values from CSV section
-    # Format: threads,reads_per_tx,tps,...
     declare -A vanilla_tps
     declare -A rcc_tps
 
@@ -33,9 +33,7 @@ generate_csv() {
         rcc_tps["${threads}_${reads}"]=$tps
     done < <(sed -n '/^threads,reads_per_tx/,$ p' "$RCC_LOG" | tail -n +2)
 
-    # Generate ratio CSV (RCC TPS / Vanilla TPS)
     echo "#threads,64,128,256" > "$OUTPUT_CSV"
-
     for threads in 1 8 16 32 64 128; do
         ratio_64=$(echo "scale=1; ${rcc_tps[${threads}_64]:-0} / ${vanilla_tps[${threads}_64]:-1}" | bc 2>/dev/null || echo "0")
         ratio_128=$(echo "scale=1; ${rcc_tps[${threads}_128]:-0} / ${vanilla_tps[${threads}_128]:-1}" | bc 2>/dev/null || echo "0")
@@ -45,16 +43,37 @@ generate_csv() {
 
     echo "[INFO] Generated: $OUTPUT_CSV"
     cat "$OUTPUT_CSV"
-}
-
-# Run gnuplot
-run_gnuplot() {
-    cd "$FIG_DIR"
-    gnuplot "$SCRIPT_DIR/templates/varying_tx_length.gnu"
-    echo "[INFO] Generated: $FIG_DIR/single_hot_mini_my.pdf"
+    return 0
 }
 
 echo "=== Plotting Fig4: Varying Transaction Length ==="
-generate_csv
-run_gnuplot
+
+# ==========================================
+# MySQL plot
+# ==========================================
+MYSQL_OUT_DIR="$FIG_DIR/mysql"
+mkdir -p "$MYSQL_OUT_DIR"
+if generate_ratio_csv \
+        "$RESULTS_DIR/mysql/Vanilla/output.log" \
+        "$RESULTS_DIR/mysql/RCC/output.log" \
+        "$MYSQL_OUT_DIR/ratio_by_threads_my.csv"; then
+    cd "$MYSQL_OUT_DIR"
+    gnuplot "$SCRIPT_DIR/templates/mysql/varying_tx_length.gnu"
+    echo "[INFO] Generated: $MYSQL_OUT_DIR/single_hot_mini_my.pdf"
+fi
+
+# ==========================================
+# PostgreSQL plot
+# ==========================================
+PG_OUT_DIR="$FIG_DIR/postgres"
+mkdir -p "$PG_OUT_DIR"
+if generate_ratio_csv \
+        "$RESULTS_DIR/postgres/vanilla/output.log" \
+        "$RESULTS_DIR/postgres/rcc/output.log" \
+        "$PG_OUT_DIR/ratio_by_threads_pg.csv"; then
+    cd "$PG_OUT_DIR"
+    gnuplot "$SCRIPT_DIR/templates/postgres/varying_tx_length.gnu"
+    echo "[INFO] Generated: $PG_OUT_DIR/single_hot_mini_pg.pdf"
+fi
+
 echo "Done!"

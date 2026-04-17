@@ -24,15 +24,16 @@ sudo apt-get install -y \
     libncurses5-dev bison flex \
     autoconf automake libtool \
     libmysqlclient-dev libpq-dev \
-    libaio1 libaio-dev
+    libaio1 libaio-dev gnuplot
 
-pip3 install psycopg2-binary
+pip3 install psycopg2-binary MySQLdb
 ```
 
 ## Build & Run
 
-
 ### MySQL
+
+MySQL variants live under `MySQL/{Vanilla,RCC,RCC-W,RCC-D,RCC-C}/`. `run_server.sh` downloads MySQL 8.4.5, applies the variant's modified `innobase/`, builds, initializes, and starts the server.
 
 ```bash
 export rcc_data_dir=/path/to/data
@@ -40,16 +41,23 @@ export rcc_log_dir=/path/to/log
 
 cd MySQL
 
-# --server: vailla, bamboo, rcc
-bash build.sh --server # Build
-bash run_server.sh --server # Run MySQL Server
-bash shutdown.sh --server
+# Build and start (choose one variant)
+bash run_server.sh --vanilla
+bash run_server.sh --rcc
+bash run_server.sh --rcc-w
+bash run_server.sh --rcc-d
+bash run_server.sh --rcc-c
+
+# Reuse an existing build:
+bash run_server.sh --rcc --skip-build
+
+# Stop
+bash shutdown.sh --rcc
 ```
 
 ### PostgreSQL
 
 ```bash
-# Set environment variables
 export rcc_data_dir=/path/to/data
 export rcc_log_dir=/path/to/log
 
@@ -61,79 +69,61 @@ bash util/shutdown.sh
 
 ## Reproducing Experiments
 
-Benchmark scripts to reproduce the experimental results in the paper:
+All experiment scripts are unified under `plots/`. Each figure script runs both MySQL and PostgreSQL by default and then calls the matching plot script.
 
 | Figure | Benchmark | Description |
 |--------|-----------|-------------|
-| Fig4 | Synthetic | Varying transaction length (64, 128, 256 reads/tx) |
-| Fig5 | Synthetic | Varying hotspot position (0.0 ~ 1.0) |
-| Fig6 | TPC-C | Varying client threads (1 ~ 128) |
-| Fig7 | TPC-C | Varying warehouse count (1 ~ 8) |
-| Fig8 | TPC-C | Varying client threads with Serialzable mode (compare to bamboo) (only for mysql) |
-| Fig10 | Synthetic | Comparison with OCC (only for mysql) |
+| Fig4a  | Synthetic | Varying transaction length (64, 128, 256 reads/tx) |
+| Fig4b  | Synthetic | Varying hotspot position (0.0 ~ 1.0) |
+| Fig5a  | TPC-C     | Varying client threads (1 ~ 128) |
+| Fig5b  | TPC-C     | Varying warehouse count (1 ~ 8) |
+| Fig6   | TPC-C     | RCC variants (Vanilla, RCC-W, RCC-D, RCC, RCC-C) × (RR, SR) — MySQL only |
 
 ### Run All Experiments
 
-#### MySQL
-
 ```bash
-cd MySQL
+export rcc_data_dir=/path/to/data
+export rcc_log_dir=/path/to/log
+
+cd plots
 bash run_all_experiments.sh
 ```
 
-#### PostgreSQL
-
-```bash
-cd PostgreSQL
-bash run_all_experiments.sh
-```
+This runs fig4a → fig4b → fig5a → fig5b → fig6 sequentially and prompts for sudo password once.
 
 ### Run Experiments Individually
 
-#### MySQL
+Each script accepts `--mysql`, `--postgres`, or `--all` (default). Fig6 is MySQL only and takes no DB flag.
 
 ```bash
-cd MySQL
-bash fig4_varying_transaction_length.sh
-bash fig5_varying_hotspot_position.sh
-bash fig6_varying_client_threads.sh
-bash fig7_varying_warehouse_count.sh
-bash fig8_serializable.sh
-bash fig10_occ.sh
+cd plots
+bash fig4a_varying_transaction_length.sh            # both DBs
+bash fig4b_varying_hotspot_position.sh --mysql      # MySQL only
+bash fig5a_varying_client_threads.sh --postgres     # PostgreSQL only
+bash fig5b_varying_warehouse_count.sh
+bash fig6_rcc_variants.sh                           # MySQL only
 ```
 
-#### PostgreSQL
+Each fig script:
+1. Cleans `rcc_data_dir` / `rcc_log_dir`
+2. Builds/starts the server(s) via helper scripts
+3. Runs the benchmark
+4. Stores results under `plots/<fig_name>/results/{mysql,postgres}/...`
+5. Calls the matching `plot_<fig>.sh` to produce CSVs and PDFs
+
+> **Note:** PostgreSQL TPC-C benchmarks (Fig5a, Fig5b) require sysbench. See `PostgreSQL/README.md` for installation.
+
+### Plotting Only
+
+If results already exist, regenerate plots without rerunning experiments:
 
 ```bash
-cd PostgreSQL
-bash fig4_varying_transaction_length.sh
-bash fig5_varying_hotspot_position.sh
-bash fig6_varying_client_threads.sh
-bash fig7_varying_warehouse_count.sh
-```
-
-> **Note:** TPC-C benchmarks (Fig6, Fig7) require sysbench. See `PostgreSQL/README.md` for installation.
-
-### Plotting Results
-
-> **Note:** Requires `gnuplot`. Install with `sudo apt-get install -y gnuplot`.
-
-#### MySQL
-
-```bash
-cd MySQL/plots
+cd plots
 bash plot_fig4.sh
 bash plot_fig5.sh
 bash plot_fig6.sh
+bash plot_fig6_rcc_variants.sh
 bash plot_fig7.sh
 ```
 
-#### PostgreSQL
-
-```bash
-cd PostgreSQL/plots
-bash plot_fig4.sh
-bash plot_fig5.sh
-bash plot_fig6.sh
-bash plot_fig7.sh
-```
+Outputs land in `plots/<fig_name>/{mysql,postgres}/*.pdf` (fig6 variants go in `plots/fig6_rcc_variants/*.pdf`).

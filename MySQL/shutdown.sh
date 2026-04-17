@@ -5,15 +5,23 @@ BASE_DIR=`pwd -P`
 while [[ $# -gt 0 ]]; do
     case $1 in
         --vanilla)
-            BUILD_MODE="vanilla"
+            BUILD_MODE="Vanilla"
             shift
             ;;
         --rcc)
-            BUILD_MODE="rcc"
+            BUILD_MODE="RCC"
             shift
             ;;
-        --bamboo)
-            BUILD_MODE="bamboo"
+        --rcc-w)
+            BUILD_MODE="RCC-W"
+            shift
+            ;;
+        --rcc-d)
+            BUILD_MODE="RCC-D"
+            shift
+            ;;
+        --rcc-c)
+            BUILD_MODE="RCC-C"
             shift
             ;;
         --skip-build)

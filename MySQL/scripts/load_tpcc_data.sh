@@ -1,44 +1,84 @@
-W=$1
+#!/bin/bash
 
-BASE_DIR=`pwd -P`
+BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-data_dir="$BASE_DIR/data_dir"
-log_dir="$BASE_DIR/log_dir"
+BUILD_MODE=$1
+W=$2
 
-mkdir $data_dir
-mkdir $log_dir
-rm -rf $data_dir/*
-rm -rf $log_dir/*
+# Use environment variables
+DATA_DIR="${rcc_data_dir:-}"
+LOG_DIR="${rcc_log_dir:-}"
 
-echo "INIT MYSQL"
-$BASE_DIR/mysql-8.4.5-build/bin/mysqld --defaults-file=$BASE_DIR/my.cnf --initialize-insecure --user=mysql --datadir=$data_dir --basedir=$BASE_DIR/mysql-8.4.5
+if [[ -z "$DATA_DIR" ]] || [[ -z "$LOG_DIR" ]]; then
+    echo "[ERROR] rcc_data_dir and rcc_log_dir must be set"
+    echo "  export rcc_data_dir=/path/to/data"
+    echo "  export rcc_log_dir=/path/to/log"
+    exit 1
+fi
+
+if [[ -z "$BUILD_MODE" ]]; then
+    echo "[ERROR] BUILD_MODE is required"
+    echo "  Usage: $0 <Vanilla|RCC|RCC-W|RCC-D|RCC-C> <warehouse_count>"
+    exit 1
+fi
+
+if [[ -z "$W" ]]; then
+    echo "[ERROR] warehouse count is required"
+    echo "  Usage: $0 <Vanilla|RCC|RCC-W|RCC-D|RCC-C> <warehouse_count>"
+    exit 1
+fi
+
+MYSQL_HOME="${BASE_DIR}/${BUILD_MODE}/mysql-8.4.5"
+BLD_PATH="$MYSQL_HOME-build"
+MYSQLD="${BLD_PATH}/bin/mysqld"
+MYSQL="${BLD_PATH}/bin/mysql"
+MYSQLADMIN="${BLD_PATH}/bin/mysqladmin"
+
+mkdir -p $DATA_DIR
+mkdir -p $LOG_DIR
+rm -rf $DATA_DIR/*
+rm -rf $LOG_DIR/*
+
+# Update my.cnf paths
+if grep -Eq '^[[:space:]]*pid-file[[:space:]]*=' "$BASE_DIR/my.cnf"; then
+    sed -i -E "s|^[[:space:]]*pid-file[[:space:]]*=.*$|pid-file=${DATA_DIR}/mysql.pid|" "$BASE_DIR/my.cnf"
+fi
+if grep -Eq '^[[:space:]]*datadir[[:space:]]*=' "$BASE_DIR/my.cnf"; then
+    sed -i -E "s|^[[:space:]]*datadir[[:space:]]*=.*$|datadir=${DATA_DIR}|" "$BASE_DIR/my.cnf"
+fi
+if grep -Eq '^[[:space:]]*log-error[[:space:]]*=' "$BASE_DIR/my.cnf"; then
+    sed -i -E "s|^[[:space:]]*log-error[[:space:]]*=.*$|log-error=${LOG_DIR}/mysql_error.log|" "$BASE_DIR/my.cnf"
+fi
+if grep -Eq '^[[:space:]]*innodb_log_group_home_dir[[:space:]]*=' "$BASE_DIR/my.cnf"; then
+    sed -i -E "s|^[[:space:]]*innodb_log_group_home_dir[[:space:]]*=.*$|innodb_log_group_home_dir=${LOG_DIR}|" "$BASE_DIR/my.cnf"
+fi
+
+echo "BUILD TPCC"
+cd $BASE_DIR/tpcc-mysql/src && make
+
+echo "INIT MySQL"
+$MYSQLD --defaults-file=$BASE_DIR/my.cnf --initialize-insecure --user=mysql --datadir=$DATA_DIR --basedir=$MYSQL_HOME
 sleep 10
 
-echo "RUN MYSQL"
-$BASE_DIR/mysql-8.4.5-build/bin/mysqld --defaults-file=$BASE_DIR/my.cnf --datadir=$data_dir & >/dev/null
-sleep 30
-
-echo "SET PASSWORD on MYSQL"
-$BASE_DIR/mysql-8.4.5-build/bin/mysql -uroot mysql -e "DROP USER IF EXISTS 'root'@'%';"
-$BASE_DIR/mysql-8.4.5-build/bin/mysql -uroot mysql -e "CREATE USER 'root'@'%' IDENTIFIED BY '';"
-$BASE_DIR/mysql-8.4.5-build/bin/mysql -uroot mysql -e "GRANT ALL PRIVILEGES ON *.* TO 'root'@'%' WITH GRANT OPTION;"
-$BASE_DIR/mysql-8.4.5-build/bin/mysql -uroot mysql -e "FLUSH PRIVILEGES;"
-$BASE_DIR/mysql-8.4.5-build/bin/mysqladmin -uroot shutdown
-sleep 5
-
-echo "RUN MYSQL"
-$BASE_DIR/mysql-8.4.5-build/bin/mysqld --defaults-file=$BASE_DIR/my.cnf --datadir=$data_dir --disable-log-bin & >/dev/null
+echo "RUN MySQL"
+$MYSQLD --defaults-file=$BASE_DIR/my.cnf --datadir=$DATA_DIR --disable-log-bin > /dev/null 2>&1 &
 sleep 20
 
+echo "SET PASSWORD on MySQL"
+$MYSQL -uroot mysql -e "DROP USER IF EXISTS 'root'@'%';"
+$MYSQL -uroot mysql -e "CREATE USER 'root'@'%' IDENTIFIED BY '';"
+$MYSQL -uroot mysql -e "GRANT ALL PRIVILEGES ON *.* TO 'root'@'%' WITH GRANT OPTION;"
+$MYSQL -uroot mysql -e "FLUSH PRIVILEGES;"
+
 echo "CREATE TPCC"
-cd $BASE_DIR/tpcc-mysql/src && make
-$BASE_DIR/mysql-8.4.5-build/bin/mysql -uroot  -e "CREATE DATABASE tpcc;"
-$BASE_DIR/mysql-8.4.5-build/bin/mysql -u root  tpcc < $BASE_DIR/tpcc-mysql/create_table.sql
-$BASE_DIR/mysql-8.4.5-build/bin/mysql -u root  tpcc < $BASE_DIR/tpcc-mysql/add_fkey_idx.sql
+$MYSQL -uroot -e "CREATE DATABASE tpcc;"
+$MYSQL -uroot tpcc < $BASE_DIR/tpcc-mysql/create_table.sql
+$MYSQL -uroot tpcc < $BASE_DIR/tpcc-mysql/add_fkey_idx.sql
 
-echo "LOAD TPCC"
-LD_LIBRARY_PATH=$BASE_DIR/mysql-8.4.5-build/lib $BASE_DIR/tpcc-mysql/tpcc_load -h127.0.0.1 -dtpcc -uroot -w$W
+echo "LOAD TPCC (warehouses=$W)"
+LD_LIBRARY_PATH=$BLD_PATH/lib $BASE_DIR/tpcc-mysql/tpcc_load -h127.0.0.1 -dtpcc -uroot -w$W
 
-echo "SHUTDOWN"
-$BASE_DIR/mysql-8.4.5-build/bin/mysqladmin -uroot shutdown
+echo "Data loading complete. Stopping server..."
+$MYSQLADMIN -uroot shutdown
 sleep 5
+echo "Server stopped. Ready for benchmark."
