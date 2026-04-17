@@ -1,0 +1,31 @@
+# Varying Thread: fc10, z0.9, 1KB row
+# Threads: 1, 8, 16, 32, 64, 128 (set at runtime with -threads)
+
+recordcount=10000000
+operationcount=0
+maxexecutiontime=60
+workload=site.ycsb.workloads.CoreWorkload
+
+fieldcount=10
+fieldlength=100
+
+readallfields=true
+writeallfields=true
+
+readproportion=0
+updateproportion=0
+scanproportion=0
+insertproportion=0
+batchtxproportion=1.0
+
+opspertransaction=16
+jdbc.opspercommit=16
+readratio=0.5
+
+requestdistribution=zipfian
+zipfian.constant=0.9
+
+db.driver=com.mysql.cj.jdbc.Driver
+db.url=jdbc:mysql://localhost:3306/ycsb
+db.user=root
+db.passwd=test

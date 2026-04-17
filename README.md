@@ -2,7 +2,14 @@
 
 ## Overview
 
-This repository contains the implementation of **RCC**, a concurrency control mechanism that leverages redo logs to resolve write-write (WW) conflicts.
+This repository contains the implementation of **RCC**, a concurrency control mechanism that leverages redo logs to resolve write-write (WW) conflicts, integrated with MySQL and PostgreSQL.
+
+**Repository layout**
+- `MySQL/` — MySQL variants (`Vanilla`, `RCC`, `RCC-W`, `RCC-D`, `RCC-C`), benchmarks (TPC-C, YCSB), and run scripts
+- `PostgreSQL/` — PostgreSQL with `-DRCC` build flag, benchmarks, and run scripts
+- `plots/` — experiment drivers (Fig4–Fig8b) and gnuplot templates
+
+> **Correctness:** All TPC-C runs passed BenchmarkSQL's built-in consistency checker, confirming that RCC preserves the consistency conditions defined in the TPC-C specification. See [TPC-C Consistency Check](#tpc-c-consistency-check) for how to reproduce.
 
 ## Hardware Configuration
 
@@ -78,6 +85,7 @@ All experiment scripts are unified under `plots/`. Each figure script runs both 
 | Fig5a  | TPC-C     | Varying client threads (1 ~ 128) |
 | Fig5b  | TPC-C     | Varying warehouse count (1 ~ 8) |
 | Fig6   | TPC-C     | RCC variants (Vanilla, RCC-W, RCC-D, RCC, RCC-C) × (RR, SR) — MySQL only |
+| Fig8b  | YCSB      | Varying client threads (1 ~ 128), 10M rows, read-modify-write — MySQL only |
 
 ### Run All Experiments
 
@@ -93,7 +101,7 @@ This runs fig4a → fig4b → fig5a → fig5b → fig6 sequentially and prompts 
 
 ### Run Experiments Individually
 
-Each script accepts `--mysql`, `--postgres`, or `--all` (default). Fig6 is MySQL only and takes no DB flag.
+Each script accepts `--mysql`, `--postgres`, or `--all` (default). Fig6 and Fig8b are MySQL only and take no DB flag.
 
 ```bash
 cd plots
@@ -102,6 +110,7 @@ bash fig4b_varying_hotspot_position.sh --mysql      # MySQL only
 bash fig5a_varying_client_threads.sh --postgres     # PostgreSQL only
 bash fig5b_varying_warehouse_count.sh
 bash fig6_rcc_variants.sh                           # MySQL only
+bash fig8b_ycsb_varying_thread.sh                   # MySQL only (YCSB)
 ```
 
 Each fig script:
@@ -112,6 +121,7 @@ Each fig script:
 5. Calls the matching `plot_<fig>.sh` to produce CSVs and PDFs
 
 > **Note:** PostgreSQL TPC-C benchmarks (Fig5a, Fig5b) require sysbench. See `PostgreSQL/README.md` for installation.
+> **Note:** YCSB (Fig8b) requires Maven + JDK for building the JDBC binding under `MySQL/YCSB_benchmark/`.
 
 ### Plotting Only
 
@@ -124,6 +134,7 @@ bash plot_fig5.sh
 bash plot_fig6.sh
 bash plot_fig6_rcc_variants.sh
 bash plot_fig7.sh
+bash plot_fig8b.sh
 ```
 
 Outputs land in `plots/<fig_name>/{mysql,postgres}/*.pdf` (fig6 variants go in `plots/fig6_rcc_variants/*.pdf`).
@@ -139,7 +150,7 @@ Run the experiments per that repository's instructions, then feed the resulting 
 
 ### TPC-C Consistency Check
 
-After running any TPC-C experiment (Fig5a, Fig5b, Fig6), verify the database satisfies TPC-C's 12 consistency invariants:
+After running any TPC-C experiment (Fig5a, Fig5b, Fig6), verify the database satisfies the TPC-C consistency conditions:
 
 ```bash
 # MySQL
