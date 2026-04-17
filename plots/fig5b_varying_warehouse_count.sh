@@ -68,7 +68,7 @@ print_header() {
 # MYSQL EXPERIMENTS
 # ==========================================
 if [[ "$RUN_MYSQL" == true ]]; then
-    print_header "MySQL fig7 experiments"
+    print_header "MySQL fig5b experiments"
 
     mkdir -p "$RESULT_DIR/mysql"
     bash "$MYSQL_DIR/scripts/run_tpcc_warehouses.sh" --results-dir "$RESULT_DIR/mysql"
@@ -78,7 +78,7 @@ fi
 # POSTGRESQL EXPERIMENTS
 # ==========================================
 if [[ "$RUN_POSTGRES" == true ]]; then
-    print_header "PostgreSQL fig7 experiments"
+    print_header "PostgreSQL fig5b experiments"
 
     mkdir -p "$RESULT_DIR/postgres"
     bash "$POSTGRES_DIR/scripts/run_tpcc_warehouses.sh" --results-dir "$RESULT_DIR/postgres"

@@ -19,6 +19,7 @@ RESULTS_DIR=""
 
 DEFAULT_WARMUP=50
 BUILD_MODES=("Vanilla" "RCC" "RCC-W" "RCC-D" "RCC-C")
+BUILD_MODES_OVERRIDE=""
 
 # Format: "name:warehouses,terminals,duration"
 EXPERIMENTS=(
@@ -49,15 +50,17 @@ print_error() {
 }
 
 usage() {
-    echo "Usage: export rcc_data_dir=/path/to/data rcc_log_dir=/path/to/log && $0 [--results-dir <path>]"
+    echo "Usage: export rcc_data_dir=/path/to/data rcc_log_dir=/path/to/log && $0 [options]"
     echo ""
     echo "Required environment variables:"
     echo "  rcc_data_dir          MySQL data directory"
     echo "  rcc_log_dir           MySQL log directory"
     echo ""
     echo "Options:"
-    echo "  --results-dir <path>  Results directory"
-    echo "  -h, --help            Show this help"
+    echo "  --results-dir <path>   Results directory"
+    echo "  --build-modes \"<list>\" Space-separated variants to run (default: all 5)"
+    echo "                         e.g. --build-modes \"Vanilla RCC\""
+    echo "  -h, --help             Show this help"
     exit 0
 }
 
@@ -156,10 +159,15 @@ run_experiment() {
 while [[ $# -gt 0 ]]; do
     case $1 in
         --results-dir) RESULTS_DIR="$2"; shift 2 ;;
+        --build-modes) BUILD_MODES_OVERRIDE="$2"; shift 2 ;;
         -h|--help) usage ;;
         *) print_error "Unknown option: $1"; usage ;;
     esac
 done
+
+if [[ -n "$BUILD_MODES_OVERRIDE" ]]; then
+    read -r -a BUILD_MODES <<< "$BUILD_MODES_OVERRIDE"
+fi
 
 # Validate required env vars
 if [[ -z "$DATA_DIR" ]] || [[ -z "$LOG_DIR" ]]; then

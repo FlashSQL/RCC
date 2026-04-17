@@ -66,7 +66,7 @@ print_header() {
 # MYSQL EXPERIMENTS
 # ==========================================
 if [[ "$RUN_MYSQL" == true ]]; then
-    print_header "MySQL fig5 experiments"
+    print_header "MySQL fig4b experiments"
 
     MYSQL_BUILD_MODES=("Vanilla" "RCC")
 
@@ -77,7 +77,7 @@ if [[ "$RUN_MYSQL" == true ]]; then
         BLD_PATH="$MYSQL_HOME-build"
         MYSQL="${BLD_PATH}/bin/mysql"
 
-        print_header "Running MySQL fig5 with $BUILD_MODE build"
+        print_header "Running MySQL fig4b with $BUILD_MODE build"
         mkdir -p "$RESULT_DIR/mysql/$BUILD_MODE"
 
         echo "[INFO] Cleaning data_dir and log_dir..."
@@ -102,7 +102,7 @@ fi
 # POSTGRESQL EXPERIMENTS
 # ==========================================
 if [[ "$RUN_POSTGRES" == true ]]; then
-    print_header "PostgreSQL fig5 experiments"
+    print_header "PostgreSQL fig4b experiments"
 
     POSTGRESQL_HOME="$POSTGRES_DIR/rcc_postgresql"
     BLD_PATH="${POSTGRESQL_HOME}/bld"
@@ -115,7 +115,7 @@ if [[ "$RUN_POSTGRES" == true ]]; then
     rm -rf $rcc_log_dir/* 2>/dev/null
 
     for BUILD_MODE in "${POSTGRES_BUILD_MODES[@]}"; do
-        print_header "Running PostgreSQL fig5 with $BUILD_MODE build"
+        print_header "Running PostgreSQL fig4b with $BUILD_MODE build"
         mkdir -p "$RESULT_DIR/postgres/$BUILD_MODE"
 
         echo "[INFO] Cleaning data_dir and log_dir..."

@@ -171,7 +171,7 @@ else
 fi
 
 # Initialize database (only if DATA_DIR is empty)
-rm -rf $$DATA_DIR/*
+rm -rf $DATA_DIR/*
 rm -rf $LOG_DIR/*
 
 if [ -z "$(ls -A $DATA_DIR 2>/dev/null)" ]; then
@@ -199,7 +199,7 @@ fi
 
 # Start MySQL
 print_info "Starting MySQL..."
-$MYSQL_BIN --defaults-file=$BASE_DIR/my.cnf --datadir=$data_dir --disable-log-bin  > /dev/null 2>&1 &
+$MYSQL_BIN --defaults-file=$BASE_DIR/my.cnf --datadir=$DATA_DIR --disable-log-bin  > /dev/null 2>&1 &
 sleep 20
 
 
