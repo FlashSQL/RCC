@@ -127,3 +127,22 @@ bash plot_fig7.sh
 ```
 
 Outputs land in `plots/<fig_name>/{mysql,postgres}/*.pdf` (fig6 variants go in `plots/fig6_rcc_variants/*.pdf`).
+
+### DBx1000 (YCSB) Experiments
+
+For DBx1000-based YCSB experiments, use the RebirthRetire codebase:
+
+- Source: https://github.com/gitzhqian/RebirthRetire.git
+- Plot template: [`plots/templates/dbx1000_ycsb.gnu`](plots/templates/dbx1000_ycsb.gnu)
+
+Run the experiments per that repository's instructions, then feed the resulting CSV(s) through `dbx1000_ycsb.gnu` to produce the plot.
+
+### TPC-C Consistency Check
+
+After running any TPC-C experiment (Fig5a, Fig5b, Fig6), verify the database satisfies TPC-C's 12 consistency invariants:
+
+```bash
+MySQL/<variant>/mysql-8.4.5-build/bin/mysql -uroot tpcc < MySQL/scripts/consistency_check.sql
+```
+
+The SQL file is adapted from [BenchmarkSQL](https://github.com/wieck/benchmarksql.git). A PostgreSQL version will be added soon.
