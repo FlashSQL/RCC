@@ -155,7 +155,6 @@ static inline void lock_reset_lock_and_trx_wait(
   for (auto &element : trx->lock.conf_lock_pool) {
     if (element->conf_lock == lock) {
       // reset this conflict lock
-      // fprintf(stderr, "[DEBUG] (%d) lock_reset_lock_and_trx_wait - reset wait_lock: %p\n", trx->id, element->conf_lock);
       element->deleted = true;
     }
   }

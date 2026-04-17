@@ -1072,6 +1072,10 @@ struct Locks_hashtable {
   lock_t *find_on_block(const buf_block_t *block, F &&f);
   template <typename F>
   lock_t *find_on_record(const struct RecID &rec_id, F &&f);
+  // [TPL] - columnar lock 비교 버전
+  template <typename F>
+  lock_t *find_on_record_columnar(const struct RecID &rec_id,
+                                   uint64_t req_field_bitmap, F &&f);
 #ifdef UNIV_DEBUG
   /* Don't use it in Release - it's too slow, as it requires the global latch.
   Instead use All_locks_iterator, or something like that - which will not

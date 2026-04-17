@@ -8621,14 +8621,9 @@ void ha_innobase::build_template(bool whole_row) {
   bool fetch_primary_key_cols = false;
   ulint i;
 
+  // [TPL] - columnar
 
-  if (m_prebuilt->select_lock_type == LOCK_X || m_prebuilt->select_lock_type == LOCK_XX) {
-    /* We always retrieve the whole clustered index record if we
-    use exclusive row level locks, for example, if the read is
-    done in an UPDATE statement. */
-
-    whole_row = true;
-  } else if (!whole_row) {
+  if (!whole_row) {
     if (m_prebuilt->hint_need_to_fetch_extra_cols == ROW_RETRIEVE_ALL_COLS) {
       /* We know we must at least fetch all columns in the
       key, or all columns in the table */

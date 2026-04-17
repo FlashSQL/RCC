@@ -881,6 +881,37 @@ static inline const lock_t *tpl_lock_rec_has_expl(
   ulint			target_mode) {
   return tpl_lock_rec_has_expl(precise_mode, block->get_page_id(), heap_no, trx, target_mode);
 }
+
+// [TPL] - columnar
+static inline const lock_t *lock_rec_has_expl_rcc_columnar(
+  ulint precise_mode,
+  const page_id_t page_id,
+  uint32_t heap_no,
+  const trx_t *trx,
+  ulint			target_mode) {
+
+  const RecID rec_id{page_id, heap_no};
+  const auto mode = static_cast<lock_mode>(precise_mode & LOCK_MODE_MASK);
+  uint64_t in_bitmap = trx->field_bitmap;
+
+  const auto first =
+  lock_sys->rec_hash.find_on_record_columnar(rec_id, in_bitmap, [&](const lock_t *lock) {
+    // fprintf(stderr, "[DEBUG] (%d) lock_rec_has_expl_rcc_columnar - %d, %p\n", trx->id, lock->trx->id, lock);
+    return (
+      (lock->trx == trx && !lock->is_insert_intention() 
+      && lock_mode_stronger_or_eq(lock_get_mode(lock), mode) 
+      && (!target_mode || lock_get_mode(lock) == target_mode)
+    ));
+  });
+  return first == nullptr ? nullptr : first;
+}
+static inline const lock_t *lock_rec_has_expl_rcc_columnar(
+  ulint precise_mode,
+  const buf_block_t *block,
+  ulint heap_no, const trx_t *trx,
+  ulint			target_mode) {
+  return lock_rec_has_expl_rcc_columnar(precise_mode, block->get_page_id(), heap_no, trx, target_mode);
+}
 //
 
 namespace locksys {
@@ -1053,13 +1084,72 @@ static locksys::Conflicting tpl_lock_rec_other_has_conflicting(
   return {last_lock, bypassed, aborting};
 }  // end RCC
 
+// [TPL] - columnar
+// return last_lock (tail of conflict chain)
+static locksys::Conflicting lock_rec_other_has_conflicting_rcc_columnar(
+  ulint mode, 
+  const buf_block_t *block, 
+  ulint heap_no, 
+  const trx_t *trx) 
+{
+  // fprintf(stderr, "[DEBUG] (%d) lock_rec_other_has_conflicting_rcc_columnar - %u\n", trx->id, trx->field_bitmap);
+
+  bool bypassed{false};
+
+  RecID rec_id{block, heap_no};
+  const bool is_supremum = rec_id.is_supremum();
+  locksys::Trx_locks_cache trx_locks_cache{};
+
+  uint64_t in_bitmap = trx->field_bitmap;
+
+	const lock_t*		last_lock = nullptr;
+  bool updated = false;
+  bool aborting = false;
+
+  lock_sys->rec_hash.find_on_record_columnar(rec_id, in_bitmap, [&](const lock_t *lock) {
+        // lock_rec_has_to_wait와 유사
+        const auto conflict = locksys::rec_lock_check_conflict(
+            trx, mode, lock, is_supremum, trx_locks_cache);
+
+        // fprintf(stderr, "[DEBUG] (%d) lock_rec_other_has_conflicting_rcc_columnar - %d %p: %d\n", trx->id, lock->trx->id, lock, conflict);
+
+        if (conflict == locksys::Conflict::CAN_BYPASS) {
+          bypassed = true;
+        }
+
+        if (!aborting && lock->trx->conflict_abort != TRX_NOT_ABORTED) {
+          // 누구 하나라도 abort 중이면 난 무조건 기다려야 한다
+          aborting = true;
+        }
+
+        if (trx == lock->trx) {
+          return false;
+        }
+        else if (conflict == locksys::Conflict::HAS_TO_WAIT) {
+          // fprintf(stderr, "[DEBUG] (%d) lock_rec_other_has_conflicting_rcc_columnar - has to wait (%u vs %u)\n", trx->id, lock->field_bitmap, trx->field_bitmap);
+          last_lock = lock;
+          if (lock_get_mode(lock) == LOCK_X || lock_get_mode(lock) == LOCK_XX) {
+            updated = true;
+          }
+        // [SR]
+        } else if (updated) {
+          // S_LOCK -> NO_CONFLICT -> 하지만 이전에 X_LOCK 있었으면 -> conflicter로
+          // fprintf(stderr, "[DEBUG] (%d) lock_rec_other_has_conflicting_rcc_columnar - updated\n", trx->id);
+          last_lock = lock;
+        } // end SR
+        return false; 
+      });
+  return {last_lock, bypassed, aborting};
+}  // end RCC
+
 // [TPL]
 // return last_lock (tail of conflict chain)
 // use when rollback
 static locksys::Conflicting tpl_lock_rec_other_has_conflicting_rollback(
   ulint mode, 
   RecID rec_id, 
-  const trx_t *trx) 
+  const trx_t *trx,
+  uint64_t in_bitmap) 
 {
 
   bool bypassed{false};
@@ -1070,7 +1160,7 @@ static locksys::Conflicting tpl_lock_rec_other_has_conflicting_rollback(
 	const lock_t*		last_lock = NULL;
 
   const lock_t *wait_for =
-      lock_sys->rec_hash.find_on_record(rec_id, [&](const lock_t *lock) {
+      lock_sys->rec_hash.find_on_record_columnar(rec_id, in_bitmap, [&](const lock_t *lock) {
         // lock_rec_has_to_wait와 유사
         const auto conflict = locksys::rec_lock_check_conflict(
             trx, mode, lock, is_supremum, trx_locks_cache);
@@ -1353,6 +1443,7 @@ lock_t *RecLock::lock_alloc(trx_t *trx, dict_index_t *index, ulint mode,
   /* Setup the lock attributes */
 
   lock->type_mode = LOCK_REC | (mode & ~LOCK_TYPE_MASK);
+  lock->field_bitmap = trx->field_bitmap; // [TPL] - columnar
 
   lock_rec_t &rec_lock = lock->rec_lock;
 
@@ -1712,20 +1803,6 @@ dberr_t RecLock::add_to_waitq(const lock_t *wait_for, bool aborting, const lock_
 
     return (DB_CONFLICT_LOCKED_REC);
   } else {
-      // fprintf(stderr, "[DEBUG] WAIT %d(%p %p)<-%d(%p %p) (%d%d%d%d): %s\n", blocker->id, blocker, wait_for, m_trx->id, m_trx, lock,
-      //   !(aborting == false),
-      //   !(!lock->is_insert_intention()),
-      //   !(lock_get_mode(wait_for) != LOCK_X),
-      //   blocker->conflict_abort,
-      //   m_index->table_name);
-      // fprintf(stderr, "%d%d%d%d%d%d\n", 
-      //   !(aborting == false),
-      //   !(!lock->is_insert_intention()),
-      //   !(lock_get_mode(wait_for) != LOCK_X),
-      //   !((strcmp(m_index->table_name, "tpcc/order_line") != 0)),
-      //   !(strcmp(m_index->table_name, "tpcc/orders") != 0),
-      //   !(blocker->conflict_abort == TRX_NOT_ABORTED));
-      
 
 
     lock_create_wait_for_edge(lock, wait_for);
@@ -1753,9 +1830,7 @@ dberr_t append_to_waitq(const lock_t *wait_for, lock_t* wait_lock, ulint heap_no
 
   if(!wait_lock->is_insert_intention()
     && (lock_get_mode(wait_for) != LOCK_X)
-    && (blocker->conflict_abort == TRX_NOT_ABORTED)
-    && (strcmp(wait_lock->index->table_name, "tpcc/order_line") != 0)
-    && (strcmp(wait_lock->index->table_name, "tpcc/orders") != 0)) {
+    && (blocker->conflict_abort == TRX_NOT_ABORTED)){
 
     trx_mutex_enter(trx);
     add_conflict(trx, blocker, wait_lock, heap_no);
@@ -1893,7 +1968,7 @@ static void lock_rec_add_to_queue(ulint type_mode, const buf_block_t *block,
   }
   lock_t* new_lock = rec_lock.create(trx);
   // [TPL]
-  if ((strstr(index->table->name.m_name, "mysql") == nullptr) ) {
+  if ((strstr(index->table->name.m_name, "mysql") == nullptr)) {
     add_conflict(trx, nullptr, new_lock, heap_no);
   }
 
@@ -2115,7 +2190,7 @@ static dberr_t lock_rec_lock_slow(bool impl, select_mode sel_mode, ulint mode,
     return (DB_SUCCESS);
   }
   const auto conflicting =
-      tpl_lock_rec_other_has_conflicting(mode, block, heap_no, trx);
+      lock_rec_other_has_conflicting_rcc_columnar(mode, block, heap_no, trx);
 
   if (conflicting.wait_for != nullptr) {
     switch (sel_mode) {
@@ -2574,6 +2649,10 @@ static void lock_rec_grant_by_heap_no_conflict(lock_t *in_lock, ulint heap_no) {
   // fprintf(stderr, "[DEBUG] (%d) lock_rec_grant_by_heap_no_conflict - %p\n", in_trx->id, in_lock);
 
   in_lock->hash_table().find_on_record(rec_id, [&](lock_t *lock) {
+    if (!lock->field_bitmap & in_lock->field_bitmap) {
+      return false;
+    } 
+
     const auto trx = lock->trx;
 
     if (!lock->is_waiting()) {
@@ -2595,20 +2674,10 @@ static void lock_rec_grant_by_heap_no_conflict(lock_t *in_lock, ulint heap_no) {
 
 
   for (lock_t *wait_lock : waiting) {
+    
     trx_t* wait_trx = wait_lock->trx;
     // fprintf(stderr, "[DEBUG] (%d) lock_rec_grant_by_heap_no_conflict - wait_lock: %d %p (%p)\n", in_trx->id, wait_trx->id, wait_lock, wait_trx->lock.wait_lock.load());
 
-    // // [TPL] - group_commit
-    // if(wait_trx->pre_commit == TRX_COMMIT_ASYNC && trx_conf_lock_size(wait_trx) < 2) {
-    //   // Q. ASYNC면서 size==0인 경우가 있나?
-    //   // ASYNC COMMITTED 상태면서, 내가 마지막 conflict chain일 때
-    //   trx_mutex_enter(wait_trx);
-    //   fprintf(stderr, "[DEBUG] (%d) lock_rec_grant_by_heap_no_conflict - %d collect group(%d)\n", in_trx->id, wait_trx->id, trx_conf_lock_size(wait_trx));
-    //   wait_trx->pre_commit = TRX_COMMIT_GROUP;
-    //   in_trx->async_pending_list.push_back(wait_trx);
-    //   trx_mutex_exit(wait_trx);
-    // }
-    
 
     // 1) wait_lock: T1<-T3(lockA), T2<-T3(lockB), T1은 lockA만 grant할 수 있음(blocking trx로 판단하면 안 됨!)
     // 2) T0<-T1<-T2(X_LOCK 대기), T1 롤백이면 T2의 conflicter가 되기 전이므로 대기 락인 경우에도 grant 필요
@@ -2619,16 +2688,18 @@ static void lock_rec_grant_by_heap_no_conflict(lock_t *in_lock, ulint heap_no) {
         
       if (wait_trx->lock.que_state == TRX_QUE_LOCK_WAIT 
           && lock_get_mode(wait_lock) == LOCK_X) {
-        const auto conflicting = tpl_lock_rec_other_has_conflicting_rollback(wait_lock->type_mode, rec_id, wait_trx);
+        const auto conflicting = tpl_lock_rec_other_has_conflicting_rollback(wait_lock->type_mode, rec_id, wait_trx, wait_lock->field_bitmap);
         if (conflicting.wait_for != nullptr) {
           // fprintf(stderr, "[DEBUG] (%d) lock_rec_grant_by_heap_no_conflict - grant0: %d %p, conflicting: %d %p\n", in_trx->id, wait_trx->id, wait_lock, conflicting.wait_for->trx->id, conflicting.wait_for);
           append_to_waitq(conflicting.wait_for, wait_lock, heap_no);
         }
         else {
           // fprintf(stderr, "[DEBUG] (%d) lock_rec_grant_by_heap_no_conflict - grant01: %d %p\n", in_trx->id, wait_trx->id, wait_lock);
+
           trx_mutex_enter(wait_trx);
           add_conflict(wait_trx, nullptr, wait_lock, heap_no);
           trx_mutex_exit(wait_trx);
+          
           lock_grant(wait_lock);
         }
         
@@ -2641,7 +2712,7 @@ static void lock_rec_grant_by_heap_no_conflict(lock_t *in_lock, ulint heap_no) {
               && wait_trx->pre_commit != TRX_COMMIT_PRE
               && wait_trx->lock.wait_lock.load() == wait_lock) {
         // future read 전이다 == lock wait임
-        const auto conflicting = tpl_lock_rec_other_has_conflicting_rollback(wait_lock->type_mode, rec_id, wait_trx);
+        const auto conflicting = tpl_lock_rec_other_has_conflicting_rollback(wait_lock->type_mode, rec_id, wait_trx, wait_lock->field_bitmap);
         if (conflicting.wait_for != nullptr) {
           // fprintf(stderr, "[DEBUG] (%d) lock_rec_grant_by_heap_no_conflict - grant0s: %d %p, conflicting: %d %p (%p grant to %p)\n", in_trx->id, wait_trx->id, wait_lock, conflicting.wait_for->trx->id, conflicting.wait_for, in_trx, wait_trx);
           append_to_waitq(conflicting.wait_for, wait_lock, heap_no);
@@ -2652,23 +2723,9 @@ static void lock_rec_grant_by_heap_no_conflict(lock_t *in_lock, ulint heap_no) {
           trx_mutex_exit(wait_trx);
           lock_grant(wait_lock);
         }
-        
-          
       } // end SR
 
       else {
-        // // [TPL] - async commit
-        // // T2(in_trx)가 커밋하면 T1(blocker)을 찾아야 함. 찾아서 T1(blocker)<-T3(wait_trx)로
-        // trx_t* blocker = trx_conf_lock_conf(in_trx, in_lock);
-        // if (blocker) {
-        //   // Pre-Commit
-        //   // fprintf(stderr, "[DEBUG] (%d) lock_rec_grant_by_heap_no_conflict - %d<-%d(%p)\n", in_trx->id,blocker->id, wait_trx->id, wait_lock);
-        //   trx_conf_lock_set_blocker(wait_trx, wait_lock, blocker);
-        // } else {
-        //   // fprintf(stderr, "[DEBUG] (%d) lock_rec_grant_by_heap_no_conflict - grant11: %d %p\n", in_trx->id, wait_trx->id, wait_lock);
-        //   lock_grant(wait_lock);
-        // } 
-
         // fprintf(stderr, "[DEBUG] (%d) lock_rec_grant_by_heap_no_conflict - grant11: %d %p\n", in_trx->id, wait_trx->id, wait_lock);
         lock_grant(wait_lock);
         // end async
@@ -2695,6 +2752,12 @@ static void tpl_lock_rec_grant_by_heap_no(lock_t *in_lock, ulint heap_no) {
   // 해당 record의 Lock들 순회
   in_lock->hash_table().find_on_record(rec_id, [&](lock_t *lock) {
     // fprintf(stderr, "[DEBUG] (%d) tpl_lock_rec_grant_by_heap_no: %d %p\n", in_lock->trx->id, lock->trx->id, lock);
+
+    if (!lock->field_bitmap & in_lock->field_bitmap) {
+      return false;
+    }
+
+
     // 조건: LOCK_X/S, Waiting, 나 말고, TRX_QUE_LOCK_WAIT
     if (lock_get_mode(lock) != LOCK_X && lock_get_mode(lock) != LOCK_S) {
       // fprintf(stderr, "[DEBUG] (%d) tpl_lock_rec_grant_by_heap_no: %d %p, mode: %s\n", in_lock->trx->id, lock->trx->id, lock, lock_get_mode_str(lock));
@@ -7024,7 +7087,6 @@ static inline void mark_conflict_abort(trx_t* t) {
 }
 
 void lock_cascade_abort(trx_t* in_trx) {
-
   /* The length of the list is an atomic and the number of locks can't change
   from zero to non-zero or vice-versa, see explanation below. */
   if (UT_LIST_GET_LEN(in_trx->lock.trx_locks) == 0) {
@@ -7033,7 +7095,6 @@ void lock_cascade_abort(trx_t* in_trx) {
 
   // hit_list_t abort_list;
   abort_list_t abort_list;
-
   lock_make_trx_abort_list(in_trx, abort_list);
 
   if (abort_list.empty()) {
@@ -7041,14 +7102,15 @@ void lock_cascade_abort(trx_t* in_trx) {
     return;
   }
 
-  abort_list_t::reverse_iterator end = abort_list.rend();
-  for (abort_list_t::reverse_iterator it = abort_list.rbegin(); it != end; ++it) {
-
+  for (auto it = abort_list.rbegin(); it != abort_list.rend(); ++it) {
     trx_t* trx = it->trx;
     lock_t* lock = it->lock;
     const auto mode = lock_get_mode(lock);
 
+    // fprintf(stderr, "[DEBUG] (%d) lock_cascade_abort - %d %p (%p -> %p)\n", in_trx->id, trx->id, lock, in_trx, trx);
     trx_mutex_enter(trx);
+
+    /* Already aborted → skip */
     if (trx->conflict_abort != TRX_NOT_ABORTED) {
       // fprintf(stderr, "[DEBUG] (%d) lock_cascade_abort - %d %p: PASS (ABORTED)\n", in_trx->id, trx->id, lock);
       trx_mutex_exit(trx);
@@ -7058,43 +7120,25 @@ void lock_cascade_abort(trx_t* in_trx) {
     const auto que_state = trx->lock.que_state;      
     lock_t* const wait_lock = trx->lock.wait_lock.load();
 
-
     // [SR]
-   if(mode == LOCK_S) {
-      if (que_state == TRX_QUE_LOCK_WAIT
-          && trx->pre_commit != TRX_COMMIT_PRE
-          && wait_lock == lock) {
-        // fprintf(stderr, "[DEBUG] (%d) lock_cascade_abort - %d %p: PASS (S WAIT)\n", in_trx->id, trx->id, lock);
-        trx_mutex_exit(trx);
-        continue;
-      }
-      // fprintf(stderr, "[DEBUG] (%d) lock_cascade_abort - %d %p: ABORT (S), %s\n", in_trx->id, trx->id, lock, lock->index->table_name);
-      mark_conflict_abort(trx); // end SR
-    } else if((que_state == TRX_QUE_LOCK_WAIT) && (mode == LOCK_X)) {
-      // fprintf(stderr, "[DEBUG] (%d) lock_cascade_abort - %d %p: PASS (WAIT)\n", in_trx->id, trx->id, lock);
+   if((mode == LOCK_S && que_state == TRX_QUE_LOCK_WAIT && trx->pre_commit != TRX_COMMIT_PRE && wait_lock == lock) 
+   || (mode == LOCK_X && que_state == TRX_QUE_LOCK_WAIT)) {
+      // fprintf(stderr, "[DEBUG] (%d) lock_cascade_abort - %d %p: PASS\n", in_trx->id, trx->id, lock);
       trx_mutex_exit(trx);
       continue;
-    } else {
-      // fprintf(stderr, "[DEBUG] (%d) lock_cascade_abort - %d %p: ABORT, %s\n", in_trx->id, trx->id, lock, lock->index->table_name);
-      mark_conflict_abort(trx);
-    }
+    } 
 
-    // if (que_state == TRX_QUE_LOCK_WAIT) {
-    //   fprintf(stderr, "[DEBUG] (%d) lock_cascade_abort - %d %p: WAKE UP!\n", in_trx->id, trx->id, lock);
-    //   lock_reset_wait_and_release_thread_if_suspended(trx->lock.wait_lock.load());
-    // }
-
+    // fprintf(stderr, "[DEBUG] (%d) lock_cascade_abort - %d %p: ABORT\n", in_trx->id, trx->id, lock);
+    mark_conflict_abort(trx);
     trx_mutex_exit(trx);
     if (que_state == TRX_QUE_LOCK_WAIT) {
       locksys::tpl_run_if_waiting(trx, [&]() {
-        // trx_mutex_exit(victim_trx);
         // fprintf(stderr, "[DEBUG] (%d) lock_cascade_abort - wake up!: %d %s\n", trx->id, victim_trx->id, trx_get_que_state_str(victim_trx));
         // lock_cancel_waiting_and_release(victim_trx);
         lock_reset_wait_and_release_thread_if_suspended(trx->lock.wait_lock.load());
       });
 
     }
-    // trx_mutex_exit(trx);
   } 
 }
 
@@ -7130,6 +7174,8 @@ void collect_cascade_rollback(abort_list_t &abort_list, lock_t* in_lock) {
   trx_t* in_trx = in_lock->trx;
 
   bool flag = false;
+  uint64_t in_bitmap = in_lock->field_bitmap;
+
 
   // fprintf(stderr, "[DEBUG] (%d) collect_cascade_rollback - from: %p\n", in_trx->id, in_lock);
 
@@ -7151,7 +7197,11 @@ void collect_cascade_rollback(abort_list_t &abort_list, lock_t* in_lock) {
         // trx_mutex_enter(trx_loop);
         if (trx_loop->conflict_abort == TRX_NOT_ABORTED) {
           // fprintf(stderr, "[DEBUG] (%d) collect_cascade_rollback - push(%d %p)\n", in_trx->id, trx_loop->id, lock_loop);
-          abort_list.push_back(abort_t{trx_loop, lock_loop});
+          // [TPL] - columnar
+          uint64_t loop_bitmap = lock_loop->field_bitmap;
+          if (in_bitmap & loop_bitmap) {
+            abort_list.push_back(abort_t{trx_loop, lock_loop, true});
+          } 
           return false;
         }
       }

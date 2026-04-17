@@ -395,6 +395,7 @@ typedef std::vector<conflict_t *, ut::allocator<conflict_t *>> conf_lock_pool_t;
 struct abort_t {
   trx_t* trx;
   lock_t* lock;
+  bool field_overlap; // [TPL] - columnar
 };
 typedef std::vector<abort_t, ut::allocator<abort_t>> abort_list_t;
 
@@ -750,6 +751,7 @@ struct trx_t {
   trx_commit_t pre_commit;
   trx_abort_t conflict_abort;
   mem_heap_t *conflict_heap;
+  uint64_t field_bitmap; // [TPL] - columnar
 
   int64_t lock_wait_time; // [TPL] - time
 

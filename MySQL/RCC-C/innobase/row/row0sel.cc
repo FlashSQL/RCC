@@ -2935,6 +2935,7 @@ bool row_sel_store_mysql_rec(byte *mysql_rec, row_prebuilt_t *prebuilt,
     }
   }
 
+  // MySQL 칼럼 <-> InnoDB 필드 정보 매핑 (필요한 칼럼만 선택적으로 변환)
   for (ulint i = 0; i < prebuilt->n_template; i++) {
     const auto templ = &prebuilt->mysql_template[i];
 
@@ -4699,7 +4700,7 @@ dberr_t row_search_mvcc(byte *buf, page_cur_mode_t mode,
                 goto shortcut_match;
             }
           }
-
+          // AHI를 통해 빠른 경로
           if (!row_sel_store_mysql_rec(buf, prebuilt, rec, nullptr, false,
                                        index, prebuilt->index, offsets, false,
                                        nullptr, prebuilt->blob_heap)) {
@@ -4923,7 +4924,6 @@ dberr_t row_search_mvcc(byte *buf, page_cur_mode_t mode,
       err = sel_set_rec_lock(pcur, next_rec, index, offsets,
                              prebuilt->select_mode, prebuilt->select_lock_type,
                              LOCK_GAP, thr, &mtr);
-      // fprintf(stderr, "[DEBUG] (%d) row_search_mvc4 - sel_set_rec_lock (rec: %p): %d, %s\n", trx->id,rec, err, index->table_name);
 
       switch (err) {
         case DB_SUCCESS_LOCKED_REC:
@@ -4934,31 +4934,6 @@ dberr_t row_search_mvcc(byte *buf, page_cur_mode_t mode,
         case DB_LOCK_NOWAIT:
           ut_d(ut_error);
           ut_o(goto next_rec);
-        // [TPL]
-        case DB_CONFLICT_LOCKED_REC: {
-
-          rec_t *old_vers2;
-          byte*		buf2;
-          old_vers2 = lock_apply_log(pcur->get_block(), old_vers2, index, offsets, trx, rec);
-          if (old_vers2 == nullptr)
-          {
-            // Nothing to read, read buffer
-            // Ex. lock 획득 -> conf -> grant -> read 시도
-            err = DB_SUCCESS;
-            break;
-          }
-          else  
-          {
-            rec = old_vers2;
-            prev_rec = rec;
-            ut_d(prev_rec_debug = row_search_debug_copy_rec_order_prefix(
-                    pcur, index, prev_rec, &prev_rec_debug_n_fields,
-                    &prev_rec_debug_buf, &prev_rec_debug_buf_size));
-            err = DB_SUCCESS;
-            break;
-          }
-        }
-        //
         default:
           goto lock_wait_or_error;
       }
@@ -5030,7 +5005,7 @@ rec_loop:
       /** Create offsets based on prebuilt index. */
       offsets = rec_get_offsets(prev_rec, prebuilt->index, offsets,
                                 ULINT_UNDEFINED, UT_LOCATION_HERE, &heap);
-
+      // ICP 없이 loop가 100회 이상 돌았을 때 prev_rec 반환
       if (row_sel_store_mysql_rec(end_range_cache, prebuilt, prev_rec,
                                   prev_vrow, clust_templ_for_sec, key_index,
                                   prebuilt->index, offsets, clust_templ_for_sec,
@@ -5062,7 +5037,6 @@ rec_loop:
       err = sel_set_rec_lock(pcur, rec, index, offsets, prebuilt->select_mode,
                              prebuilt->select_lock_type, LOCK_ORDINARY, thr,
                              &mtr);
-      // fprintf(stderr, "[DEBUG] (%d) row_search_mvc3 - sel_set_rec_lock (rec: %p): %d, %s\n", trx->id,rec, err, index->table_name);
 
       switch (err) {
         case DB_SUCCESS_LOCKED_REC:
@@ -5072,31 +5046,6 @@ rec_loop:
         case DB_SKIP_LOCKED:
         case DB_LOCK_NOWAIT:
           ut_d(ut_error);
-        // [TPL]
-        case DB_CONFLICT_LOCKED_REC: {
-
-          rec_t *old_vers2;
-          byte*		buf2;
-          old_vers2 = lock_apply_log(pcur->get_block(), old_vers2, index, offsets, trx, rec);
-          if (old_vers2 == nullptr)
-          {
-            // Nothing to read, read buffer
-            // Ex. lock 획득 -> conf -> grant -> read 시도
-            err = DB_SUCCESS;
-            break;
-          }
-          else  
-          {
-            rec = old_vers2;
-            prev_rec = rec;
-            ut_d(prev_rec_debug = row_search_debug_copy_rec_order_prefix(
-                    pcur, index, prev_rec, &prev_rec_debug_n_fields,
-                    &prev_rec_debug_buf, &prev_rec_debug_buf_size));
-            err = DB_SUCCESS;
-            break;
-          }
-        }
-        //
         default:
           goto lock_wait_or_error;
       }
@@ -5207,7 +5156,6 @@ rec_loop:
           !dict_index_is_spatial(index)) {
         err = sel_set_rec_lock(pcur, rec, index, offsets, prebuilt->select_mode,
                                prebuilt->select_lock_type, LOCK_GAP, thr, &mtr);
-        // fprintf(stderr, "[DEBUG] (%d) row_search_mvc2 - sel_set_rec_lock (rec: %p): %d, %s\n", trx->id,rec, err, index->table_name);
 
         switch (err) {
           case DB_SUCCESS_LOCKED_REC:
@@ -5216,31 +5164,6 @@ rec_loop:
           case DB_SKIP_LOCKED:
           case DB_LOCK_NOWAIT:
             ut_d(ut_error);
-          // [TPL]
-          case DB_CONFLICT_LOCKED_REC: {
-
-            rec_t *old_vers2;
-            byte*		buf2;
-            old_vers2 = lock_apply_log(pcur->get_block(), old_vers2, index, offsets, trx, rec);
-            if (old_vers2 == nullptr)
-            {
-              // Nothing to read, read buffer
-              // Ex. lock 획득 -> conf -> grant -> read 시도
-              err = DB_SUCCESS;
-              break;
-            }
-            else  
-            {
-              rec = old_vers2;
-              prev_rec = rec;
-              ut_d(prev_rec_debug = row_search_debug_copy_rec_order_prefix(
-                      pcur, index, prev_rec, &prev_rec_debug_n_fields,
-                      &prev_rec_debug_buf, &prev_rec_debug_buf_size));
-              err = DB_SUCCESS;
-              break;
-            }
-          }
-          //
           default:
             goto lock_wait_or_error;
         }
@@ -5267,7 +5190,6 @@ rec_loop:
           !dict_index_is_spatial(index)) {
         err = sel_set_rec_lock(pcur, rec, index, offsets, prebuilt->select_mode,
                                prebuilt->select_lock_type, LOCK_GAP, thr, &mtr);
-        // fprintf(stderr, "[DEBUG] (%d) row_search_mvc1 - sel_set_rec_lock (rec: %p): %d, %s\n", trx->id,rec, err, index->table_name);
 
         switch (err) {
           case DB_SUCCESS_LOCKED_REC:
@@ -5276,31 +5198,6 @@ rec_loop:
           case DB_SKIP_LOCKED:
           case DB_LOCK_NOWAIT:
             ut_d(ut_error);
-          // [TPL]
-          case DB_CONFLICT_LOCKED_REC: {
-
-            rec_t *old_vers2;
-            byte*		buf2;
-            old_vers2 = lock_apply_log(pcur->get_block(), old_vers2, index, offsets, trx, rec);
-            if (old_vers2 == nullptr)
-            {
-              // Nothing to read, read buffer
-              // Ex. lock 획득 -> conf -> grant -> read 시도
-              err = DB_SUCCESS;
-              break;
-            }
-            else  
-            {
-              rec = old_vers2;
-              prev_rec = rec;
-              ut_d(prev_rec_debug = row_search_debug_copy_rec_order_prefix(
-                      pcur, index, prev_rec, &prev_rec_debug_n_fields,
-                      &prev_rec_debug_buf, &prev_rec_debug_buf_size));
-              err = DB_SUCCESS;
-              break;
-            }
-          }
-          //
           default:
             goto lock_wait_or_error;
         }
@@ -5349,6 +5246,21 @@ rec_loop:
     const bool use_semi_consistent =
         prebuilt->row_read_type == ROW_READ_TRY_SEMI_CONSISTENT &&
         !unique_search && index == clust_index && !trx_is_high_priority(trx);
+    // [TPL] - columnar
+    ulint n_pk_cols = clust_index->n_uniq;
+    uint64_t field_bitmap = 0;
+    for (ulint i = 0; i < prebuilt->n_template; i++) {
+      mysql_row_templ_t *templ = &prebuilt->mysql_template[i];
+      ulint col_no = templ->clust_rec_field_no;
+      if (col_no >= n_pk_cols && col_no < 64) {  // PK 제외, 64비트 제한
+        field_bitmap |= (1ULL << col_no);
+      }
+      
+
+      // fprintf(stderr, "[DEBUG] (%d) row_search_mvc - sel_set_rec_lock - %p, %s, %d vs %d (PK: %d)\n", trx->id,rec, index->table_name, templ->clust_rec_field_no, templ->rec_field_no, n_pk_cols);
+    }  
+    trx->field_bitmap = field_bitmap;
+    
     err = sel_set_rec_lock(
         pcur, rec, index, offsets,
         use_semi_consistent ? SELECT_SKIP_LOCKED : prebuilt->select_mode,
@@ -5673,6 +5585,8 @@ rec_loop:
       index may be in the wrong case, and the
       authoritative case is in result_rec, the
       appropriate version of the clustered index record. */
+      // Sec -> Clustered index 이동 후 ICP 완료
+      // clust에서 가져온 정확한 값으로 전체 컬럼 변화..??
       if (!row_sel_store_mysql_rec(buf, prebuilt, result_rec, vrow, true,
                                    clust_index, prebuilt->index, offsets, false,
                                    nullptr, prebuilt->blob_heap)) {
@@ -5777,6 +5691,7 @@ rec_loop:
 
       next_buf = next_buf ? row_sel_fetch_last_buf(prebuilt) : buf;
 
+      // 여러 행을 미리 가져와 Prefetch 캐시
       if (!row_sel_store_mysql_rec(
               next_buf, prebuilt, result_rec, vrow, result_rec != rec,
               result_rec != rec ? clust_index : index, prebuilt->index, offsets,
@@ -5869,6 +5784,7 @@ rec_loop:
       mach_write_to_4(buf, rec_offs_extra_size(offsets) + 4);
     } else if (!prebuilt->idx_cond && !prebuilt->innodb_api) {
       /* The record was not yet converted to MySQL format. */
+      // 일반 단일 행(캐시X, ICP X)
       if (!row_sel_store_mysql_rec(
               buf, prebuilt, result_rec, vrow, result_rec != rec,
               result_rec != rec ? clust_index : index, prebuilt->index, offsets,

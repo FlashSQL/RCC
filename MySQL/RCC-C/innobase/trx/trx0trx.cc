@@ -256,6 +256,7 @@ static void trx_init(trx_t *trx) {
     mem_heap_empty(trx->conflict_heap);
   }
   trx->lock.conf_lock_pool.clear();
+  trx->field_bitmap = 0; // [TPL] - columnar
   trx->lock_wait_time = 0;
   //
 

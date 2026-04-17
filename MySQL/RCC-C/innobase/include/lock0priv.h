@@ -170,6 +170,8 @@ struct alignas(8 /* For efficient Bitmap::find_set */) lock_t {
   LOCK_GAP or LOCK_REC_NOT_GAP, LOCK_INSERT_INTENTION, wait flag, ORed */
   uint32_t type_mode;
 
+  uint64_t field_bitmap; // [TPL] - columnar
+
 #if defined(UNIV_DEBUG)
   /** Timestamp when it was created. */
   uint64_t m_seq;
@@ -1201,6 +1203,23 @@ lock_t *Locks_hashtable::find_on_record(const struct RecID &rec_id, F &&f) {
                         return rec_id.matches(lock) && std::forward<F>(f)(lock);
                       });
 }
+
+// [TPL] - columnar
+template <typename F>
+lock_t *Locks_hashtable::find_on_record_columnar(const struct RecID &rec_id,
+                                                  uint64_t req_field_bitmap,
+                                                  F &&f) {
+  return find_in_cell(hash_calc_cell_id(rec_id.hash_value(), ht.get()),
+                      [&](lock_t *lock) {
+                        // columnar 비교: field_bitmap이 겹치는지 확인
+                        uint64_t lock_bitmap = lock->field_bitmap;
+                        bool columns_conflict = (req_field_bitmap & lock_bitmap) != 0;
+                        return rec_id.matches(lock) &&
+                               columns_conflict &&
+                               std::forward<F>(f)(lock);
+                      });
+}
+//
 #ifdef UNIV_DEBUG
 template <typename F>
 lock_t *Locks_hashtable::find(F &&f) {
