@@ -23,6 +23,7 @@ EXPERIMENTS=(
     "fig5a_varying_client_threads.sh"
     "fig5b_varying_warehouse_count.sh"
     "fig6_rcc_variants.sh"
+    "fig8b_ycsb_varying_thread.sh"
 )
 
 print_header() {

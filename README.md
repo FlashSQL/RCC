@@ -76,16 +76,23 @@ bash util/shutdown.sh
 
 ## Reproducing Experiments
 
-All experiment scripts are unified under `plots/`. Each figure script runs both MySQL and PostgreSQL by default and then calls the matching plot script.
+All experiment drivers live under `plots/`. Each figure script runs the benchmark and then calls the matching `plot_<fig>.sh` to produce CSVs and PDFs.
 
-| Figure | Benchmark | Description |
-|--------|-----------|-------------|
-| Fig4a  | Synthetic | Varying transaction length (64, 128, 256 reads/tx) |
-| Fig4b  | Synthetic | Varying hotspot position (0.0 ~ 1.0) |
-| Fig5a  | TPC-C     | Varying client threads (1 ~ 128) |
-| Fig5b  | TPC-C     | Varying warehouse count (1 ~ 8) |
-| Fig6   | TPC-C     | RCC variants (Vanilla, RCC-W, RCC-D, RCC, RCC-C) × (RR, SR) — MySQL only |
-| Fig8b  | YCSB      | Varying client threads (1 ~ 128), 10M rows, read-modify-write — MySQL only |
+| Figure | Benchmark | Description | DBMS |
+|--------|-----------|-------------|------|
+| Fig4a  | Synthetic | Varying transaction length (64, 128, 256 reads/tx) | MySQL + PostgreSQL |
+| Fig4b  | Synthetic | Varying hotspot position (0.0 ~ 1.0) | MySQL + PostgreSQL |
+| Fig5a  | TPC-C     | Varying client threads (1 ~ 128) | MySQL + PostgreSQL |
+| Fig5b  | TPC-C     | Varying warehouse count (1 ~ 8) | MySQL + PostgreSQL |
+| Fig6   | TPC-C     | RCC variants × (RR, SR) | MySQL |
+| Fig8b  | YCSB      | Varying client threads (1 ~ 128), 10M rows, read-modify-write | MySQL |
+
+Each fig script:
+1. Cleans `rcc_data_dir` / `rcc_log_dir`
+2. Builds/starts the server(s) via helper scripts
+3. Runs the benchmark
+4. Stores results under `plots/<fig_name>/results/...`
+5. Calls the matching `plot_<fig>.sh`
 
 ### Run All Experiments
 
@@ -97,35 +104,28 @@ cd plots
 bash run_all_experiments.sh
 ```
 
-This runs fig4a → fig4b → fig5a → fig5b → fig6 sequentially and prompts for sudo password once.
+Runs fig4a → fig4b → fig5a → fig5b → fig6 → fig8b sequentially and prompts for sudo password once.
 
 ### Run Experiments Individually
 
-Each script accepts `--mysql`, `--postgres`, or `--all` (default). Fig6 and Fig8b are MySQL only and take no DB flag.
+For the dual-DBMS figures (Fig4a/4b/5a/5b), each script accepts `--mysql`, `--postgres`, or `--all` (default). MySQL-only figures (Fig6, Fig8b) take no DB flag.
 
 ```bash
 cd plots
-bash fig4a_varying_transaction_length.sh            # both DBs
+bash fig4a_varying_transaction_length.sh            # both DBMSes
 bash fig4b_varying_hotspot_position.sh --mysql      # MySQL only
 bash fig5a_varying_client_threads.sh --postgres     # PostgreSQL only
 bash fig5b_varying_warehouse_count.sh
-bash fig6_rcc_variants.sh                           # MySQL only
+bash fig6_rcc_variants.sh                           # MySQL only (TPC-C)
 bash fig8b_ycsb_varying_thread.sh                   # MySQL only (YCSB)
 ```
 
-Each fig script:
-1. Cleans `rcc_data_dir` / `rcc_log_dir`
-2. Builds/starts the server(s) via helper scripts
-3. Runs the benchmark
-4. Stores results under `plots/<fig_name>/results/{mysql,postgres}/...`
-5. Calls the matching `plot_<fig>.sh` to produce CSVs and PDFs
-
-> **Note:** PostgreSQL TPC-C benchmarks (Fig5a, Fig5b) require sysbench. See `PostgreSQL/README.md` for installation.
-> **Note:** YCSB (Fig8b) requires Maven + JDK for building the JDBC binding under `MySQL/YCSB_benchmark/`.
+> **Note:** PostgreSQL TPC-C (Fig5a/Fig5b) requires sysbench. See `PostgreSQL/README.md`.
+> **Note:** Fig8b (YCSB) requires Maven + JDK for building the JDBC binding under `MySQL/YCSB_benchmark/`.
 
 ### Plotting Only
 
-If results already exist, regenerate plots without rerunning experiments:
+Regenerate plots from existing results:
 
 ```bash
 cd plots
@@ -137,16 +137,16 @@ bash plot_fig7.sh
 bash plot_fig8b.sh
 ```
 
-Outputs land in `plots/<fig_name>/{mysql,postgres}/*.pdf` (fig6 variants go in `plots/fig6_rcc_variants/*.pdf`).
+PDFs and CSVs land in `plots/<fig_name>/` (or `plots/<fig_name>/{mysql,postgres}/` for dual-DBMS figures).
 
 ### DBx1000 (YCSB) Experiments
 
-For DBx1000-based YCSB experiments, use the RebirthRetire codebase:
+For DBx1000-based YCSB experiments used as an additional comparison point, see the RebirthRetire codebase:
 
 - Source: https://github.com/gitzhqian/RebirthRetire.git
 - Plot template: [`plots/templates/dbx1000_ycsb.gnu`](plots/templates/dbx1000_ycsb.gnu)
 
-Run the experiments per that repository's instructions, then feed the resulting CSV(s) through `dbx1000_ycsb.gnu` to produce the plot.
+Run the experiments per that repository's instructions, then feed the resulting CSV(s) through `dbx1000_ycsb.gnu`.
 
 ### TPC-C Consistency Check
 

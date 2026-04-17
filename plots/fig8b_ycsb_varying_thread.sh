@@ -32,7 +32,7 @@ print_header() {
     echo "=========================================="
 }
 
-BUILD_MODES=("Vanilla" "RCC" "RCC-W" "RCC-D" "RCC-C")
+BUILD_MODES=("Vanilla" "RCC" "RCC-W" "RCC-D")
 
 # ==========================================
 # 1. Build all MySQL variants (once)

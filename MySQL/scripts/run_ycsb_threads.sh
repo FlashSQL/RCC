@@ -6,7 +6,7 @@
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/ycsb_config.sh"
 
-SERVERS=("vanilla" "rcc" "rcc_w" "rcc_d" "rcc_c")
+SERVERS=("vanilla" "rcc" "rcc_w" "rcc_d")
 THREAD_LIST=(1 8 16 32 64 128)
 WL="workloads/varying_thread/workload_base"
 
