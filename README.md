@@ -142,7 +142,11 @@ Run the experiments per that repository's instructions, then feed the resulting 
 After running any TPC-C experiment (Fig5a, Fig5b, Fig6), verify the database satisfies TPC-C's 12 consistency invariants:
 
 ```bash
+# MySQL
 MySQL/<variant>/mysql-8.4.5-build/bin/mysql -uroot tpcc < MySQL/scripts/consistency_check.sql
+
+# PostgreSQL
+PostgreSQL/rcc_postgresql/bld/bin/psql -U postgres -d tpcc -f PostgreSQL/scripts/consistency_check.sql
 ```
 
-The SQL file is adapted from [BenchmarkSQL](https://github.com/wieck/benchmarksql.git). A PostgreSQL version will be added soon.
+The SQL files are adapted from [BenchmarkSQL](https://github.com/wieck/benchmarksql.git).

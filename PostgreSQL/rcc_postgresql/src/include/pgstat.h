@@ -358,20 +358,6 @@ typedef struct PgStat_StatDBEntry
 	PgStat_Counter tuple_update_wait_count;	/* tuple update wait count */
 	PgStat_Counter aborted_tuple_update_wait_time;
 	PgStat_Counter aborted_tuple_update_wait_count;
-	/* Breakdown Code - dependency chain statistics (committed) */
-	PgStat_Counter dep_chain_max_length;		/* max DFS depth in dep checks */
-	PgStat_Counter dep_chain_total_length;		/* sum of DFS depths */
-	PgStat_Counter dep_chain_check_count;		/* number of dep checks */
-	PgStat_Counter dep_chain_total_visited;		/* sum of visited nodes in DFS */
-	/* Breakdown Code - dependency chain statistics (aborted) */
-	PgStat_Counter aborted_dep_chain_max_length;
-	PgStat_Counter aborted_dep_chain_total_length;
-	PgStat_Counter aborted_dep_chain_check_count;
-	PgStat_Counter aborted_dep_chain_total_visited;
-	/* Breakdown Code - wait-for-graph memory */
-	PgStat_Counter dep_graph_memory_bytes;		/* snapshot at last report */
-	PgStat_Counter dep_graph_entries;			/* number of graph nodes */
-	PgStat_Counter dep_graph_edges;				/* number of graph edges */
 	/* Breakdown Code End */
 	PgStat_Counter sessions;
 	PgStat_Counter session_time;
@@ -800,16 +786,6 @@ extern PGDLLIMPORT PgStat_Counter pgStatTupleUpdateWaitTime;
 extern PGDLLIMPORT PgStat_Counter pgStatTupleUpdateWaitCount;
 extern PGDLLIMPORT PgStat_Counter pgStatAbortedTupleUpdateWaitTime;
 extern PGDLLIMPORT PgStat_Counter pgStatAbortedTupleUpdateWaitCount;
-/* Breakdown Code - dependency chain stats (committed) */
-extern PGDLLIMPORT PgStat_Counter pgStatDepChainMaxLength;
-extern PGDLLIMPORT PgStat_Counter pgStatDepChainTotalLength;
-extern PGDLLIMPORT PgStat_Counter pgStatDepChainCheckCount;
-extern PGDLLIMPORT PgStat_Counter pgStatDepChainTotalVisited;
-/* Breakdown Code - dependency chain stats (aborted) */
-extern PGDLLIMPORT PgStat_Counter pgStatAbortedDepChainMaxLength;
-extern PGDLLIMPORT PgStat_Counter pgStatAbortedDepChainTotalLength;
-extern PGDLLIMPORT PgStat_Counter pgStatAbortedDepChainCheckCount;
-extern PGDLLIMPORT PgStat_Counter pgStatAbortedDepChainTotalVisited;
 /* Breakdown Code End */
 
 /*

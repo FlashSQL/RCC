@@ -147,12 +147,6 @@ static PgStat_Counter xact_txwait_time = 0;
 static PgStat_Counter xact_txwait_count = 0;
 static PgStat_Counter xact_tuple_update_wait_time = 0;
 static PgStat_Counter xact_tuple_update_wait_count = 0;
-/* Breakdown Code - Dependency chain statistics */
-static PgStat_Counter xact_dep_chain_max_length = 0;		/* max DFS depth in circular dep checks */
-static PgStat_Counter xact_dep_chain_total_length = 0;		/* sum of DFS depths */
-static PgStat_Counter xact_dep_chain_check_count = 0;		/* number of circular dep checks */
-static PgStat_Counter xact_dep_chain_total_visited = 0;	/* sum of visited nodes (graph traversal size) */
-/* Breakdown Code End */
 
 /*
  *	transaction states - transaction state from server perspective
@@ -2418,22 +2412,12 @@ CommitTransaction(void)
 	pgStatTxwaitCount += xact_txwait_count;
 	pgStatTupleUpdateWaitTime += xact_tuple_update_wait_time;
 	pgStatTupleUpdateWaitCount += xact_tuple_update_wait_count;
-	/* Breakdown Code - Dependency chain stats on commit */
-	if (xact_dep_chain_max_length > pgStatDepChainMaxLength)
-		pgStatDepChainMaxLength = xact_dep_chain_max_length;
-	pgStatDepChainTotalLength += xact_dep_chain_total_length;
-	pgStatDepChainCheckCount += xact_dep_chain_check_count;
-	pgStatDepChainTotalVisited += xact_dep_chain_total_visited;
 	xact_tuplock_wait_time = 0;
 	xact_tuplock_wait_count = 0;
 	xact_txwait_time = 0;
 	xact_txwait_count = 0;
 	xact_tuple_update_wait_time = 0;
 	xact_tuple_update_wait_count = 0;
-	xact_dep_chain_max_length = 0;
-	xact_dep_chain_total_length = 0;
-	xact_dep_chain_check_count = 0;
-	xact_dep_chain_total_visited = 0;
 	/* Breakdown Code End */
 	AtEOXact_PgStat(true, is_parallel_worker);
 	AtEOXact_Snapshot(true, false);
@@ -2950,22 +2934,12 @@ AbortTransaction(void)
 		pgStatAbortedTxwaitCount += xact_txwait_count;
 		pgStatAbortedTupleUpdateWaitTime += xact_tuple_update_wait_time;
 		pgStatAbortedTupleUpdateWaitCount += xact_tuple_update_wait_count;
-		/* Breakdown Code - Dependency chain stats on abort */
-		if (xact_dep_chain_max_length > pgStatAbortedDepChainMaxLength)
-			pgStatAbortedDepChainMaxLength = xact_dep_chain_max_length;
-		pgStatAbortedDepChainTotalLength += xact_dep_chain_total_length;
-		pgStatAbortedDepChainCheckCount += xact_dep_chain_check_count;
-		pgStatAbortedDepChainTotalVisited += xact_dep_chain_total_visited;
 		xact_tuplock_wait_time = 0;
 		xact_tuplock_wait_count = 0;
 		xact_txwait_time = 0;
 		xact_txwait_count = 0;
 		xact_tuple_update_wait_time = 0;
 		xact_tuple_update_wait_count = 0;
-		xact_dep_chain_max_length = 0;
-		xact_dep_chain_total_length = 0;
-		xact_dep_chain_check_count = 0;
-		xact_dep_chain_total_visited = 0;
 		/* Breakdown Code End */
 		AtEOXact_PgStat(false, is_parallel_worker);
 		AtEOXact_ApplyLauncher(false);
@@ -6389,15 +6363,5 @@ xact_count_tuple_update_wait_time(int64 time_us)
 {
 	xact_tuple_update_wait_time += time_us;
 	xact_tuple_update_wait_count++;
-}
-
-void
-xact_count_dep_chain_stats(int max_depth, int visited_nodes)
-{
-	if ((PgStat_Counter) max_depth > xact_dep_chain_max_length)
-		xact_dep_chain_max_length = (PgStat_Counter) max_depth;
-	xact_dep_chain_total_length += max_depth;
-	xact_dep_chain_check_count++;
-	xact_dep_chain_total_visited += visited_nodes;
 }
 /* Breakdown Code End */

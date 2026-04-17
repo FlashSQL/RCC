@@ -1217,42 +1217,6 @@ PG_STAT_GET_DBENTRY_FLOAT8_MS(aborted_tuple_update_wait_time)
 
 /* pg_stat_get_db_aborted_tuple_update_wait_count */
 PG_STAT_GET_DBENTRY_INT64(aborted_tuple_update_wait_count)
-
-/* Breakdown Code - dependency chain statistics (committed) */
-/* pg_stat_get_db_dep_chain_max_length */
-PG_STAT_GET_DBENTRY_INT64(dep_chain_max_length)
-
-/* pg_stat_get_db_dep_chain_total_length */
-PG_STAT_GET_DBENTRY_INT64(dep_chain_total_length)
-
-/* pg_stat_get_db_dep_chain_check_count */
-PG_STAT_GET_DBENTRY_INT64(dep_chain_check_count)
-
-/* pg_stat_get_db_dep_chain_total_visited */
-PG_STAT_GET_DBENTRY_INT64(dep_chain_total_visited)
-
-/* Breakdown Code - dependency chain statistics (aborted) */
-/* pg_stat_get_db_aborted_dep_chain_max_length */
-PG_STAT_GET_DBENTRY_INT64(aborted_dep_chain_max_length)
-
-/* pg_stat_get_db_aborted_dep_chain_total_length */
-PG_STAT_GET_DBENTRY_INT64(aborted_dep_chain_total_length)
-
-/* pg_stat_get_db_aborted_dep_chain_check_count */
-PG_STAT_GET_DBENTRY_INT64(aborted_dep_chain_check_count)
-
-/* pg_stat_get_db_aborted_dep_chain_total_visited */
-PG_STAT_GET_DBENTRY_INT64(aborted_dep_chain_total_visited)
-
-/* Breakdown Code - wait-for-graph memory statistics */
-/* pg_stat_get_db_dep_graph_memory_bytes */
-PG_STAT_GET_DBENTRY_INT64(dep_graph_memory_bytes)
-
-/* pg_stat_get_db_dep_graph_entries */
-PG_STAT_GET_DBENTRY_INT64(dep_graph_entries)
-
-/* pg_stat_get_db_dep_graph_edges */
-PG_STAT_GET_DBENTRY_INT64(dep_graph_edges)
 /* Breakdown Code End */
 
 /* pg_stat_get_db_idle_in_transaction_time */
