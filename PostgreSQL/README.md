@@ -52,16 +52,19 @@ Examples:
 
 ## 3. Reproducing Experiments
 
-### Synthetic Benchmarks (Fig4, Fig5)
+All experiment drivers live in the top-level `plots/` directory; each runs the benchmark and then calls its matching `plot_<fig>.sh` to produce CSVs and PDFs. Use `--postgres` to run PostgreSQL-only.
+
+### Synthetic Benchmarks (Fig4a, Fig4b)
 
 ```bash
-./fig4_varying_transaction_length.sh
-./fig5_varying_hotspot_position.sh
+cd plots
+bash fig4a_varying_transaction_length.sh --postgres
+bash fig4b_varying_hotspot_position.sh --postgres
 ```
 
 > **Note:** Database: `synt`, Table: `bench_hotread`
 
-### TPC-C Benchmarks (Fig6, Fig7)
+### TPC-C Benchmarks (Fig5a, Fig5b)
 
 Install sysbench prerequisites:
 ```bash
@@ -81,8 +84,9 @@ sudo make install
 
 Run:
 ```bash
-./fig6_varying_client_threads.sh
-./fig7_varying_warehouse_count.sh
+cd plots
+bash fig5a_varying_client_threads.sh --postgres
+bash fig5b_varying_warehouse_count.sh --postgres
 ```
 
 > **Note:** Database: `tpcc`. PostgreSQL TPC-C runs at **Repeatable Read** isolation (`sysbench-tpcc --trx_level=RR`); the consistency check has been verified under this configuration.
@@ -91,26 +95,26 @@ Run:
 
 ## 4. Results
 
-Results are stored in `fig*/results/`:
+Results are stored in `plots/fig*/results/`:
 
 ```
-fig4_varying_transaction_length/results/
-├── vanilla/output.log
-└── rcc/output.log
+plots/fig4_varying_transaction_length/results/
+├── postgres/vanilla/output.log
+└── postgres/rcc/output.log
 
-fig6_varying_client_threads/results/
-├── vanilla/s1_t1/sysbench.log
-└── rcc/s1_t128/sysbench.log
+plots/fig6_varying_client_threads/results/
+├── postgres/vanilla/s1_t1/sysbench.log
+└── postgres/rcc/s1_t128/sysbench.log
 ```
 
 ### Extract Results
 
 ```bash
 # Synthetic benchmark
-grep "^[0-9]" fig4_varying_transaction_length/results/rcc/output.log
+grep "^[0-9]" plots/fig4_varying_transaction_length/results/postgres/rcc/output.log
 
 # TPC-C benchmark
-grep "transactions:" fig6_varying_client_threads/results/rcc/s1_t64/sysbench.log
+grep "transactions:" plots/fig6_varying_client_threads/results/postgres/rcc/s1_t64/sysbench.log
 ```
 
 ---
@@ -119,10 +123,10 @@ grep "transactions:" fig6_varying_client_threads/results/rcc/s1_t64/sysbench.log
 
 | Experiment | Benchmark | Description |
 |------------|-----------|-------------|
-| Fig4 | Synthetic | Varying transaction length: 64, 128, 256 reads/tx |
-| Fig5 | Synthetic | Varying hotspot position: 0.0, 0.25, 0.5, 0.75, 1.0 |
-| Fig6 | TPC-C | Varying client threads: 1, 8, 16, 32, 64, 128 |
-| Fig7 | TPC-C | Varying warehouse count: 1, 2, 4, 8 |
+| Fig4a | Synthetic | Varying transaction length: 64, 128, 256 reads/tx |
+| Fig4b | Synthetic | Varying hotspot position: 0.0, 0.25, 0.5, 0.75, 1.0 |
+| Fig5a | TPC-C     | Varying client threads: 1, 8, 16, 32, 64, 128 |
+| Fig5b | TPC-C     | Varying warehouse count: 1, 2, 4, 8 |
 
 ## Build Modes
 
@@ -137,8 +141,8 @@ grep "transactions:" fig6_varying_client_threads/results/rcc/s1_t64/sysbench.log
 
 ```bash
 cd plots
-bash plot_fig4.sh
-bash plot_fig5.sh
-bash plot_fig6.sh
-bash plot_fig7.sh
+bash plot_fig4.sh    # Fig4a
+bash plot_fig5.sh    # Fig4b
+bash plot_fig6.sh    # Fig5a
+bash plot_fig7.sh    # Fig5b
 ```
