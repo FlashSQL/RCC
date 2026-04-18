@@ -85,7 +85,7 @@ Run:
 ./fig7_varying_warehouse_count.sh
 ```
 
-> **Note:** Database: `tpcc`
+> **Note:** Database: `tpcc`. PostgreSQL TPC-C runs at **Repeatable Read** isolation (`sysbench-tpcc --trx_level=RR`); the consistency check has been verified under this configuration.
 
 ---
 

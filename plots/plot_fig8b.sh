@@ -13,25 +13,32 @@ OUT_DIR="$FIG_DIR"
 # ==========================================
 # Extractors
 # ==========================================
-# TPS = [OVERALL] Throughput(ops/sec), rounded
+# For the varying_thread workload (batchtxproportion=1.0), every operation is a
+# 16-op batch transaction measured under [BATCHTX] (commit) or [WASTED] (abort).
+# TPS  = committed batch txns / second   = BATCHTX.Ops / (RunTime/1000)
+# Abort = WASTED / (BATCHTX + WASTED)     (as a percentage)
+
 extract_tps() {
     local FILE=$1
     [[ -f "$FILE" ]] || { echo "0"; return; }
     awk -F', ' '
-        /^\[OVERALL\], Throughput\(ops\/sec\)/ { printf "%d\n", $3 + 0.5; exit }
+        /^\[OVERALL\], RunTime\(ms\)/ { runtime = $3 + 0 }
+        /^\[BATCHTX\], Operations/    { batchtx = $3 + 0 }
+        END {
+            if (runtime > 0) printf "%d\n", (batchtx / (runtime / 1000.0)) + 0.5
+            else print "0"
+        }
     ' "$FILE"
 }
 
-# Abort rate (%) = WASTED.Operations / (Throughput * RunTime/1000) * 100
 extract_abort_rate() {
     local FILE=$1
     [[ -f "$FILE" ]] || { echo "0.00"; return; }
     awk -F', ' '
-        /^\[OVERALL\], RunTime\(ms\)/         { runtime = $3 + 0 }
-        /^\[OVERALL\], Throughput\(ops\/sec\)/ { tput = $3 + 0 }
-        /^\[WASTED\], Operations/             { wasted = $3 + 0 }
+        /^\[BATCHTX\], Operations/ { batchtx = $3 + 0 }
+        /^\[WASTED\], Operations/  { wasted = $3 + 0 }
         END {
-            total = tput * runtime / 1000.0
+            total = batchtx + wasted
             if (total > 0) printf "%.2f\n", (wasted / total) * 100.0
             else print "0.00"
         }
