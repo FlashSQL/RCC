@@ -10,6 +10,12 @@ if [[ ! -x "$VANILLA_MYSQLD" ]]; then
   echo "  Build it first: cd $BASE_DIR && bash run_server.sh --vanilla" >&2
   exit 1
 fi
+if [[ ! -x "$VANILLA_MYSQL" ]]; then
+  echo "[ERROR] mysql client not found at $VANILLA_MYSQL" >&2
+  exit 1
+fi
+
+# wait_for_mysqld() comes from ycsb_config.sh
 
 load_backup() {
   local NAME="$1" FC="$2" FL="$3" WL="$4"
@@ -24,37 +30,53 @@ load_backup() {
 
   echo "=== Loading $NAME (fc=$FC, fl=$FL) ==="
 
-  # Kill existing MySQL and clean dirs
-  (pkill -9 -f mysqld 2>/dev/null || true)
-  sleep 3
-  rm -rf "$DATA_DIR"/* "$LOG_DIR"/*
+  # Kill existing MySQL and clean dirs (:? guards against wiping / if unset)
+  (pkill -9 -x mysqld 2>/dev/null || true)
+  while pgrep -x mysqld >/dev/null; do sleep 1; done
+  rm -rf "${DATA_DIR:?DATA_DIR is not set}"/* "${LOG_DIR:?LOG_DIR is not set}"/*
 
   # Initialize fresh MySQL
-  "$VANILLA_MYSQLD" --defaults-file="$MY_CNF" --initialize-insecure --disable-log-bin --innodb-redo-log-capacity=2G 2>&1 | tail -3
+  if ! "$VANILLA_MYSQLD" --defaults-file="$MY_CNF" --initialize-insecure --disable-log-bin --innodb-redo-log-capacity=2G; then
+    echo "[ERROR] --initialize-insecure failed" >&2
+    tail -20 "$LOG_DIR/mysql_error.log" >&2
+    exit 1
+  fi
   "$VANILLA_MYSQLD" --defaults-file="$MY_CNF" --disable-log-bin --innodb-redo-log-capacity=2G &
-  sleep 8
+  wait_for_mysqld "" || exit 1
 
   # Set root password (YCSB workload expects password 'test')
-  "$VANILLA_MYSQL" -uroot -S /tmp/mysql.sock -N -B -e "ALTER USER 'root'@'localhost' IDENTIFIED BY 'test';" 2>/dev/null
+  if ! "$VANILLA_MYSQL" -uroot -S /tmp/mysql.sock -N -B \
+       -e "ALTER USER 'root'@'localhost' IDENTIFIED BY 'test';"; then
+    echo "[ERROR] failed to set root password" >&2
+    exit 1
+  fi
 
-  # Create database and table
-  mysql_cmd "CREATE DATABASE IF NOT EXISTS ycsb"
+  # Create database and table (errors are fatal — mysql_cmd hides them)
   COLS=""
   for i in $(seq 0 $((FC-1))); do
     COLS="$COLS, field${i} TEXT"
   done
-  mysql_cmd "CREATE TABLE ycsb.usertable (YCSB_KEY VARCHAR(100) PRIMARY KEY $COLS)"
+  if ! "$VANILLA_MYSQL" -uroot -p'test' -S /tmp/mysql.sock -N -B -e "
+        CREATE DATABASE IF NOT EXISTS ycsb;
+        CREATE TABLE ycsb.usertable (YCSB_KEY VARCHAR(100) PRIMARY KEY $COLS);"; then
+    echo "[ERROR] failed to create ycsb.usertable" >&2
+    exit 1
+  fi
 
   # Load data
   "$YCSB_DIR/bin/ycsb" load jdbc -P "$YCSB_DIR/$WL" -cp "$MYSQL_CP" -threads 16 -p maxexecutiontime=0 2>&1 | tail -3
 
   COUNT=$(mysql_cmd "SELECT COUNT(*) FROM ycsb.usertable")
   echo "  Loaded: $COUNT records"
+  if [[ "${COUNT:-0}" -eq 0 ]]; then
+    echo "[ERROR] YCSB loaded 0 records — refusing to save an empty backup" >&2
+    exit 1
+  fi
 
   # Graceful shutdown
   mysql_cmd "SHUTDOWN"
   sleep 5
-  while pgrep -f mysqld > /dev/null 2>&1; do sleep 1; done
+  while pgrep -x mysqld > /dev/null 2>&1; do sleep 1; done
   sleep 2
 
   # Save backup
@@ -74,7 +96,7 @@ echo ""
 load_backup "10M" 10 100 "workloads/varying_thread/workload_base"
 echo ""
 
-(pkill -9 -f mysqld 2>/dev/null || true)
+(pkill -9 -x mysqld 2>/dev/null || true)
 
 echo "=========================================="
 echo "  Backup ready!"

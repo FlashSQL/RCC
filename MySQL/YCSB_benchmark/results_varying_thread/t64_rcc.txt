@@ -1,0 +1,342 @@
+[INFO] Scanning for projects...
+[INFO] ------------------------------------------------------------------------
+[INFO] Reactor Build Order:
+[INFO] 
+[INFO] YCSB Root                                                          [pom]
+[INFO] Core YCSB                                                          [jar]
+[INFO] Per Datastore Binding descriptor                                   [jar]
+[INFO] YCSB Datastore Binding Parent                                      [pom]
+[INFO] JDBC DB Binding                                                    [jar]
+[INFO] 
+[INFO] ---------------------------< site.ycsb:root >---------------------------
+[INFO] Building YCSB Root 0.18.0-SNAPSHOT                                 [1/5]
+[INFO] --------------------------------[ pom ]---------------------------------
+[INFO] 
+[INFO] --- maven-enforcer-plugin:3.0.0-M1:enforce (enforce-maven) @ root ---
+[INFO] 
+[INFO] --- maven-checkstyle-plugin:2.16:check (validate) @ root ---
+[INFO] 
+[INFO] --- maven-dependency-plugin:2.8:list (default-cli) @ root ---
+[INFO] 
+[INFO] ---------------------------< site.ycsb:core >---------------------------
+[INFO] Building Core YCSB 0.18.0-SNAPSHOT                                 [2/5]
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- maven-enforcer-plugin:3.0.0-M1:enforce (enforce-maven) @ core ---
+[INFO] 
+[INFO] --- maven-checkstyle-plugin:2.16:check (validate) @ core ---
+[INFO] 
+[INFO] --- maven-resources-plugin:2.6:resources (default-resources) @ core ---
+[INFO] Using 'UTF-8' encoding to copy filtered resources.
+[INFO] Copying 1 resource
+[INFO] 
+[INFO] --- maven-compiler-plugin:3.7.0:compile (default-compile) @ core ---
+[INFO] Nothing to compile - all classes are up to date
+[INFO] 
+[INFO] --- maven-resources-plugin:2.6:testResources (default-testResources) @ core ---
+[INFO] Using 'UTF-8' encoding to copy filtered resources.
+[INFO] skip non existing resourceDirectory /home/hjin/RCC/MySQL/YCSB_benchmark/core/src/test/resources
+[INFO] 
+[INFO] --- maven-compiler-plugin:3.7.0:testCompile (default-testCompile) @ core ---
+[INFO] Nothing to compile - all classes are up to date
+[INFO] 
+[INFO] --- maven-surefire-plugin:2.12.4:test (default-test) @ core ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- maven-jar-plugin:2.4:jar (default-jar) @ core ---
+[INFO] Building jar: /home/hjin/RCC/MySQL/YCSB_benchmark/core/target/core-0.18.0-SNAPSHOT.jar
+[INFO] 
+[INFO] --- maven-dependency-plugin:2.8:list (default-cli) @ core ---
+[INFO] 
+[INFO] --------------< site.ycsb:datastore-specific-descriptor >---------------
+[INFO] Building Per Datastore Binding descriptor 0.18.0-SNAPSHOT          [3/5]
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- maven-enforcer-plugin:3.0.0-M1:enforce (enforce-maven) @ datastore-specific-descriptor ---
+[INFO] 
+[INFO] --- maven-checkstyle-plugin:2.16:check (validate) @ datastore-specific-descriptor ---
+[INFO] 
+[INFO] --- maven-resources-plugin:2.6:resources (default-resources) @ datastore-specific-descriptor ---
+[INFO] Using 'UTF-8' encoding to copy filtered resources.
+[INFO] Copying 1 resource
+[INFO] 
+[INFO] --- maven-compiler-plugin:3.7.0:compile (default-compile) @ datastore-specific-descriptor ---
+[INFO] No sources to compile
+[INFO] 
+[INFO] --- maven-resources-plugin:2.6:testResources (default-testResources) @ datastore-specific-descriptor ---
+[INFO] Using 'UTF-8' encoding to copy filtered resources.
+[INFO] skip non existing resourceDirectory /home/hjin/RCC/MySQL/YCSB_benchmark/binding-parent/datastore-specific-descriptor/src/test/resources
+[INFO] 
+[INFO] --- maven-compiler-plugin:3.7.0:testCompile (default-testCompile) @ datastore-specific-descriptor ---
+[INFO] No sources to compile
+[INFO] 
+[INFO] --- maven-surefire-plugin:2.12.4:test (default-test) @ datastore-specific-descriptor ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- maven-jar-plugin:2.4:jar (default-jar) @ datastore-specific-descriptor ---
+[INFO] 
+[INFO] --- maven-dependency-plugin:2.8:list (default-cli) @ datastore-specific-descriptor ---
+[INFO] 
+[INFO] ----------------------< site.ycsb:binding-parent >----------------------
+[INFO] Building YCSB Datastore Binding Parent 0.18.0-SNAPSHOT             [4/5]
+[INFO] --------------------------------[ pom ]---------------------------------
+[INFO] 
+[INFO] --- maven-enforcer-plugin:3.0.0-M1:enforce (enforce-maven) @ binding-parent ---
+[INFO] 
+[INFO] --- maven-checkstyle-plugin:2.16:check (validate) @ binding-parent ---
+[INFO] 
+[INFO] --- maven-dependency-plugin:2.10:copy-dependencies (stage-dependencies) @ binding-parent ---
+[INFO] 
+[INFO] --- maven-dependency-plugin:2.10:list (default-cli) @ binding-parent ---
+[INFO] 
+[INFO] -----------------------< site.ycsb:jdbc-binding >-----------------------
+[INFO] Building JDBC DB Binding 0.18.0-SNAPSHOT                           [5/5]
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- maven-enforcer-plugin:3.0.0-M1:enforce (enforce-maven) @ jdbc-binding ---
+[INFO] 
+[INFO] --- maven-checkstyle-plugin:2.16:check (validate) @ jdbc-binding ---
+[INFO] 
+[INFO] --- maven-resources-plugin:2.6:resources (default-resources) @ jdbc-binding ---
+[INFO] Using 'UTF-8' encoding to copy filtered resources.
+[INFO] Copying 3 resources
+[INFO] 
+[INFO] --- maven-compiler-plugin:3.7.0:compile (default-compile) @ jdbc-binding ---
+[INFO] Nothing to compile - all classes are up to date
+[INFO] 
+[INFO] --- maven-resources-plugin:2.6:testResources (default-testResources) @ jdbc-binding ---
+[INFO] Using 'UTF-8' encoding to copy filtered resources.
+[INFO] skip non existing resourceDirectory /home/hjin/RCC/MySQL/YCSB_benchmark/jdbc/src/test/resources
+[INFO] 
+[INFO] --- maven-compiler-plugin:3.7.0:testCompile (default-testCompile) @ jdbc-binding ---
+[INFO] Nothing to compile - all classes are up to date
+[INFO] 
+[INFO] --- maven-surefire-plugin:2.12.4:test (default-test) @ jdbc-binding ---
+[INFO] Tests are skipped.
+[INFO] 
+[INFO] --- maven-jar-plugin:2.4:jar (default-jar) @ jdbc-binding ---
+[INFO] 
+[INFO] --- maven-dependency-plugin:2.10:copy-dependencies (stage-dependencies) @ jdbc-binding ---
+[INFO] org.apache.geronimo.specs:geronimo-jta_1.1_spec:jar:1.1.1 already exists in destination.
+[INFO] net.sourceforge.serp:serp:jar:1.13.1 already exists in destination.
+[INFO] org.apache.openjpa:openjpa-jdbc:jar:2.1.1 already exists in destination.
+[INFO] org.apache.openjpa:openjpa-lib:jar:2.1.1 already exists in destination.
+[INFO] commons-pool:commons-pool:jar:1.5.4 already exists in destination.
+[INFO] org.apache.geronimo.specs:geronimo-jms_1.1_spec:jar:1.1.1 already exists in destination.
+[INFO] org.apache.openjpa:openjpa-kernel:jar:2.1.1 already exists in destination.
+[INFO] commons-collections:commons-collections:jar:3.2.1 already exists in destination.
+[INFO] commons-lang:commons-lang:jar:2.4 already exists in destination.
+[INFO] 
+[INFO] --- maven-assembly-plugin:2.5.5:single (default) @ jdbc-binding ---
+[WARNING] The following patterns were never triggered in this artifact exclusion filter:
+o  '*:sources'
+
+[INFO] Building tar: /home/hjin/RCC/MySQL/YCSB_benchmark/jdbc/target/ycsb-jdbc-binding-0.18.0-SNAPSHOT.tar.gz
+[INFO] 
+[INFO] --- maven-dependency-plugin:2.10:list (default-cli) @ jdbc-binding ---
+[INFO] ------------------------------------------------------------------------
+[INFO] Reactor Summary for YCSB Root 0.18.0-SNAPSHOT:
+[INFO] 
+[INFO] YCSB Root .......................................... SUCCESS [  1.276 s]
+[INFO] Core YCSB .......................................... SUCCESS [  0.500 s]
+[INFO] Per Datastore Binding descriptor ................... SUCCESS [  0.113 s]
+[INFO] YCSB Datastore Binding Parent ...................... SUCCESS [  0.366 s]
+[INFO] JDBC DB Binding .................................... SUCCESS [  0.774 s]
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  3.433 s
+[INFO] Finished at: 2026-07-20T09:09:15+09:00
+[INFO] ------------------------------------------------------------------------
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Adding shard node URL: jdbc:mysql://localhost:3306/ycsb
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+Using shards: 1, batchSize:-1, fetchSize: -1
+[OVERALL], RunTime(ms), 60033
+[OVERALL], Throughput(ops/sec), 15502.956707144403
+[TOTAL_GCS_G1_Young_Generation], Count, 59
+[TOTAL_GC_TIME_G1_Young_Generation], Time(ms), 316
+[TOTAL_GC_TIME_%_G1_Young_Generation], Time(%), 0.5263771592290907
+[TOTAL_GCS_G1_Old_Generation], Count, 0
+[TOTAL_GC_TIME_G1_Old_Generation], Time(ms), 0
+[TOTAL_GC_TIME_%_G1_Old_Generation], Time(%), 0.0
+[TOTAL_GCs], Count, 59
+[TOTAL_GC_TIME], Time(ms), 316
+[TOTAL_GC_TIME_%], Time(%), 0.5263771592290907
+[UPDATE-FAILED], Operations, 254287
+[UPDATE-FAILED], AverageLatency(us), 568.6538674804453
+[UPDATE-FAILED], MinLatency(us), 212
+[UPDATE-FAILED], MaxLatency(us), 107199
+[UPDATE-FAILED], 50thPercentileLatency(us), 449
+[UPDATE-FAILED], 95thPercentileLatency(us), 1108
+[UPDATE-FAILED], 99thPercentileLatency(us), 1782
+[READ], Operations, 3862691
+[READ], AverageLatency(us), 401.8855593160312
+[READ], MinLatency(us), 103
+[READ], MaxLatency(us), 671743
+[READ], 50thPercentileLatency(us), 247
+[READ], 95thPercentileLatency(us), 949
+[READ], 99thPercentileLatency(us), 2937
+[READ], Return=OK, 3862691
+[READ], Return=ERROR, 245887
+[CLEANUP], Operations, 64
+[CLEANUP], AverageLatency(us), 9135.21875
+[CLEANUP], MinLatency(us), 7612
+[CLEANUP], MaxLatency(us), 14695
+[CLEANUP], 50thPercentileLatency(us), 8503
+[CLEANUP], 95thPercentileLatency(us), 12471
+[CLEANUP], 99thPercentileLatency(us), 14695
+[UPDATE], Operations, 3853414
+[UPDATE], AverageLatency(us), 499.3457188871998
+[UPDATE], MinLatency(us), 149
+[UPDATE], MaxLatency(us), 727039
+[UPDATE], 50thPercentileLatency(us), 343
+[UPDATE], 95thPercentileLatency(us), 1084
+[UPDATE], 99thPercentileLatency(us), 2983
+[UPDATE], Return=OK, 3853414
+[UPDATE], Return=ERROR, 254287
+[READ-FAILED], Operations, 245887
+[READ-FAILED], AverageLatency(us), 442.1034458918121
+[READ-FAILED], MinLatency(us), 146
+[READ-FAILED], MaxLatency(us), 87743
+[READ-FAILED], 50thPercentileLatency(us), 360
+[READ-FAILED], 95thPercentileLatency(us), 882
+[READ-FAILED], 99thPercentileLatency(us), 1584
+[WASTED], Operations, 500174
+[WASTED], AverageLatency(us), 1166.4954955675425
+[WASTED], MinLatency(us), 149
+[WASTED], MaxLatency(us), 283647
+[WASTED], 50thPercentileLatency(us), 425
+[WASTED], 95thPercentileLatency(us), 6043
+[WASTED], 99thPercentileLatency(us), 7319
+[BATCHTX], Operations, 430515
+[BATCHTX], AverageLatency(us), 7407.99570514384
+[BATCHTX], MinLatency(us), 2552
+[BATCHTX], MaxLatency(us), 732159
+[BATCHTX], 50thPercentileLatency(us), 6615
+[BATCHTX], 95thPercentileLatency(us), 9999
+[BATCHTX], 99thPercentileLatency(us), 27023

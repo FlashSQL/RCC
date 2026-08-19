@@ -1,4 +1,4 @@
-# Varying Thread: fc10, z0.9, 1KB row
+# Varying Thread: fc10, z0.99, 1KB row
 # Threads: 1, 8, 16, 32, 64, 128 (set at runtime with -threads)
 
 recordcount=10000000

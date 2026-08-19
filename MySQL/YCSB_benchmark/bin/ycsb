@@ -221,7 +221,16 @@ def get_classpath_from_maven(module):
            "-DoutputFile=" + output_file.name
            ]
     debug("Running '" + " ".join(cmd) + "'")
-    subprocess.check_call(cmd)
+    # Maven must run from the YCSB root: the reactor is resolved from the pom in
+    # the working directory, so invoking bin/ycsb from anywhere else fails with
+    # "Could not find the selected project in the reactor".
+    try:
+        subprocess.check_call(cmd, cwd=get_ycsb_home())
+    except subprocess.CalledProcessError:
+        # Commonly: no network to reach the remote repo. Every dependency is
+        # already in the local ~/.m2, so retry offline.
+        warn("Maven failed; retrying offline (-o)")
+        subprocess.check_call(cmd[:1] + ["-o"] + cmd[1:], cwd=get_ycsb_home())
 
     # the output file will now contain all of the dependencies in the format:
     # group:artifact:type:[classifier:]version:scope:path[ -- module info]

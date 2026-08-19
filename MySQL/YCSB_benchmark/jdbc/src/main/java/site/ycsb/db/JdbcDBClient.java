@@ -371,6 +371,13 @@ public class JdbcDBClient extends DB {
         }
       }
       resultSet.close();
+      if (!autoCommit) {
+        updateCounter++;
+        if (updateCounter >= opsPerCommit) {
+          getShardConnectionByKey(key).commit();
+          updateCounter = 0;
+        }
+      }
       return Status.OK;
     } catch (SQLException e) {
       if (!autoCommit) {

@@ -790,9 +790,16 @@ public class CoreWorkload extends Workload {
 
     boolean txSuccess = true;
     ThreadLocalRandom rng = ThreadLocalRandom.current();
+    // Keys must be distinct within one transaction: redraw (unbounded) on a
+    // duplicate. Safe because opspertransaction << keyspace, so the loop
+    // terminates quickly even under a highly skewed zipfian.
+    HashSet<Long> usedKeys = new HashSet<>(opspertransaction * 2);
     for (int op = 0; op < opspertransaction; op++) {
-      // choose a random key
-      long keynum = nextKeynum();
+      // choose a random key, distinct from the ones already in this tx
+      long keynum;
+      do {
+        keynum = nextKeynum();
+      } while (!usedKeys.add(keynum));
       keyname = CoreWorkload.buildKeyName(keynum, zeropadding, orderedinserts);
 
       // choose a random field to use for both read and write
