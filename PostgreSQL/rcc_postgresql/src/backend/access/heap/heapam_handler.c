@@ -371,6 +371,31 @@ heapam_tuple_update(Relation relation, ItemPointer otid, TupleTableSlot *slot,
 	return result;
 }
 
+#ifdef RCC
+static TM_Result heapam_tuple_lock_inner(Relation relation, ItemPointer tid, Snapshot snapshot,
+				  TupleTableSlot *slot, CommandId cid, LockTupleMode mode,
+				  LockWaitPolicy wait_policy, uint8 flags, TM_FailureData *tmfd);
+
+/*
+ * Wrapper: whatever way the chain chase in heapam_tuple_lock_inner ends, the
+ * tuple lock heap_lock_tuple left carried (RccCarryTupleLock) is released
+ * here.  On ERROR it goes with the transaction's locks.
+ */
+static TM_Result
+heapam_tuple_lock(Relation relation, ItemPointer tid, Snapshot snapshot,
+				  TupleTableSlot *slot, CommandId cid, LockTupleMode mode,
+				  LockWaitPolicy wait_policy, uint8 flags,
+				  TM_FailureData *tmfd)
+{
+	TM_Result	r;
+
+	r = heapam_tuple_lock_inner(relation, tid, snapshot, slot, cid, mode, wait_policy, flags, tmfd);
+	RccReleaseCarriedTupleLock();
+	return r;
+}
+#define heapam_tuple_lock heapam_tuple_lock_inner
+#endif
+
 static TM_Result
 heapam_tuple_lock(Relation relation, ItemPointer tid, Snapshot snapshot,
 				  TupleTableSlot *slot, CommandId cid, LockTupleMode mode,
@@ -414,6 +439,27 @@ heapam_tuple_lock(Relation relation, ItemPointer tid, Snapshot snapshot,
 
 	follow_updates = (flags & TUPLE_LOCK_FLAG_LOCK_UPDATE_IN_PROGRESS) != 0;
 	tmfd->traversed = false;
+#ifdef RCC
+	/*
+	 * If this transaction already walked this chain from the same tid
+	 * (SELECT ... FOR UPDATE followed by UPDATE of that row), resume at the
+	 * version it locked instead of re-walking every speculative version in
+	 * between.  The walk simply continues from there if the chain has grown.
+	 */
+	if (flags & TUPLE_LOCK_FLAG_FIND_LAST_VERSION)
+	{
+		ItemPointerData walk_last;
+		TransactionId walk_xmin;
+
+		if (RccGetChainWalk(RelationGetRelid(relation), tid, &walk_last, &walk_xmin) &&
+			!(TransactionIdIsValid(walk_xmin) && TransactionIdDidAbort(walk_xmin)))
+		{
+			*tid = walk_last;
+			chain_xmin = walk_xmin;
+			tmfd->traversed = true;
+		}
+	}
+#endif
 
 	Assert(TTS_IS_BUFFERTUPLE(slot));
 #ifdef RCC_DEBUG
@@ -829,7 +875,7 @@ live_tuple_try:
 	 * heap_update marks orig_tid as superseded by us (see RccNoteSuperseded).
 	 */
 	if (result == TM_Ok && tmfd->traversed)
-		RccSetChainWalk(RelationGetRelid(relation), &orig_tid, tid);
+		RccSetChainWalk(RelationGetRelid(relation), &orig_tid, tid, chain_xmin);
 #endif
 
 #ifdef RCC_SR
@@ -851,6 +897,9 @@ live_tuple_try:
 
 	return result;
 }
+#ifdef RCC
+#undef heapam_tuple_lock
+#endif
 
 
 /* ------------------------------------------------------------------------

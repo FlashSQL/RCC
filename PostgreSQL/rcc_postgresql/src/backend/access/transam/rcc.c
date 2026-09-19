@@ -23,6 +23,7 @@
 #include "utils/guc.h"
 #include "utils/wait_event.h"
 #include "access/rcc.h"
+#include "storage/lock.h"
 
 /* See rcc.h: true while executing a FOR UPDATE/SHARE statement. */
 bool RccStmtForUpdate = false;
@@ -753,13 +754,64 @@ static int rccSupersededCount = 0;
 static Oid rccWalkRel = InvalidOid;
 static ItemPointerData rccWalkRoot;
 static ItemPointerData rccWalkLast;
+static TransactionId rccWalkLastXmin = InvalidTransactionId;
 
 void
-RccSetChainWalk(Oid relid, ItemPointer root, ItemPointer last)
+RccSetChainWalk(Oid relid, ItemPointer root, ItemPointer last, TransactionId last_xmin)
 {
     rccWalkRel = relid;
     rccWalkRoot = *root;
     rccWalkLast = *last;
+    rccWalkLastXmin = last_xmin;
+}
+
+/*
+ * Hand-over-hand tuple lock (arrival-order fairness across versions).
+ *
+ * The heavyweight tuple lock is what gives a waiter its place in line
+ * (README.tuplock).  When the locked version turns out to be superseded,
+ * heap_lock_tuple does not drop that lock on its way out: it is carried here
+ * while heapam_tuple_lock chases the chain, and released only once the tuple
+ * lock (or the row lock itself) on the newer version has been obtained.
+ * Dropping it first would wake the next waiter early and let it overtake us on
+ * the way to the new version.
+ */
+static bool rccCarried = false;
+static LOCKTAG rccCarriedTag;
+static LOCKMODE rccCarriedMode;
+
+void
+RccCarryTupleLock(Oid dbid, Oid relid, ItemPointer tid, LOCKMODE hwlock)
+{
+    Assert(!rccCarried);
+    SET_LOCKTAG_TUPLE(rccCarriedTag, dbid, relid,
+                      ItemPointerGetBlockNumber(tid),
+                      ItemPointerGetOffsetNumber(tid));
+    rccCarriedMode = hwlock;
+    rccCarried = true;
+}
+
+void
+RccReleaseCarriedTupleLock(void)
+{
+    if (!rccCarried)
+        return;
+    rccCarried = false;
+    LockRelease(&rccCarriedTag, rccCarriedMode, false);
+}
+
+/*
+ * Did this transaction already walk relid's chain starting at root?  If so
+ * return where it ended (the version it locked) and that version's creator.
+ */
+bool
+RccGetChainWalk(Oid relid, ItemPointer root, ItemPointer last, TransactionId *last_xmin)
+{
+    if (rccWalkRel != relid || !ItemPointerEquals(&rccWalkRoot, root))
+        return false;
+    *last = rccWalkLast;
+    *last_xmin = rccWalkLastXmin;
+    return true;
 }
 
 void
@@ -842,6 +894,7 @@ CleanupTxnDependency()
 
     rccSupersededCount = 0;
     rccWalkRel = InvalidOid;
+    rccCarried = false;         /* the lock itself went with LockReleaseAll */
     rccMyVersionCount = 0;
     /* Whatever the detector marked applied to this transaction only. */
     MyProc->rccDoomedXid = InvalidTransactionId;

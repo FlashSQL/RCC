@@ -6038,6 +6038,23 @@ skip_visibility_check_in_lock:
 			if (measure_xlock)
 				INSTR_TIME_SET_CURRENT(tuplock_start);
 			/* Breakdown Code End */
+			/*
+			 * Chasing a chain with a tuple lock carried from an older version
+			 * (see RccCarryTupleLock): take our place on this version, then
+			 * let go of the old one.  Never sleep while holding the old lock:
+			 * line pointers on a hot page are recycled, so old -> new tids do
+			 * not form an order and two chasers could deadlock.  If we must
+			 * queue here, drop the old lock immediately before enqueueing;
+			 * the waiter it wakes still has to recheck and walk the chain, so
+			 * it cannot get in front of us.
+			 */
+			if (!have_tuple_lock && !skip_tuple_lock &&
+				wait_policy == LockWaitBlock)
+			{
+				if (ConditionalLockTupleTuplock(relation, tid, mode))
+					have_tuple_lock = true;
+				RccReleaseCarriedTupleLock();
+			}
 			if (!skip_tuple_lock &&
 				!heap_acquire_tuplock(relation, tid, mode, wait_policy,
 									  &have_tuple_lock))
@@ -6051,6 +6068,9 @@ skip_visibility_check_in_lock:
 				LockBuffer(*buffer, BUFFER_LOCK_EXCLUSIVE);
 				goto failed;
 			}
+			/* we hold our place on this version now: let go of the older one */
+			if (have_tuple_lock)
+				RccReleaseCarriedTupleLock();
 			/* Breakdown Code */
 			if (measure_xlock)
 			{
@@ -6464,11 +6484,28 @@ out_unlocked:
 	 * Now that we have successfully marked the tuple as locked, we can
 	 * release the lmgr tuple lock, if we had it.
 	 */
-	if (have_tuple_lock)
-		UnlockTupleTuplock(relation, tid, mode);
 	if(tmin_is_aborted){
 		/* locked a version whose creator aborted meanwhile: dead, caller retries */
 		result = TM_Deleted;
+	}
+	if (!not_final_update && !dependent_aborted &&
+		(result == TM_Updated || result == TM_Deleted))
+	{
+		/*
+		 * heapam_tuple_lock will chase the chain.  Keep our place in line:
+		 * carry the tuple lock until we hold one on the newer version (a
+		 * lock carried from an even older version stays carried).
+		 */
+		if (have_tuple_lock)
+			RccCarryTupleLock(relation->rd_lockInfo.lockRelId.dbId,
+							  relation->rd_lockInfo.lockRelId.relId,
+							  tid, tupleLockExtraInfo[mode].hwlock);
+	}
+	else
+	{
+		if (have_tuple_lock)
+			UnlockTupleTuplock(relation, tid, mode);
+		RccReleaseCarriedTupleLock();
 	}
 	if(not_final_update){
 		ereport(ERROR,
