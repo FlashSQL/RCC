@@ -1475,6 +1475,11 @@ typedef struct ScanState
 	Relation	ss_currentRelation;
 	struct TableScanDescData *ss_currentScanDesc;
 	TupleTableSlot *ss_ScanTupleSlot;
+#ifdef RCC_SR
+	/* read-latest dup guard: TIDs this scan already returned (see execScan.c) */
+	ItemPointerData rcc_returned[4];
+	int			rcc_nreturned;
+#endif
 } ScanState;
 
 /* ----------------

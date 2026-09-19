@@ -70,6 +70,7 @@
 
 #ifdef RCC
 #include "access/rcc.h"
+#include "storage/predicate.h"
 #endif
 
 
@@ -148,6 +149,33 @@ ExecutorStart(QueryDesc *queryDesc, int eflags)
                     (errcode(ERRCODE_T_R_SERIALIZATION_FAILURE),
                      errmsg("cannot proceed because dependent transaction aborted 12, current TX_ID: %u", GetTopTransactionIdIfAny())));
 	}
+#endif
+#ifdef RCC_SR
+	/*
+	 * A FOR UPDATE/SHARE statement takes row locks (write intent): treat its
+	 * reads as writes and skip SIRead placement on the fetched tuples (see
+	 * RccStmtForUpdate).  Plain SELECTs (no rowMarks) remain readers.
+	 */
+	RccStmtForUpdate = (queryDesc->plannedstmt != NULL &&
+						queryDesc->plannedstmt->rowMarks != NIL);
+	RccStmtUpdateScan = (queryDesc->plannedstmt != NULL &&
+						 queryDesc->plannedstmt->commandType == CMD_UPDATE);
+	RccSfuLeafReset();			/* discard deferred leaf locks of a prior statement */
+
+	/*
+	 * A plain read-latest SELECT places SIRead predicate locks (including the
+	 * page/relation locks that guard against phantoms).  A later writer records
+	 * its RW anti-dependency against the reader's xid (RccRecordRwDep), so force
+	 * an xid here even though the SELECT is otherwise read-only -- without one
+	 * the reader is invisible to that writer and a phantom write-skew (e.g. an
+	 * empty range read + a concurrent INSERT into the range) slips through.
+	 * Done here (not per-scan) so every scan type is covered (seq/index/bitmap).
+	 */
+	if (queryDesc->plannedstmt != NULL &&
+		queryDesc->plannedstmt->commandType == CMD_SELECT &&
+		queryDesc->plannedstmt->rowMarks == NIL &&
+		!IsInParallelMode())
+		(void) GetTopTransactionId();
 #endif
 	pgstat_report_query_id(queryDesc->plannedstmt->queryId, false);
 
@@ -506,6 +534,19 @@ standard_ExecutorEnd(QueryDesc *queryDesc)
 	 */
 	Assert(estate->es_finished ||
 		   (estate->es_top_eflags & EXEC_FLAG_EXPLAIN_ONLY));
+
+#ifdef RCC_SR
+
+	/*
+	 * A FOR UPDATE/SHARE statement that ended without acquiring a row lock
+	 * (e.g. index entries existed but every version was dead) still holds
+	 * deferred leaf SIReads: anchor them now, at the moment its empty answer
+	 * became final (see RccSfuDeferLeafLock in predicate.c).  No-op when the
+	 * post-lock or empty-leaf paths already applied them.
+	 */
+	if (RccStmtForUpdate || RccStmtUpdateScan)
+		RccSfuApplyLeafLocks();
+#endif
 
 	/*
 	 * Switch into per-query memory context to run ExecEndPlan
@@ -1668,6 +1709,12 @@ ExecutePlan(EState *estate,
 	if (use_parallel_mode)
 		EnterParallelMode();
 
+#ifdef RCC
+	/* Cleared here, set by HeapTupleSatisfiesDirty if a read-latest scan defers
+	 * a committed base to an in-progress newer version (possible vanish). */
+	RccReadLatestDeferredCommitted = false;
+#endif
+
 	/*
 	 * Loop until we've processed the proper number of tuples from the plan.
 	 */
@@ -1732,16 +1779,35 @@ ExecutePlan(EState *estate,
 			break;
 	}
 #ifdef RCC
-	if(estate->es_processed == 0){
+	if(estate->es_processed == 0 && !IsParallelWorker()){
 		if(CheckAbortedDependencies()){
 			/* 의존 트랜잭션이 abort 되었으므로 직렬화 실패 */
 			ereport(ERROR,
 					(errcode(ERRCODE_T_R_SERIALIZATION_FAILURE),
 						errmsg("cannot proceed because dependent transaction aborted 13, current TX_ID: %u", GetTopTransactionIdIfAny())));
 		}
-		elog(LOG, "LockRows node found no more tuples, not found TX_ID: %u", GetTopTransactionIdIfAny());
+		/*
+		 * 0 rows: if read-latest deferred a COMMITTED base to an in-progress
+		 * newer version that then aborted, the row momentarily vanished (a
+		 * seqscan, unlike heap_lock_tuple/heap_update's chain-follow, cannot fall
+		 * back to the base) -> raise a serialization failure so the client
+		 * retries; on retry the writer has settled and the read succeeds.
+		 *
+		 * If nothing committed was deferred, 0 rows is legitimate -- e.g. item
+		 * i_id=-1 (the 1% New-Order rollback) or any genuinely empty result --
+		 * so we must NOT retry (that would loop forever).  The deferral flag
+		 * (RccReadLatestDeferredCommitted), not a table-name check, tells them
+		 * apart.
+		 */
+		if (RccReadLatestDeferredCommitted)
+			ereport(ERROR,
+					(errcode(ERRCODE_T_R_SERIALIZATION_FAILURE),
+					 errmsg("could not read latest version of row (retry), current TX_ID: %u",
+							GetTopTransactionIdIfAny())));
+		else
+			elog(LOG, "LockRows node found no more tuples, not found TX_ID: %u", GetTopTransactionIdIfAny());
 	}
-#endif	
+#endif
 
 	/*
 	 * If we know we won't need to back up, we can release resources at this

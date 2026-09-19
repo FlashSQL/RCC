@@ -69,7 +69,11 @@ SeqNext(SeqScanState *node)
 		 * executing a scan that was planned to be parallel.
 		 */
 		scandesc = table_beginscan(node->ss.ss_currentRelation,
+#ifdef RCC_SR
+								   RccSrGetReadSnapshot(estate),
+#else
 								   estate->es_snapshot,
+#endif
 								   0, NULL);
 		node->ss.ss_currentScanDesc = scandesc;
 	}

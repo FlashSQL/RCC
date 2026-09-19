@@ -13,6 +13,9 @@
 #include "postgres.h"
 
 #include "access/parallel.h"
+#ifdef RCC
+#include "access/rcc.h"
+#endif
 #include "libpq/pqsignal.h"
 #include "miscadmin.h"
 #include "pgstat.h"
@@ -132,6 +135,12 @@ static const struct
 	{
 		"ParallelApplyWorkerMain", ParallelApplyWorkerMain
 	}
+#ifdef RCC
+	,
+	{
+		"RccDeadlockDetectorMain", RccDeadlockDetectorMain
+	}
+#endif
 };
 
 /* Private functions. */

@@ -109,7 +109,11 @@ IndexNext(IndexScanState *node)
 		 */
 		scandesc = index_beginscan(node->ss.ss_currentRelation,
 								   node->iss_RelationDesc,
+#ifdef RCC_SR
+								   RccSrGetReadSnapshot(estate),
+#else
 								   estate->es_snapshot,
+#endif
 								   node->iss_NumScanKeys,
 								   node->iss_NumOrderByKeys);
 
@@ -216,7 +220,11 @@ IndexNextWithReorder(IndexScanState *node)
 		 */
 		scandesc = index_beginscan(node->ss.ss_currentRelation,
 								   node->iss_RelationDesc,
+#ifdef RCC_SR
+								   RccSrGetReadSnapshot(estate),
+#else
 								   estate->es_snapshot,
+#endif
 								   node->iss_NumScanKeys,
 								   node->iss_NumOrderByKeys);
 

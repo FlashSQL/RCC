@@ -27,6 +27,9 @@
 #endif
 
 #include "access/commit_ts.h"
+#ifdef RCC
+#include "access/rcc.h"
+#endif
 #include "access/gin.h"
 #include "access/toast_compression.h"
 #include "access/twophase.h"
@@ -1491,6 +1494,19 @@ struct config_bool ConfigureNamesBool[] =
 	},
 #endif
 
+#ifdef RCC
+	{
+		{"rcc_bg_detect", PGC_SIGHUP, LOCK_MANAGEMENT,
+			gettext_noop("Detects RCC dependency cycles in a background worker."),
+			gettext_noop("When on, a cycle is resolved as soon as it forms (the youngest "
+						 "member is aborted); when off, each transaction checks for a "
+						 "cycle when it arrives at commit.")
+		},
+		&rcc_bg_detect,
+		false,
+		NULL, NULL, NULL
+	},
+#endif
 	{
 		{"log_lock_waits", PGC_SUSET, LOGGING_WHAT,
 			gettext_noop("Logs long lock waits."),

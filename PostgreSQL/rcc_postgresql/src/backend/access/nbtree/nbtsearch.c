@@ -21,6 +21,39 @@
 #include "miscadmin.h"
 #include "pgstat.h"
 #include "storage/predicate.h"
+#ifdef RCC_SR
+#include "access/rcc.h"
+#endif
+
+#ifdef RCC_SR
+/*
+ * Is this a unique-index equality scan (at most one live row can match)?
+ * Only such FOR UPDATE/SHARE scans may defer their leaf SIRead to row-lock
+ * time: the locked row then represents the whole predicate.  Range, partial
+ * key and array scans keep the vanilla descent-time leaf lock -- their
+ * predicate includes "gaps" that no row lock can stand for, so deferring
+ * would let an insert into the gap slip by unnoticed.
+ */
+static bool
+RccSfuUniqueEqScan(Relation rel, IndexScanDesc scan)
+{
+	BTScanOpaque so = (BTScanOpaque) scan->opaque;
+
+	if (!rel->rd_index->indisunique)
+		return false;
+	if (so->numberOfKeys != IndexRelationGetNumberOfKeyAttributes(rel))
+		return false;
+	for (int i = 0; i < so->numberOfKeys; i++)
+	{
+		ScanKey		key = &so->keyData[i];
+
+		if (key->sk_strategy != BTEqualStrategyNumber ||
+			(key->sk_flags & (SK_ISNULL | SK_ROW_HEADER | SK_SEARCHARRAY)) != 0)
+			return false;
+	}
+	return true;
+}
+#endif							/* RCC_SR */
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
 
@@ -1410,7 +1443,14 @@ _bt_first(IndexScanDesc scan, ScanDirection dir)
 		}
 	}
 
+#ifdef RCC_SR
+	if ((RccStmtForUpdate || RccStmtUpdateScan) && RccSfuUniqueEqScan(rel, scan))
+		RccSfuDeferLeafLock(rel, BufferGetBlockNumber(buf), scan->xs_snapshot);
+	else
+		PredicateLockPage(rel, BufferGetBlockNumber(buf), scan->xs_snapshot);
+#else
 	PredicateLockPage(rel, BufferGetBlockNumber(buf), scan->xs_snapshot);
+#endif
 
 	_bt_initialize_more_data(so, dir);
 
@@ -1451,6 +1491,18 @@ _bt_first(IndexScanDesc scan, ScanDirection dir)
 		 * There's no actually-matching data on this page.  Try to advance to
 		 * the next page.  Return false if there's no matching data at all.
 		 */
+#ifdef RCC_SR
+
+		/*
+		 * Empty on the scan's home leaf: a deferring SFU scan (unique-eq)
+		 * has no row-lock moment to anchor its leaf SIRead on, so register
+		 * it NOW, while the leaf buffer lock is still held -- the buffer
+		 * lock makes search+register atomic (no insert can slip between).
+		 * No-op unless something was deferred above.
+		 */
+		if (RccStmtForUpdate || RccStmtUpdateScan)
+			RccSfuApplyLeafLocks();
+#endif
 		_bt_unlockbuf(scan->indexRelation, so->currPos.buf);
 		if (!_bt_steppage(scan, dir))
 			return false;
@@ -2034,7 +2086,14 @@ _bt_readnextpage(IndexScanDesc scan, BlockNumber blkno, ScanDirection dir)
 			/* check for deleted page */
 			if (!P_IGNORE(opaque))
 			{
+				#ifdef RCC_SR
+				if ((RccStmtForUpdate || RccStmtUpdateScan) && RccSfuUniqueEqScan(rel, scan))
+					RccSfuDeferLeafLock(rel, blkno, scan->xs_snapshot);
+				else
+					PredicateLockPage(rel, blkno, scan->xs_snapshot);
+				#else
 				PredicateLockPage(rel, blkno, scan->xs_snapshot);
+				#endif
 				/* see if there are any matches on this page */
 				/* note that this will clear moreRight if we can stop */
 				if (_bt_readpage(scan, dir, P_FIRSTDATAKEY(opaque)))
@@ -2136,7 +2195,14 @@ _bt_readnextpage(IndexScanDesc scan, BlockNumber blkno, ScanDirection dir)
 			opaque = BTPageGetOpaque(page);
 			if (!P_IGNORE(opaque))
 			{
+				#ifdef RCC_SR
+				if ((RccStmtForUpdate || RccStmtUpdateScan) && RccSfuUniqueEqScan(rel, scan))
+					RccSfuDeferLeafLock(rel, BufferGetBlockNumber(so->currPos.buf), scan->xs_snapshot);
+				else
+					PredicateLockPage(rel, BufferGetBlockNumber(so->currPos.buf), scan->xs_snapshot);
+				#else
 				PredicateLockPage(rel, BufferGetBlockNumber(so->currPos.buf), scan->xs_snapshot);
+				#endif
 				/* see if there are any matches on this page */
 				/* note that this will clear moreLeft if we can stop */
 				if (_bt_readpage(scan, dir, PageGetMaxOffsetNumber(page)))

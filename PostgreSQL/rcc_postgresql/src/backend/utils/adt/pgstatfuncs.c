@@ -1217,6 +1217,12 @@ PG_STAT_GET_DBENTRY_FLOAT8_MS(aborted_tuple_update_wait_time)
 
 /* pg_stat_get_db_aborted_tuple_update_wait_count */
 PG_STAT_GET_DBENTRY_INT64(aborted_tuple_update_wait_count)
+
+/* pg_stat_get_db_committed_total_time */
+PG_STAT_GET_DBENTRY_FLOAT8_MS(committed_total_time)
+
+/* pg_stat_get_db_aborted_total_time */
+PG_STAT_GET_DBENTRY_FLOAT8_MS(aborted_total_time)
 /* Breakdown Code End */
 
 /* pg_stat_get_db_idle_in_transaction_time */

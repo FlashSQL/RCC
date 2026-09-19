@@ -534,6 +534,9 @@ extern void end_tup_output(TupOutputState *tstate);
  */
 extern EState *CreateExecutorState(void);
 extern void FreeExecutorState(EState *estate);
+#ifdef RCC_SR
+extern Snapshot RccSrGetReadSnapshot(EState *estate);	/* read-latest scan snapshot */
+#endif
 extern ExprContext *CreateExprContext(EState *estate);
 extern ExprContext *CreateWorkExprContext(EState *estate);
 extern ExprContext *CreateStandaloneExprContext(void);

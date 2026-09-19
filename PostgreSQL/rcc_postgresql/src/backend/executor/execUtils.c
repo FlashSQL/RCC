@@ -64,8 +64,46 @@
 #include "utils/builtins.h"
 #include "utils/memutils.h"
 #include "utils/rel.h"
+#include "utils/snapmgr.h"
 #include "utils/typcache.h"
 
+
+#ifdef RCC_SR
+#include "access/xact.h"
+
+/*
+ * RCC_SR read-latest: hand a plain SELECT's read scans a SnapshotDirty so they
+ * return the latest (including uncommitted/speculative) version of each row
+ * instead of the committed-snapshot version.  The fork's HeapTupleSatisfiesDirty
+ * already collapses each update chain to a single latest version, so a Dirty
+ * scan yields one row per live tuple.  UPDATE/DELETE keep their MVCC snapshot
+ * (the write path finds the latest itself).  The snapshot is allocated in the
+ * per-query context so it outlives the scan.
+ */
+Snapshot
+RccSrGetReadSnapshot(EState *estate)
+{
+	Snapshot	dirty;
+
+	/*
+	 * Only a plain read-only SELECT reads latest via SnapshotDirty.  A SELECT
+	 * FOR UPDATE/SHARE (rowMarks present) must keep the MVCC snapshot so its
+	 * scan returns the committed version and LockRows/heap_lock_tuple follows
+	 * the update chain to lock the latest version (the proven base-RCC path);
+	 * handing LockRows a speculative Dirty tuple makes it fail to lock ("found
+	 * no more tuples").
+	 */
+	if (estate->es_plannedstmt == NULL ||
+		estate->es_plannedstmt->commandType != CMD_SELECT ||
+		estate->es_plannedstmt->rowMarks != NIL)
+		return estate->es_snapshot;
+
+	dirty = (Snapshot) MemoryContextAllocZero(estate->es_query_cxt,
+											  sizeof(SnapshotData));
+	InitDirtySnapshot(*dirty);
+	return dirty;
+}
+#endif
 
 static bool tlist_matches_tupdesc(PlanState *ps, List *tlist, int varno, TupleDesc tupdesc);
 static void ShutdownExprContext(ExprContext *econtext, bool isCommit);

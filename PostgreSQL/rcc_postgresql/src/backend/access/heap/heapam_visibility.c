@@ -74,6 +74,9 @@
 #include "access/transam.h"
 #include "access/xact.h"
 #include "access/xlog.h"
+#ifdef RCC
+#include "access/rcc.h"			/* RccReadLatestDeferredCommitted */
+#endif
 #include "storage/bufmgr.h"
 #include "storage/procarray.h"
 #include "utils/builtins.h"
@@ -772,8 +775,14 @@ HeapTupleSatisfiesUpdate(HeapTuple htup, CommandId curcid,
 					InvalidTransactionId);
 				return TM_Ok; // Update or Lock을 건 TRX가 Abort되었으므로, Invalid tuple임. Tuple Lock을 걸어도 된다고 처리
 			}
-			else
+			else{
+				/* Committed base, in-progress newer version: caller follows the
+				 * chain.  If that writer aborts mid-follow the row momentarily
+				 * vanishes -> flag it so a 0-row UPDATE retries (like Dirty:1297
+				 * for SELECT), rather than being mistaken for a legit empty. */
+				RccReadLatestDeferredCommitted = true;
 				return TM_Updated; // 하지만 그 트랜잭션이 Abort하지 않았다면 아직 Valid한 튜플임 최신 버전 Follow
+			}
 		}
 		if(TransactionIdDidAbort(HeapTupleHeaderGetRawXmax(tuple))){
 			SetHintBits(tuple, buffer, HEAP_XMAX_INVALID,
@@ -1294,12 +1303,19 @@ HeapTupleSatisfiesDirty(HeapTuple htup, Snapshot snapshot,
 				snapshot->xmax = HeapTupleHeaderGetRawXmax(tuple);
 			return true;
 		}
+		/*
+		 * We are skipping this COMMITTED version to follow an in-progress newer
+		 * version.  If that writer aborts before we reach its version, the row
+		 * momentarily vanishes (seqscan can't fall back).  Flag it so ExecutePlan
+		 * can tell this from a legitimately empty result (item i_id=-1).
+		 */
+		RccReadLatestDeferredCommitted = true;
 		return false;
 #else
 		if (!HEAP_XMAX_IS_LOCKED_ONLY(tuple->t_infomask))
 			snapshot->xmax = HeapTupleHeaderGetRawXmax(tuple);
 		return true;
-#endif	
+#endif
 	}
 
 	if (!TransactionIdDidCommit(HeapTupleHeaderGetRawXmax(tuple)))
@@ -1347,6 +1363,18 @@ HeapTupleSatisfiesDirty(HeapTuple htup, Snapshot snapshot,
  * and more contention on ProcArrayLock.
  */
 #ifdef RCC
+/*
+ * RCC: when we UPDATE a row whose committed base B has already been updated
+ * by another in-progress transaction, we chain our version onto the end of
+ * that chain (B -> V1 -> ... -> ours).  Under stock MVCC B stays visible to
+ * us (its xmax is "in progress" in our snapshot), so a plain SELECT would
+ * return BOTH B and our own version, and an index scan would stop at B and
+ * never show our update.  heap_update records B as "superseded by me"
+ * (RccNoteSuperseded, via the chain walk in heapam_tuple_lock); here such a
+ * tuple is hidden.  Versions of other in-progress transactions stay invisible
+ * as usual: under RR we see the snapshot plus our own writes, nothing more.
+ */
+
 static bool
 HeapTupleSatisfiesMVCC(HeapTuple htup, Snapshot snapshot,
 					   Buffer buffer)
@@ -1402,6 +1430,28 @@ HeapTupleSatisfiesMVCC(HeapTuple htup, Snapshot snapshot,
 		}
 		else if (TransactionIdIsCurrentTransactionId(HeapTupleHeaderGetRawXmin(tuple)))
 		{
+			/*
+			 * RCC: another in-progress transaction may have chained its own
+			 * update onto this uncommitted version of ours.  heap_update then
+			 * stored ITS cmax in t_cid (cmin and cmax share the field), so the
+			 * command-id test below would run against a foreign value and
+			 * wrongly hide our version for the rest of our transaction.  Our
+			 * own later commands cannot have touched it (xmax is not ours),
+			 * so recover our cmin from RccLookupMyVersionCmin and apply the usual test.
+			 */
+			if (!(tuple->t_infomask & HEAP_XMAX_INVALID) &&
+				!HEAP_XMAX_IS_LOCKED_ONLY(tuple->t_infomask) &&
+				!TransactionIdIsCurrentTransactionId(HeapTupleHeaderGetUpdateXid(tuple)))
+			{
+				CommandId	mycmin;
+
+				/* same test as below, against OUR recorded cmin (t_cid is foreign) */
+				if (RccLookupMyVersionCmin(htup->t_tableOid, &htup->t_self, &mycmin) &&
+					mycmin >= snapshot->curcid)
+					return (mycmin != snapshot->curcid);
+				return !RccIsSuperseded(htup->t_tableOid, &htup->t_self);
+			}
+
 			if (HeapTupleHeaderGetCmin(tuple) >= snapshot->curcid){
 				if (HeapTupleHeaderGetCmin(tuple) != snapshot->curcid){
 					return true;
@@ -1495,7 +1545,7 @@ HeapTupleSatisfiesMVCC(HeapTuple htup, Snapshot snapshot,
 				return false;	/* deleted before scan started */
 		}
 		if (XidInMVCCSnapshot(xmax, snapshot))
-			return true;
+			return !RccIsSuperseded(htup->t_tableOid, &htup->t_self);	/* RCC */
 		if (TransactionIdDidCommit(xmax))
 			return false;		/* updating transaction committed */
 		/* it must have aborted or crashed */
@@ -1513,7 +1563,7 @@ HeapTupleSatisfiesMVCC(HeapTuple htup, Snapshot snapshot,
 		}
 
 		if (XidInMVCCSnapshot(HeapTupleHeaderGetRawXmax(tuple), snapshot))
-			return true;
+			return !RccIsSuperseded(htup->t_tableOid, &htup->t_self);	/* RCC */
 
 		if (!TransactionIdDidCommit(HeapTupleHeaderGetRawXmax(tuple)))
 		{
@@ -1531,7 +1581,7 @@ HeapTupleSatisfiesMVCC(HeapTuple htup, Snapshot snapshot,
 	{
 		/* xmax is committed, but maybe not according to our snapshot */
 		if (XidInMVCCSnapshot(HeapTupleHeaderGetRawXmax(tuple), snapshot))
-			return true;		/* treat as still in progress */
+			return !RccIsSuperseded(htup->t_tableOid, &htup->t_self);	/* RCC */
 	}
 
 	/* xmax transaction committed */

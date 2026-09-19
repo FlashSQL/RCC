@@ -1474,8 +1474,12 @@ heap_fetch(Relation relation,
 #endif	
 
 	if (valid)
-		PredicateLockTID(relation, &(tuple->t_self), snapshot,
-						 HeapTupleHeaderGetXmin(tuple->t_data));
+#ifdef RCC_SR
+		/* FOR UPDATE/SHARE reads take row locks -> skip SIRead (write intent) */
+		if (!RccStmtForUpdate)
+#endif
+			PredicateLockTID(relation, &(tuple->t_self), snapshot,
+							 HeapTupleHeaderGetXmin(tuple->t_data));
 
 	HeapCheckForSerializableConflictOut(valid, relation, tuple, buffer, snapshot);
 
@@ -1621,6 +1625,10 @@ heap_hot_search_buffer(ItemPointer tid, Relation relation, Buffer buffer,
 			if (valid)
 			{
 				ItemPointerSetOffsetNumber(tid, offnum);
+#ifdef RCC_SR
+				/* FOR UPDATE/SHARE reads take row locks -> skip SIRead */
+				if (!RccStmtForUpdate)
+#endif
 				PredicateLockTID(relation, &heapTuple->t_self, snapshot,
 								 HeapTupleHeaderGetXmin(heapTuple->t_data));
 				if (all_dead)
@@ -1782,6 +1790,89 @@ heap_get_latest_tid(TableScanDesc sscan,
 		UnlockReleaseBuffer(buffer);
 	}							/* end of loop */
 }
+
+
+#ifdef RCC_SR
+/*
+ *	RccVersionChainReaches - is `cand` a newer version of the row at `from`?
+ *
+ * Follows t_ctid links from `from` (a tuple this scan already returned) and
+ * reports whether the chain reaches `cand` created by `cand_xmin`.  Used by
+ * read-latest scans (execScan.c) to avoid returning a second, speculative
+ * version of a row the same scan already returned: a version born mid-scan
+ * can be encountered again by the very scan that read its predecessor, which
+ * would make one query return the same row twice and manufacture an RW+WR
+ * 2-cycle with the row's writer.
+ *
+ * Chain links are validated XMAX -> XMIN like heap_get_latest_tid above, so
+ * a pruned/reused line pointer just terminates the walk (returns false and
+ * the caller behaves as before this guard existed).
+ */
+bool
+RccVersionChainReaches(Relation relation, ItemPointer from,
+					   ItemPointer cand, TransactionId cand_xmin)
+{
+	ItemPointerData ctid = *from;
+	TransactionId priorXmax = InvalidTransactionId;
+
+	for (int hop = 0; hop < 8; hop++)
+	{
+		Buffer		buffer;
+		Page		page;
+		OffsetNumber offnum;
+		ItemId		lp;
+		HeapTupleData tp;
+
+		buffer = ReadBuffer(relation, ItemPointerGetBlockNumber(&ctid));
+		LockBuffer(buffer, BUFFER_LOCK_SHARE);
+		page = BufferGetPage(buffer);
+
+		offnum = ItemPointerGetOffsetNumber(&ctid);
+		if (offnum < FirstOffsetNumber || offnum > PageGetMaxOffsetNumber(page))
+		{
+			UnlockReleaseBuffer(buffer);
+			return false;
+		}
+		lp = PageGetItemId(page, offnum);
+		if (!ItemIdIsNormal(lp))
+		{
+			UnlockReleaseBuffer(buffer);
+			return false;
+		}
+
+		tp.t_self = ctid;
+		tp.t_data = (HeapTupleHeader) PageGetItem(page, lp);
+		tp.t_len = ItemIdGetLength(lp);
+		tp.t_tableOid = RelationGetRelid(relation);
+
+		/* after following t_ctid we might land on an unrelated tuple */
+		if (TransactionIdIsValid(priorXmax) &&
+			!TransactionIdEquals(priorXmax, HeapTupleHeaderGetXmin(tp.t_data)))
+		{
+			UnlockReleaseBuffer(buffer);
+			return false;
+		}
+
+		/* no update successor -> chain ends short of cand */
+		if ((tp.t_data->t_infomask & HEAP_XMAX_INVALID) ||
+			HeapTupleHeaderIsOnlyLocked(tp.t_data) ||
+			HeapTupleHeaderIndicatesMovedPartitions(tp.t_data) ||
+			ItemPointerEquals(&tp.t_self, &tp.t_data->t_ctid))
+		{
+			UnlockReleaseBuffer(buffer);
+			return false;
+		}
+
+		ctid = tp.t_data->t_ctid;
+		priorXmax = HeapTupleHeaderGetUpdateXid(tp.t_data);
+		UnlockReleaseBuffer(buffer);
+
+		if (ItemPointerEquals(&ctid, cand))
+			return TransactionIdEquals(priorXmax, cand_xmin);
+	}
+	return false;
+}
+#endif							/* RCC_SR */
 
 
 /*
@@ -3510,6 +3601,8 @@ skip_visibility_check:
 				while (TransactionIdIsInProgress(xwait) &&
 						ItemPointerEquals(&oldtup.t_self, &oldtup.t_data->t_ctid))
 			{
+				/* 스핀 중에도 시그널(백그라운드 detector의 victim kill 등) 처리 */
+				CHECK_FOR_INTERRUPTS();
 				if(TransactionIdDidAbort(HeapTupleHeaderGetRawXmin(oldtup.t_data))){
 					/* Breakdown Code - goto 전에 측정 */
 					INSTR_TIME_SET_CURRENT(txwait_end);
@@ -3583,13 +3676,19 @@ skip_visibility_check:
 		}
 
 		if (can_continue){
-			if( TransactionIdIsValid(xid) && 
+			if( TransactionIdIsValid(xid) &&
 				relation->rd_id > 16000 &&
 				HeapTupleHeaderGetRawXmax(oldtup.t_data) != xid){
 				// 이 케이스는, Delete된 튜플에 Lock을 걸고 넘어온 경우임.
 				if(!(oldtup.t_data->t_infomask2 & HEAP_RCC_READ))
 					oldtup.t_data->t_infomask2 |= HEAP_RCC_READ;
 				result = TM_Ok;
+#ifdef RCC_FORKTRACE
+				elog(LOG, "[FT] foreignxmax-ok rel=%s xid=%u tid=(%u,%u) oldxmax=%u",
+					 RelationGetRelationName(relation), xid,
+					 ItemPointerGetBlockNumber(&oldtup.t_self), ItemPointerGetOffsetNumber(&oldtup.t_self),
+					 HeapTupleHeaderGetRawXmax(oldtup.t_data));
+#endif
 			}
 			else if(TransactionIdIsValid(xid) &&
 				(HeapTupleHeaderGetRawXmin(oldtup.t_data) == xid) && 
@@ -3909,6 +4008,14 @@ skip_visibility_check:
 
 		END_CRIT_SECTION();
 
+#ifdef RCC_FORKTRACE
+		{
+			const char *ft_rn = RelationGetRelationName(relation);
+			if (strncmp(ft_rn, "warehouse1", 10) == 0 || strncmp(ft_rn, "district1", 9) == 0)
+				elog(LOG, "[FT] updlock rel=%s xid=%u tid=(%u,%u)", ft_rn, xid,
+					 ItemPointerGetBlockNumber(&oldtup.t_self), ItemPointerGetOffsetNumber(&oldtup.t_self));
+		}
+#endif
 		LockBuffer(buffer, BUFFER_LOCK_UNLOCK);
 
 		/*
@@ -4175,6 +4282,17 @@ skip_visibility_check:
 		PageSetLSN(BufferGetPage(buffer), recptr);
 	}
 	END_CRIT_SECTION();
+#ifdef RCC_FORKTRACE
+	{
+		const char *ft_rn = RelationGetRelationName(relation);
+		if (strncmp(ft_rn, "warehouse1", 10) == 0 || strncmp(ft_rn, "district1", 9) == 0)
+			elog(LOG, "[FT] upd rel=%s xid=%u old=(%u,%u) oldxmin=%u new=(%u,%u)",
+				 ft_rn, xid,
+				 ItemPointerGetBlockNumber(&oldtup.t_self), ItemPointerGetOffsetNumber(&oldtup.t_self),
+				 HeapTupleHeaderGetRawXmin(oldtup.t_data),
+				 ItemPointerGetBlockNumber(&heaptup->t_self), ItemPointerGetOffsetNumber(&heaptup->t_self));
+	}
+#endif
 	TransactionId xmin = HeapTupleHeaderGetRawXmin(oldtup.t_data);
 	if (xmin != InvalidTransactionId &&
 		TransactionIdIsInProgress(xmin))
@@ -4185,6 +4303,14 @@ skip_visibility_check:
 		// 만약에 xmin이 aborted된 트랜잭션이라면, tmin_is_aborted를 true로 설정
 		tmin_is_aborted = true;
 	}
+	/*
+	 * If this old version was reached by walking a chain from a committed
+	 * base (heapam_tuple_lock), that base must no longer show up in our own
+	 * reads: we now own the newest version of the row.
+	 */
+	RccNoteSupersededIfWalked(RelationGetRelid(relation), &oldtup.t_self);
+	/* remember our new version's cmin: a foreign chainer may clobber t_cid */
+	RccNoteMyVersion(RelationGetRelid(relation), &heaptup->t_self, cid);
 	if(CheckAbortedDependencies()){
 		/* 의존 트랜잭션이 abort 되었으므로 직렬화 실패 */
 		if(relation->rd_id == 16385){
@@ -5941,20 +6067,22 @@ skip_visibility_check_in_lock:
 				while (TransactionIdIsInProgress(xwait) &&
 					ItemPointerEquals(&tuple->t_self, &tuple->t_data->t_ctid))
 				{
+					/* 스핀 중에도 시그널(백그라운드 detector의 victim kill 등) 처리 */
+					CHECK_FOR_INTERRUPTS();
 					if(TransactionIdDidAbort(xmin)){
 						/* Breakdown Code - goto 전에 측정 */
 						INSTR_TIME_SET_CURRENT(txwait_end);
 						INSTR_TIME_SUBTRACT(txwait_end, txwait_start);
 						xact_count_tuple_update_wait_time(INSTR_TIME_GET_MICROSEC(txwait_end));
 						/* Breakdown Code End */
-						if (have_tuple_lock)
-							UnlockTupleTuplock(relation, tid, mode);
-						if (vmbuffer != InvalidBuffer)
-							ReleaseBuffer(vmbuffer);
-						ereport(ERROR,
-								(errcode(ERRCODE_T_R_SERIALIZATION_FAILURE),
-								 errmsg("aborting due to aborted xmin during spin-wait in heap_lock_tuple, xmin=%u, xwait=%u, TX_ID=%u",
-										xmin, xwait, GetTopTransactionIdIfAny())));
+						/*
+						 * This version's creator aborted: it is dead.  Report
+						 * TM_Deleted so heapam_tuple_lock re-resolves the row
+						 * from its original tid (no error, unbounded retry).
+						 */
+						LockBuffer(*buffer, BUFFER_LOCK_EXCLUSIVE);
+						result = TM_Deleted;
+						goto failed;
 					}
 					// if(mode == LockTupleKeyShare){
 					// 	if(GetTopTransactionIdIfAny() == xmin){
@@ -6294,6 +6422,17 @@ failed:
 			GetTopTransactionIdIfAny());
 	}
 #endif	
+#ifdef RCC_FORKTRACE
+	{
+		const char *ft_rn = RelationGetRelationName(relation);
+		if (strncmp(ft_rn, "warehouse1", 10) == 0 || strncmp(ft_rn, "district1", 9) == 0)
+			elog(LOG, "[FT] lock rel=%s xid=%u tid=(%u,%u) newxmax=%u multi=%d",
+				 ft_rn, GetTopTransactionIdIfAny(),
+				 ItemPointerGetBlockNumber(&tuple->t_self), ItemPointerGetOffsetNumber(&tuple->t_self),
+				 HeapTupleHeaderGetRawXmax(tuple->t_data),
+				 (tuple->t_data->t_infomask & HEAP_XMAX_IS_MULTI) ? 1 : 0);
+	}
+#endif
 	TransactionId xmin = HeapTupleHeaderGetRawXmin(tuple->t_data);
 		// Update한 튜플이 만약에 uncommitted trx에 의해서 update된 것이라면
 	if (xmin != InvalidTransactionId &&
@@ -6328,9 +6467,8 @@ out_unlocked:
 	if (have_tuple_lock)
 		UnlockTupleTuplock(relation, tid, mode);
 	if(tmin_is_aborted){
-		ereport(ERROR,
-                    (errcode(ERRCODE_T_R_SERIALIZATION_FAILURE),
-                     errmsg("cannot lock tuple because dependent transaction abort Depending: %u , TX_ID: %u", xmin, GetTopTransactionIdIfAny())));
+		/* locked a version whose creator aborted meanwhile: dead, caller retries */
+		result = TM_Deleted;
 	}
 	if(not_final_update){
 		ereport(ERROR,

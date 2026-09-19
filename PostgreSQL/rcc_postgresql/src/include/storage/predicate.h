@@ -59,6 +59,12 @@ extern void PredicateLockRelation(Relation relation, Snapshot snapshot);
 extern void PredicateLockPage(Relation relation, BlockNumber blkno, Snapshot snapshot);
 extern void PredicateLockTID(Relation relation, ItemPointer tid, Snapshot snapshot,
 							 TransactionId tuple_xid);
+#ifdef RCC_SR
+extern void RccSfuLeafReset(void);
+extern void RccSfuDeferLeafLock(Relation relation, BlockNumber blkno,
+								Snapshot snapshot);
+extern void RccSfuApplyLeafLocks(void);
+#endif
 extern void PredicateLockPageSplit(Relation relation, BlockNumber oldblkno, BlockNumber newblkno);
 extern void PredicateLockPageCombine(Relation relation, BlockNumber oldblkno, BlockNumber newblkno);
 extern void TransferPredicateLocksToHeapRelation(Relation relation);

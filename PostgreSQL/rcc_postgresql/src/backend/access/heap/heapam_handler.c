@@ -354,6 +354,17 @@ heapam_tuple_update(Relation relation, ItemPointer otid, TupleTableSlot *slot,
 		Assert((*update_indexes == TU_Summarizing) ||
 			   (*update_indexes == TU_None));
 
+#ifdef RCC_SR
+
+	/*
+	 * Leaf SIReads deferred by this UPDATE's target-locate descent: anchor
+	 * them now that the row is updated (see RccSfuDeferLeafLock; same
+	 * wait-window self-cycle as an SFU otherwise).
+	 */
+	if (result == TM_Ok && RccStmtUpdateScan)
+		RccSfuApplyLeafLocks();
+#endif
+
 	if (shouldFree)
 		pfree(tuple);
 
@@ -371,6 +382,35 @@ heapam_tuple_lock(Relation relation, ItemPointer tid, Snapshot snapshot,
 	Buffer		buffer;
 	HeapTuple	tuple = &bslot->base.tupdata;
 	bool		follow_updates;
+#ifdef RCC
+	/*
+	 * Chain-follow retry (RCC): while walking an update chain we may land on
+	 * a version whose creator has since ABORTED.  That version is dead and
+	 * the row's live version is back at (or reachable from) the tid we were
+	 * originally given, so instead of failing the statement we restart the
+	 * walk from orig_tid -- as many times as it takes.  chain_xmin is the xid
+	 * that created the version we are currently positioned on (Invalid while
+	 * on the original tid).
+	 */
+	ItemPointerData orig_tid = *tid;
+	TransactionId chain_xmin = InvalidTransactionId;
+	/*
+	 * Where a restart resumes: the newest version on this chain that we have
+	 * seen COMMITTED (initially the tid we were given).  Under RR that tid is
+	 * our snapshot's version, typically many committed versions behind the
+	 * tip (~20 hops under contention, each a hot-page buffer lock), so
+	 * re-walking from it is expensive; the immediate predecessor of the dead
+	 * version is cheap but is often dying in the same cascade.  A committed
+	 * version cannot die, and it cannot be pruned while we run (its xmax is
+	 * newer than our xmin), so it is the safe, near restart point.
+	 */
+	ItemPointerData restart_tid = *tid;
+#define RCC_RESTART_FROM_COMMITTED() \
+	do { \
+		*tid = restart_tid; \
+		chain_xmin = InvalidTransactionId; \
+	} while (0)
+#endif
 
 	follow_updates = (flags & TUPLE_LOCK_FLAG_LOCK_UPDATE_IN_PROGRESS) != 0;
 	tmfd->traversed = false;
@@ -391,6 +431,17 @@ tuple_lock_retry:
 	result = heap_lock_tuple(relation, tuple, cid, mode, wait_policy,
 							 follow_updates, &buffer, tmfd);
 
+#ifdef RCC
+	if (result == TM_Deleted && TransactionIdIsValid(chain_xmin) &&
+		TransactionIdDidAbort(chain_xmin))
+	{
+		/* dead version (its creator aborted): re-resolve from the start */
+		ReleaseBuffer(buffer);
+		RCC_RESTART_FROM_COMMITTED();
+		goto tuple_lock_retry;
+	}
+#endif
+
 	if (result == TM_Updated &&
 		(flags & TUPLE_LOCK_FLAG_FIND_LAST_VERSION))
 	{
@@ -408,6 +459,9 @@ tuple_lock_retry:
 			*tid = tmfd->ctid;
 			/* updated row should have xmin matching this xmax */
 			priorXmax = tmfd->xmax;
+#ifdef RCC
+			chain_xmin = priorXmax;
+#endif
 
 			/* signal that a tuple later in the chain is getting locked */
 			tmfd->traversed = true;
@@ -522,6 +576,8 @@ tuple_lock_retry:
 									while (TransactionIdIsInProgress(priorXmax) &&
 										ItemPointerEquals(&tuple->t_self, &tuple->t_data->t_ctid))
 									{
+										/* 스핀 중에도 시그널(백그라운드 detector의 victim kill 등) 처리 */
+										CHECK_FOR_INTERRUPTS();
 										// pg_usleep(10L); // 1ms 대기
 										if(mode == LockTupleKeyShare){
 											if(GetTopTransactionIdIfAny() == HeapTupleHeaderGetRawXmin(tuple->t_data)){
@@ -529,10 +585,12 @@ tuple_lock_retry:
 											}
 										}
 										if(TransactionIdDidAbort(HeapTupleHeaderGetRawXmin(tuple->t_data))){
-											ereport(ERROR,
-													(errcode(ERRCODE_T_R_SERIALIZATION_FAILURE),
-													 errmsg("aborting due to aborted xmin during spin-wait in heapam_handler, xmin=%u, priorXmax=%u, TX_ID=%u",
-															HeapTupleHeaderGetRawXmin(tuple->t_data), priorXmax, GetTopTransactionIdIfAny())));
+											/* dead version: restart the walk from the original tid */
+											INSTR_TIME_SET_CURRENT(txwait_end);
+											INSTR_TIME_SUBTRACT(txwait_end, txwait_start);
+											xact_count_tuple_update_wait_time(INSTR_TIME_GET_MICROSEC(txwait_end));
+											RCC_RESTART_FROM_COMMITTED();
+											goto tuple_lock_retry;
 										}
 									}
 
@@ -647,6 +705,14 @@ live_tuple_try:
 				if (tuple->t_data == NULL)
 				{
 					Assert(!BufferIsValid(buffer));
+#ifdef RCC
+					if (TransactionIdDidAbort(priorXmax))
+					{
+						/* the dead version was pruned: restart from the original tid */
+						RCC_RESTART_FROM_COMMITTED();
+						goto tuple_lock_retry;
+					}
+#endif
 #ifdef RCC_DEBUG					
 					fprintf(stderr, "TM_Deleted 1: relation: %u, mode: %u, flags: %u, tupleid (%u, %u) TX_ID: %u\n",
 					 relation->rd_id,
@@ -692,6 +758,15 @@ live_tuple_try:
 				 * without the buffer content lock, because they can't be
 				 * changing.  We'd better hold a buffer pin though.
 				 */
+#ifdef RCC
+				if (TransactionIdDidAbort(priorXmax))
+				{
+					/* not deleted -- its creator aborted: restart from the original tid */
+					ReleaseBuffer(buffer);
+					RCC_RESTART_FROM_COMMITTED();
+					goto tuple_lock_retry;
+				}
+#endif
 				if (ItemPointerEquals(&tuple->t_self, &tuple->t_data->t_ctid))
 				{
 					/* deleted, so forget about it */
@@ -709,9 +784,18 @@ live_tuple_try:
 				}
 
 				/* updated, so look at the updated row */
+#ifdef RCC
+				/* stepping past a committed version: newest safe restart point */
+				if (HeapTupleHeaderXminCommitted(tuple->t_data) ||
+					TransactionIdDidCommit(HeapTupleHeaderGetRawXmin(tuple->t_data)))
+					restart_tid = tuple->t_self;
+#endif
 				*tid = tuple->t_data->t_ctid;
 				/* updated row should have xmin matching this xmax */
 				priorXmax = HeapTupleHeaderGetUpdateXid(tuple->t_data);
+#ifdef RCC
+				chain_xmin = priorXmax;
+#endif
 				ReleaseBuffer(buffer);
 				/* loop back to fetch next in chain */
 			}
@@ -737,6 +821,33 @@ live_tuple_try:
 
 	/* store in slot, transferring existing pin */
 	ExecStorePinnedBufferHeapTuple(tuple, slot, buffer);
+
+#ifdef RCC
+	/*
+	 * We walked an update chain from orig_tid to the version now locked at
+	 * *tid.  If the caller (ExecUpdate) goes on to update that version, its
+	 * heap_update marks orig_tid as superseded by us (see RccNoteSuperseded).
+	 */
+	if (result == TM_Ok && tmfd->traversed)
+		RccSetChainWalk(RelationGetRelid(relation), &orig_tid, tid);
+#endif
+
+#ifdef RCC_SR
+	/*
+	 * FOR UPDATE/SHARE skipped scan-time SIReads (RccStmtForUpdate); leave
+	 * one on the version actually locked instead, so a later overwrite of
+	 * that version is still detected as an RW conflict.  Each locker's
+	 * SIRead lands on its own locked version, so same-row lockers do not
+	 * see each other (no false mutual RW cycles).
+	 */
+	if (result == TM_Ok && RccStmtForUpdate)
+	{
+		PredicateLockTID(relation, &tuple->t_self, snapshot,
+						 HeapTupleHeaderGetXmin(tuple->t_data));
+		/* leaf SIReads deferred by the index descent (see predicate.c) */
+		RccSfuApplyLeafLocks();
+	}
+#endif
 
 	return result;
 }
@@ -2386,6 +2497,10 @@ heapam_scan_bitmap_next_block(TableScanDesc scan,
 			if (valid)
 			{
 				hscan->rs_vistuples[ntup++] = offnum;
+#ifdef RCC_SR
+				/* FOR UPDATE/SHARE reads take row locks -> skip SIRead */
+				if (!RccStmtForUpdate)
+#endif
 				PredicateLockTID(scan->rs_rd, &loctup.t_self, snapshot,
 								 HeapTupleHeaderGetXmin(loctup.t_data));
 			}

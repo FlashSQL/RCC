@@ -37,6 +37,11 @@ typedef enum
 	PROCSIG_LOG_MEMORY_CONTEXT, /* ask backend to log the memory contexts */
 	PROCSIG_PARALLEL_APPLY_MESSAGE, /* Message from parallel apply workers */
 
+#ifdef RCC
+	PROCSIG_RCC_CASCADE_ABORT,	/* RCC bg detector doomed you: re-check
+								 * MyProc->rccDoomedXid at the next safe point */
+#endif
+
 	/* Recovery conflict reasons */
 	PROCSIG_RECOVERY_CONFLICT_DATABASE,
 	PROCSIG_RECOVERY_CONFLICT_TABLESPACE,

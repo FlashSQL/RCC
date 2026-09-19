@@ -10,6 +10,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BASE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 POSTGRESQL_HOME="$BASE_DIR/rcc_postgresql"
 SYSBENCH_HOME="$BASE_DIR/sysbench-tpcc"
+# sysbench (built with --with-pgsql) for tpcc.lua's `#!/usr/bin/env sysbench`
+export PATH="/home/vldb/sysbench/src:$PATH"
 BLD_PATH="${POSTGRESQL_HOME}/bld"
 PSQL_BIN="${BLD_PATH}/bin/psql"
 PG_BIN="${BLD_PATH}/bin/postgres"
@@ -24,7 +26,26 @@ RESULTS_DIR=""
 
 DEFAULT_WARMUP=50
 PAGE_SIZE=16
-BUILD_MODES=("vanilla" "rcc")
+# Configurations to sweep, as <build>_<isolation>:
+#   vanilla_rc / vanilla_rr : stock PostgreSQL (-O2) at Read Committed / Repeatable Read
+#   rcc_rr                  : RCC (-O2 -DRCC) at Repeatable Read
+BUILD_MODES=("vanilla_rc" "vanilla_rr" "rcc_rr")
+
+# NUMA policy, chosen per experiment by set_numa_policy (2 sockets x 48 logical CPUs):
+#   up to NUMA_PIN_MAX_THREADS client threads : CPUs and memory pinned to node 0
+#   above that                                : all CPUs, memory interleaved over both nodes
+# Applied to the server and to sysbench alike.  Empty if numactl is missing.
+NUMA_PIN_MAX_THREADS=128
+NUMACTL=""
+set_numa_policy() {
+    local TERMINALS=$1
+    command -v numactl >/dev/null 2>&1 || { NUMACTL=""; return; }
+    if (( TERMINALS <= NUMA_PIN_MAX_THREADS )); then
+        NUMACTL="numactl --cpunodebind=0 --membind=0"
+    else
+        NUMACTL="numactl --interleave=all"
+    fi
+}
 
 # Format: "name:warehouses,terminals,duration"
 EXPERIMENTS=(
@@ -97,7 +118,7 @@ start_postgresql() {
     BUILD_LOG="$RESULT_DIR/build.log"
     CONFIG_LOG="$RESULT_DIR/config.log"
 
-    if [[ "$BUILD_MODE" == "vanilla" ]]; then
+    if [[ "$BUILD_MODE" == vanilla* ]]; then
         ../configure --prefix=$POSTGRESQL_HOME/bld --with-blocksize=$PAGE_SIZE CFLAGS="-O2" > "$CONFIG_LOG" 2>&1
     else
         ../configure --prefix=$POSTGRESQL_HOME/bld --with-blocksize=$PAGE_SIZE CFLAGS="-O2 -DRCC" > "$CONFIG_LOG" 2>&1
@@ -119,7 +140,7 @@ start_postgresql() {
     sed -i "s|log_directory = '.*'|log_directory = '$LOG_DIR'|" $DATA_DIR/postgresql.conf
 
     print_info "Starting PostgreSQL..."
-    $PG_BIN -D $DATA_DIR &
+    $NUMACTL $PG_BIN -D $DATA_DIR &
     sleep 5
 
     $PSQL_BIN -U postgres -c "CREATE DATABASE tpcc OWNER postgres;" 2>/dev/null
@@ -127,7 +148,7 @@ start_postgresql() {
 
     print_info "Loading TPC-C data (warehouses=$WAREHOUSES)..."
     cd $SYSBENCH_HOME
-    ./tpcc.lua --pgsql-user=postgres --pgsql-db=tpcc \
+    $NUMACTL ./tpcc.lua --pgsql-user=postgres --pgsql-db=tpcc \
         --threads=$WAREHOUSES --tables=1 --scale=$WAREHOUSES \
         --use_fk=0 --trx_level=RR --partition=yes --db-driver=pgsql prepare > /dev/null 2>&1
 
@@ -154,22 +175,50 @@ run_experiment() {
     print_header "Experiment: $NAME ($BUILD_MODE)"
     echo "  Warehouses: $WAREHOUSES, Terminals: $TERMINALS, Duration: ${DURATION}s"
 
+    set_numa_policy $TERMINALS
+    print_info "NUMA policy: ${NUMACTL:-none}"
+
     start_postgresql $WAREHOUSES $RESULT_DIR $BUILD_MODE
     if [ $? -ne 0 ]; then
         return 1
     fi
 
-    print_info "Running Sysbench TPC-C..."
+    # isolation level follows the configuration name (see BUILD_MODES)
+    local TRX
+    case "$BUILD_MODE" in
+        *_rc) TRX="RC" ;;
+        *)    TRX="RR" ;;
+    esac
+
     cd $SYSBENCH_HOME
-    ./tpcc.lua --pgsql-user=postgres --pgsql-db=tpcc \
-        --warmup-time=$DEFAULT_WARMUP --time=$DURATION \
-        --threads=$TERMINALS --report-interval=1 --retry_on_fail=yes \
-        --tables=1 --scale=$WAREHOUSES --use_fk=0 --trx_level=RR \
+
+    # Warmup as a SEPARATE run (discarded), so server-side statistics cover
+    # only the measured run.
+    print_info "Warming up... (${DEFAULT_WARMUP}s, trx_level=$TRX, not measured)"
+    $NUMACTL ./tpcc.lua --pgsql-user=postgres --pgsql-db=tpcc \
+        --time=$DEFAULT_WARMUP \
+        --threads=$TERMINALS --report-interval=1 --retry_on_fail=yes --backoff_on=0 \
+        --tables=1 --scale=$WAREHOUSES --use_fk=0 --trx_level=$TRX \
+        --partition=yes --db-driver=pgsql run > $RESULT_DIR/warmup.log 2>&1
+    $PSQL_BIN -U postgres -d tpcc -c "SELECT pg_stat_reset();" > /dev/null 2>&1
+
+    print_info "Running Sysbench TPC-C... (trx_level=$TRX, ${DURATION}s measured)"
+    $NUMACTL ./tpcc.lua --pgsql-user=postgres --pgsql-db=tpcc \
+        --time=$DURATION \
+        --threads=$TERMINALS --report-interval=1 --retry_on_fail=yes --backoff_on=0 \
+        --tables=1 --scale=$WAREHOUSES --use_fk=0 --trx_level=$TRX \
         --partition=yes --db-driver=pgsql run > $RESULT_DIR/sysbench.log 2>&1
+
+    # TPC-C Clause 3.3 consistency check on the final data, before the server stops.
+    print_info "Running consistency check..."
+    $PSQL_BIN -U postgres -d tpcc -f "$SCRIPT_DIR/consistency_check.sql" \
+        > $RESULT_DIR/consistency.txt 2>&1
 
     # Save summary
     echo "=== Experiment Summary ===" > $RESULT_DIR/summary.txt
     echo "Build Mode: $BUILD_MODE" >> $RESULT_DIR/summary.txt
+    echo "Isolation: $TRX" >> $RESULT_DIR/summary.txt
+    echo "NUMA: ${NUMACTL:-none}" >> $RESULT_DIR/summary.txt
     echo "Warehouses: $WAREHOUSES" >> $RESULT_DIR/summary.txt
     echo "Terminals: $TERMINALS" >> $RESULT_DIR/summary.txt
     echo "Duration: ${DURATION}s" >> $RESULT_DIR/summary.txt

@@ -243,7 +243,7 @@ lnext:
 				if (IsolationUsesXactSnapshot())
 					ereport(ERROR,
 							(errcode(ERRCODE_T_R_SERIALIZATION_FAILURE),
-							 errmsg("could not serialize access due to concurrent update 2 relation: %u, t_id: (%u, %u), TX_ID: %u", 
+							 errmsg("could not serialize access due to concurrent update 2 relation: %u, t_id: (%u, %u), TX_ID: %u",
 								 RelationGetRelid(erm->relation),
 								 ItemPointerGetBlockNumber(&tid),
 								 ItemPointerGetOffsetNumber(&tid),

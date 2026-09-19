@@ -17,7 +17,7 @@ INITDB_BIN="${BLD_PATH}/bin/initdb"
 # DEFAULT CONFIGURATION
 # ==========================================
 PAGE_SIZE=16
-BUILD_MODE="RCC"
+BUILD_MODE="rr"
 
 # ==========================================
 # HELPER FUNCTIONS
@@ -46,7 +46,11 @@ usage() {
     echo ""
     echo "Options:"
     echo "  --vanilla             Build vanilla PostgreSQL (without RCC)"
+    echo "  --rr                  Build RCC for Repeatable Read experiments (-DRCC) [default]"
+    echo "  --sr                  Build RCC Speculative Read mode: read latest + RW deps (-DRCC -DRCC_SR)"
     echo "  --skip-build          Skip build step (use existing binaries)"
+    echo "  --numa <mode>         Server NUMA policy: pin (CPUs+memory on node 0) [default],"
+    echo "                        interleave (all CPUs, memory interleaved; use for 256 threads), none"
     echo "  -h, --help            Show this help"
     exit 0
 }
@@ -63,6 +67,7 @@ stop_postgresql() {
 DATA_DIR="${rcc_data_dir:-}"
 LOG_DIR="${rcc_log_dir:-}"
 SKIP_BUILD=false
+NUMA_MODE="pin"
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -70,9 +75,25 @@ while [[ $# -gt 0 ]]; do
             BUILD_MODE="vanilla"
             shift
             ;;
+        --rr)
+            BUILD_MODE="rr"
+            shift
+            ;;
+        --sr)
+            BUILD_MODE="sr"
+            shift
+            ;;
         --skip-build)
             SKIP_BUILD=true
             shift
+            ;;
+        --numa)
+            NUMA_MODE="$2"
+            if [[ "$NUMA_MODE" != "pin" && "$NUMA_MODE" != "interleave" && "$NUMA_MODE" != "none" ]]; then
+                print_error "Unknown --numa mode: $NUMA_MODE"
+                usage
+            fi
+            shift 2
             ;;
         -h|--help)
             usage
@@ -122,6 +143,10 @@ if [[ "$SKIP_BUILD" == false ]]; then
 
     if [[ "$BUILD_MODE" == "vanilla" ]]; then
         ../configure --prefix=$BLD_PATH --with-blocksize=$PAGE_SIZE CFLAGS="-O2" > "$CONFIG_LOG" 2>&1
+    elif [[ "$BUILD_MODE" == "sr" ]]; then
+        # RCC_SR = read latest (speculative) version + RW dependency tracking via the
+        # non-blocking last-accessor chain (reuses the RCC_SI registry machinery)
+        ../configure --prefix=$BLD_PATH --with-blocksize=$PAGE_SIZE CFLAGS="-O2 -DRCC -DRCC_SR" > "$CONFIG_LOG" 2>&1
     else
         ../configure --prefix=$BLD_PATH --with-blocksize=$PAGE_SIZE CFLAGS="-O2 -DRCC" > "$CONFIG_LOG" 2>&1
     fi
@@ -143,15 +168,25 @@ if [ -z "$(ls -A $DATA_DIR 2>/dev/null)" ]; then
     print_info "Initializing database..."
     cd $POSTGRESQL_HOME
     $INITDB_BIN -D $DATA_DIR -U postgres > /dev/null 2>&1
-    # Configure postgresql.conf
-    sed -i "s|#log_directory = 'log'|log_directory = '$LOG_DIR'|" $DATA_DIR/postgresql.conf
+    # Apply the project's tuned configuration (logging_collector, etc.)
+    cp "$SCRIPT_DIR/postgresql.conf" "$DATA_DIR/postgresql.conf"
+    # Point log_directory at the requested LOG_DIR
+    sed -i "s|^log_directory = .*|log_directory = '$LOG_DIR'|" $DATA_DIR/postgresql.conf
 else
     print_info "Using existing data directory..."
 fi
 
 # Start PostgreSQL
 print_info "Starting PostgreSQL..."
-$PG_BIN -D $DATA_DIR &
+NUMACTL=""
+if command -v numactl >/dev/null 2>&1; then
+    case "$NUMA_MODE" in
+        pin)        NUMACTL="numactl --cpunodebind=0 --membind=0" ;;
+        interleave) NUMACTL="numactl --interleave=all" ;;
+        none)       NUMACTL="" ;;
+    esac
+fi
+$NUMACTL $PG_BIN -D $DATA_DIR &
 sleep 5
 
 # Cleanup build logs
@@ -159,6 +194,7 @@ rm -f $SCRIPT_DIR/build.log $SCRIPT_DIR/config.log 2>/dev/null
 
 print_header "PostgreSQL Ready"
 echo "  Build Mode:  $BUILD_MODE"
+echo "  NUMA:        ${NUMACTL:-none}"
 echo "  Data Dir:    $DATA_DIR"
 echo "  Log Dir:     $LOG_DIR"
 echo "  Page Size:   ${PAGE_SIZE}KB"

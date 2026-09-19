@@ -16,13 +16,18 @@ CONFIG = {
     "measure_sec": 50,
     "read_partitions": 128,
     "hotspot_id": 1,
+    # Isolation level of every transaction: "RC" or "RR" (override: --isolation RC|RR)
+    "isolation": "RR",
 }
 
 THREADS_LIST = [1, 8, 16, 32, 64, 128]
 READS_LIST = [64, 128, 256]
 
+ISOLATION_LEVELS = {"RC": "read committed", "RR": "repeatable read"}
+
 def connect():
     return psycopg2.connect(
+        options="-c default_transaction_isolation=" + ISOLATION_LEVELS[CONFIG["isolation"]].replace(" ", "\\ "),
         host=CONFIG.get("host", "localhost"),
         port=CONFIG.get("port", 5432),
         dbname=CONFIG["dbname"],
@@ -203,4 +208,9 @@ def run_sweep(threads_list=THREADS_LIST, reads_list=READS_LIST):
         print(f"{s['procs']},{s['reads']},{s['tps']:.1f},{s['commits']},{s['aborts']},{s['avg_ms']:.2f},{s['p95_ms']:.2f},{s['p99_ms']:.2f},{s['note']}")
 
 if __name__ == "__main__":
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--isolation", choices=sorted(ISOLATION_LEVELS), default=CONFIG["isolation"])
+    CONFIG["isolation"] = ap.parse_args().isolation
+    print(f"[CONFIG] isolation={CONFIG['isolation']} ({ISOLATION_LEVELS[CONFIG['isolation']]})")
     run_sweep()

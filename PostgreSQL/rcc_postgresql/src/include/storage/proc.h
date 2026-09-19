@@ -191,6 +191,13 @@ struct PGPROC
 								 * else InvalidLocalTransactionId */
 	int			pid;			/* Backend's process ID; 0 if prepared xact */
 
+#ifdef RCC
+	TransactionId rccDoomedXid;	/* set by the RCC background deadlock
+								 * detector to the xid it chose as a cycle
+								 * victim; that backend aborts when this
+								 * equals its own top xid (see rcc.c) */
+#endif
+
 	int			pgxactoff;		/* offset into various ProcGlobal->arrays with
 								 * data mirrored from this PGPROC */
 

@@ -3199,19 +3199,27 @@ RecoveryConflictInterrupt(ProcSignalReason reason)
 void
 ProcessInterrupts(void)
 {
-	// 자기 자신 TRX이 abort 되었는지 체크
-#ifdef RCC	
-	if (CheckAbortedDependencies()){
-		 /* 의존 트랜잭션이 abort 되었으므로 직렬화 실패 */
-            ereport(ERROR,
-                    (errcode(ERRCODE_T_R_SERIALIZATION_FAILURE),
-                     errmsg("cannot proceed because dependent transaction aborted 14, current TX_ID: %u", GetTopTransactionIdIfAny())));
-	}
-#endif	
 	/* OK to accept any interrupts now? */
 	if (InterruptHoldoffCount != 0 || CritSectionCount != 0)
 		return;
 	InterruptPending = false;
+
+	// 자기 자신 TRX이 abort 되었는지 체크
+#ifdef RCC
+	/*
+	 * Below the holdoff/critical-section gate, and never while idle waiting
+	 * for a client command: raising ERROR during DoingCommandRead desyncs
+	 * the wire protocol ("protocol synchronization lost").  An idle doomed
+	 * transaction is caught at its next statement's ExecutorStart instead.
+	 */
+	if (!DoingCommandRead && IsTransactionState() && CheckAbortedDependencies()){
+		 /* 의존 트랜잭션이 abort 되었으므로 직렬화 실패 */
+			LockErrorCleanup();
+            ereport(ERROR,
+                    (errcode(ERRCODE_T_R_SERIALIZATION_FAILURE),
+                     errmsg("cannot proceed because dependent transaction aborted 14, current TX_ID: %u", GetTopTransactionIdIfAny())));
+	}
+#endif
 
 	if (ProcDiePending)
 	{

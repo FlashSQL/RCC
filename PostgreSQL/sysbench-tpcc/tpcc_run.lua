@@ -34,7 +34,9 @@ function other_ware (home_ware)
     return tmp
 end
 
-function new_order_impl()
+-- Draw all transaction inputs once.  A retry (retry_on_fail) re-runs
+-- new_order_impl with the SAME inputs, like tpcc-mysql's do_neword().
+function new_order_prep()
 -- prep work
     -- print("NEW_ORDER_ATTEMPT")
     local table_num = sysbench.rand.uniform(1, sysbench.opt.tables)
@@ -65,6 +67,16 @@ function new_order_impl()
         end
         qty[i] = sysbench.rand.uniform(1, 10)
    end
+
+    return {table_num = table_num, w_id = w_id, d_id = d_id, c_id = c_id,
+            ol_cnt = ol_cnt, itemid = itemid, supware = supware, qty = qty,
+            all_local = all_local}
+end
+
+function new_order_impl(p)
+    local table_num, w_id, d_id, c_id = p.table_num, p.w_id, p.d_id, p.c_id
+    local ol_cnt, itemid, supware, qty = p.ol_cnt, p.itemid, p.supware, p.qty
+    local all_local = p.all_local
 
 
 --  SELECT c_discount, c_last, c_credit, w_tax
@@ -228,26 +240,39 @@ function new_order_impl()
 end
 
 function new_order()
+  local t0 = now_us()
+  local p = new_order_prep()
   if sysbench.opt.retry_on_fail == "yes" then
+    local attempt = 0
     while true do
-      local success, err = pcall(new_order_impl)
+      no_att = (no_att or 0) + 1
+      local success, err = pcall(new_order_impl, p)
       if success then
+        no_lat_us = (no_lat_us or 0) + (now_us() - t0)
+        no_commits = (no_commits or 0) + 1
         return
       else
+        no_abrt = (no_abrt or 0) + 1
         pcall(function() con:query("ROLLBACK") end)
+        t0 = t0 + retry_backoff(attempt)  -- sleep is not transaction latency
+        attempt = attempt + 1
       end
     end
   else
-    local success, err = pcall(new_order_impl)
-    if not success then
+    no_att = (no_att or 0) + 1
+    local success, err = pcall(new_order_impl, p)
+    if success then
+      no_lat_us = (no_lat_us or 0) + (now_us() - t0)
+      no_commits = (no_commits or 0) + 1
+    else
+      no_abrt = (no_abrt or 0) + 1
       pcall(function() con:query("ROLLBACK") end)
     end
   end
 end
 
-function payment_impl()
-    -- print("PAYMENT_ATTEMPT")
-
+-- Draw all transaction inputs once (same-input retry, see new_order_prep).
+function payment_prep()
 -- prep work
 
     local table_num = sysbench.rand.uniform(1, sysbench.opt.tables)
@@ -273,7 +298,18 @@ function payment_impl()
         c_w_id = other_ware(w_id)
         c_d_id = sysbench.rand.uniform(1, DIST_PER_WARE)
     end
-    
+
+    return {table_num = table_num, w_id = w_id, d_id = d_id, c_id = c_id,
+            h_amount = h_amount, byname = byname, c_w_id = c_w_id,
+            c_d_id = c_d_id, c_last = c_last}
+end
+
+function payment_impl(p)
+    -- print("PAYMENT_ATTEMPT")
+    local table_num, w_id, d_id, c_id = p.table_num, p.w_id, p.d_id, p.c_id
+    local h_amount, byname = p.h_amount, p.byname
+    local c_w_id, c_d_id, c_last = p.c_w_id, p.c_d_id, p.c_last
+
 
 --  UPDATE warehouse SET w_ytd = w_ytd + :h_amount
 --  WHERE w_id =:w_id
@@ -443,18 +479,32 @@ function payment_impl()
 end
 
 function payment()
+  local t0 = now_us()
+  local p = payment_prep()
   if sysbench.opt.retry_on_fail == "yes" then
+    local attempt = 0
     while true do
-      local success, err = pcall(payment_impl)
+      pay_att = (pay_att or 0) + 1
+      local success, err = pcall(payment_impl, p)
       if success then
+        pay_lat_us = (pay_lat_us or 0) + (now_us() - t0)
+        pay_commits = (pay_commits or 0) + 1
         return
       else
+        pay_abrt = (pay_abrt or 0) + 1
         pcall(function() con:query("ROLLBACK") end)
+        t0 = t0 + retry_backoff(attempt)  -- sleep is not transaction latency
+        attempt = attempt + 1
       end
     end
   else
-    local success, err = pcall(payment_impl)
-    if not success then
+    pay_att = (pay_att or 0) + 1
+    local success, err = pcall(payment_impl, p)
+    if success then
+      pay_lat_us = (pay_lat_us or 0) + (now_us() - t0)
+      pay_commits = (pay_commits or 0) + 1
+    else
+      pay_abrt = (pay_abrt or 0) + 1
       pcall(function() con:query("ROLLBACK") end)
     end
   end

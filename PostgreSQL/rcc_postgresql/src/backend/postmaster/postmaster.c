@@ -90,6 +90,9 @@
 #endif
 
 #include "access/transam.h"
+#ifdef RCC
+#include "access/rcc.h"
+#endif
 #include "access/xlog.h"
 #include "access/xlogrecovery.h"
 #include "catalog/pg_control.h"
@@ -1001,6 +1004,11 @@ PostmasterMain(int argc, char *argv[])
 	 * before any modules had a chance to take the background worker slots.
 	 */
 	ApplyLauncherRegister();
+#ifdef RCC
+	/* Register the RCC background deadlock detector (see rcc.c). */
+	RccDeadlockDetectorRegister();
+#endif
+
 
 	/*
 	 * process any libraries that should be preloaded at postmaster start

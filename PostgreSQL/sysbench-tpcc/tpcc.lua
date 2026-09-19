@@ -24,6 +24,12 @@ require("tpcc_check")
 
 function thread_init()
    drv,con=db_connection_init()
+   if sysbench.tid == 0 and sysbench.opt.retry_on_fail == "yes" then
+      print(string.format("backoff: on=%d base=%dus cap=%dus factor=%.2f jitter=%d",
+            sysbench.opt.backoff_on, sysbench.opt.backoff_base_us,
+            sysbench.opt.backoff_cap_us, sysbench.opt.backoff_factor,
+            sysbench.opt.backoff_jitter))
+   end
 end
 
 function event()

@@ -200,6 +200,9 @@
 #include "access/twophase_rmgr.h"
 #include "access/xact.h"
 #include "access/xlog.h"
+#ifdef RCC_SR
+#include "access/rcc.h"			/* RccRecordRwDep: RW dep instead of SSI abort */
+#endif
 #include "miscadmin.h"
 #include "pgstat.h"
 #include "port/pg_lfind.h"
@@ -208,6 +211,7 @@
 #include "storage/predicate_internals.h"
 #include "storage/proc.h"
 #include "storage/procarray.h"
+#include "utils/memutils.h"
 #include "utils/rel.h"
 #include "utils/snapmgr.h"
 
@@ -522,8 +526,21 @@ SerializationNeededForRead(Relation relation, Snapshot snapshot)
 	 * CheckTableForSerializableConflictIn() to participate in serialization,
 	 * but the scans involved don't need serialization.
 	 */
+#ifdef RCC_SR
+	/*
+	 * RCC_SR read-latest scans run under SnapshotDirty (non-MVCC, see
+	 * RccSrGetReadSnapshot) so they can read the latest speculative version.
+	 * Stock SSI would then skip predicate locking, but such a scan still needs
+	 * its page/relation (phantom) locks -- otherwise a range read that matches
+	 * no committed rows leaves no lock and a concurrent INSERT into that range
+	 * slips through (write-skew via phantom).  So allow SNAPSHOT_DIRTY here.
+	 */
+	if (!IsMVCCSnapshot(snapshot) && snapshot->snapshot_type != SNAPSHOT_DIRTY)
+		return false;
+#else
 	if (!IsMVCCSnapshot(snapshot))
 		return false;
+#endif
 
 	/*
 	 * Check if we have just become "RO-safe". If we have, immediately release
@@ -2544,6 +2561,100 @@ PredicateLockPage(Relation relation, BlockNumber blkno, Snapshot snapshot)
 	PredicateLockAcquire(&tag);
 }
 
+#ifdef RCC_SR
+/*
+ * Deferred SIRead leaf locks for FOR UPDATE/SHARE index descents.
+ *
+ * An SFU's descent-time leaf SIRead marks it as a reader "as of" the descent,
+ * but the row lock is only acquired after chasing/waiting on the row.  Any
+ * writer that inserts a new version's index entry inside that window forms an
+ * RW edge against the SFU -- and that writer's version is exactly what the
+ * SFU then locks and consumes (WR), completing a 2-cycle with itself.
+ * Deferring the leaf SIRead until the row lock is held makes that pairing
+ * impossible: writers the SFU consumes precede the lock (no RW recorded
+ * against us), writers that hit the deferred lock come after it (we never
+ * consume them).  The unprotected window only matters for range predicates
+ * (a genuinely new row could slip in unnoticed); unique-key equality SFUs --
+ * the only kind in this workload -- are fully covered by the row lock chase.
+ */
+typedef struct RccSfuLeafEntry
+{
+	Oid			dbid;
+	Oid			relid;
+	BlockNumber blkno;
+} RccSfuLeafEntry;
+
+/* growable (never shrinks); a bloated hot key can span many leaves */
+static RccSfuLeafEntry *RccSfuLeaf = NULL;
+static int	RccSfuLeafCapacity = 0;
+static int	RccSfuLeafCount = 0;
+
+void
+RccSfuLeafReset(void)
+{
+	RccSfuLeafCount = 0;
+}
+
+/*
+ * Remember a leaf page an SFU descent would have SIRead-locked; the same
+ * serialization gate as PredicateLockPage applies.  The list grows without
+ * bound (doubling; high-water mark kept for the backend's lifetime), so
+ * every visited leaf defers uniformly -- they all share the same logical
+ * read time (the row-lock / empty-verdict moment).
+ */
+void
+RccSfuDeferLeafLock(Relation relation, BlockNumber blkno, Snapshot snapshot)
+{
+	if (!SerializationNeededForRead(relation, snapshot))
+		return;
+
+	if (RccSfuLeafCount > 0 &&
+		RccSfuLeaf[RccSfuLeafCount - 1].relid == relation->rd_id &&
+		RccSfuLeaf[RccSfuLeafCount - 1].blkno == blkno)
+		return;					/* consecutive duplicate */
+
+	if (RccSfuLeafCount >= RccSfuLeafCapacity)
+	{
+		int			newcap = (RccSfuLeafCapacity == 0) ? 64 :
+			RccSfuLeafCapacity * 2;
+
+		if (RccSfuLeaf == NULL)
+			RccSfuLeaf = (RccSfuLeafEntry *)
+				MemoryContextAlloc(TopMemoryContext,
+								   newcap * sizeof(RccSfuLeafEntry));
+		else
+			RccSfuLeaf = (RccSfuLeafEntry *)
+				repalloc(RccSfuLeaf, newcap * sizeof(RccSfuLeafEntry));
+		RccSfuLeafCapacity = newcap;
+	}
+
+	RccSfuLeaf[RccSfuLeafCount].dbid = relation->rd_locator.dbOid;
+	RccSfuLeaf[RccSfuLeafCount].relid = relation->rd_id;
+	RccSfuLeaf[RccSfuLeafCount].blkno = blkno;
+	RccSfuLeafCount++;
+}
+
+/*
+ * Take the deferred leaf locks; called once the SFU holds its row lock
+ * (heapam_handler.c post-lock SIRead site).
+ */
+void
+RccSfuApplyLeafLocks(void)
+{
+	for (int i = 0; i < RccSfuLeafCount; i++)
+	{
+		PREDICATELOCKTARGETTAG tag;
+
+		SET_PREDICATELOCKTARGETTAG_PAGE(tag,
+										RccSfuLeaf[i].dbid,
+										RccSfuLeaf[i].relid,
+										RccSfuLeaf[i].blkno);
+		PredicateLockAcquire(&tag);
+	}
+	RccSfuLeafCount = 0;
+}
+#endif							/* RCC_SR */
+
 /*
  *		PredicateLockTID
  *
@@ -3924,6 +4035,14 @@ XidIsConcurrent(TransactionId xid)
 bool
 CheckForSerializableConflictOutNeeded(Relation relation, Snapshot snapshot)
 {
+#ifdef RCC_SR
+	/*
+	 * RCC_SR does read-side WR tracking itself (read-latest records a
+	 * dependency on the version's xmin), so PG's read-side conflict-out
+	 * detection is unused and must not abort anyone.
+	 */
+	return false;
+#endif
 	if (!SerializationNeededForRead(relation, snapshot))
 		return false;
 
@@ -3959,6 +4078,11 @@ CheckForSerializableConflictOut(Relation relation, TransactionId xid, Snapshot s
 	SERIALIZABLEXIDTAG sxidtag;
 	SERIALIZABLEXID *sxid;
 	SERIALIZABLEXACT *sxact;
+
+#ifdef RCC_SR
+	/* RCC_SR: read-side conflict-out is unused (WR handled by read-latest). */
+	return;
+#endif
 
 	if (!SerializationNeededForRead(relation, snapshot))
 		return;
@@ -4175,7 +4299,18 @@ CheckTargetForConflictsIn(PREDICATELOCKTARGETTAG *targettag)
 											 sxact->finishedBefore))
 				&& !RWConflictExists(sxact, MySerializableXact))
 			{
+#ifdef RCC_SR
+				/*
+				 * RCC_SR: instead of flagging a PG SSI rw-conflict (which could
+				 * abort a pivot), record "writer (me) depends on reader (sxact)".
+				 * Resolved at commit by waiting for the reader + cycle detection
+				 * (see WaitForTxnDependencies).  read-only readers have no xid
+				 * (topXid invalid) and are skipped inside RccRecordRwDep.
+				 */
+				RccRecordRwDep(sxact->topXid, GetTopTransactionIdIfAny());
+#else
 				FlagRWConflict(sxact, MySerializableXact);
+#endif
 			}
 
 			LWLockRelease(SerializableXactHashLock);
@@ -4274,6 +4409,7 @@ CheckForSerializableConflictIn(Relation relation, ItemPointer tid, BlockNumber b
 	if (!SerializationNeededForWrite(relation))
 		return;
 
+#ifndef RCC_SR
 	/* Check if someone else has already decided that we need to die */
 	if (SxactIsDoomed(MySerializableXact))
 		ereport(ERROR,
@@ -4281,6 +4417,7 @@ CheckForSerializableConflictIn(Relation relation, ItemPointer tid, BlockNumber b
 				 errmsg("could not serialize access due to read/write dependencies among transactions"),
 				 errdetail_internal("Reason code: Canceled on identification as a pivot, during conflict in checking."),
 				 errhint("The transaction might succeed if retried.")));
+#endif
 
 	/*
 	 * We're doing a write which might cause rw-conflicts now or later.
@@ -4435,6 +4572,17 @@ static void
 FlagRWConflict(SERIALIZABLEXACT *reader, SERIALIZABLEXACT *writer)
 {
 	Assert(reader != writer);
+
+#ifdef RCC_SR
+	/*
+	 * RCC_SR replaces PG's SSI rw-conflict resolution with its own
+	 * writer-depends-on-reader dependency (RccRecordRwDep, recorded in
+	 * CheckTargetForConflictsIn) plus commit-time wait + cycle detection.
+	 * Disable PG's own conflict flagging/abort entirely so no transaction is
+	 * doomed by the SSI machinery.
+	 */
+	return;
+#endif
 
 	/* First, see if this conflict causes failure. */
 	OnConflict_CheckForSerializationFailure(reader, writer);

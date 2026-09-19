@@ -71,6 +71,7 @@
 #include "utils/snapmgr.h"
 #include "utils/timeout.h"
 #include "utils/timestamp.h"
+#include "portability/instr_time.h"
 #ifdef RCC
 #include "access/rcc.h"
 #endif
@@ -147,6 +148,8 @@ static PgStat_Counter xact_txwait_time = 0;
 static PgStat_Counter xact_txwait_count = 0;
 static PgStat_Counter xact_tuple_update_wait_time = 0;
 static PgStat_Counter xact_tuple_update_wait_count = 0;
+/* Breakdown Code - wall-clock start of the current top-level transaction */
+static instr_time xact_start_instr;
 
 /*
  *	transaction states - transaction state from server perspective
@@ -2014,6 +2017,9 @@ StartTransaction(void)
 	s = &TopTransactionStateData;
 	CurrentTransactionState = s;
 
+	/* Breakdown Code - stamp the transaction's wall-clock start */
+	INSTR_TIME_SET_CURRENT(xact_start_instr);
+
 	Assert(!FullTransactionIdIsValid(XactTopFullTransactionId));
 
 	/* check the current transaction state */
@@ -2260,16 +2266,29 @@ CommitTransaction(void)
 	 * the leader's transaction and its serializable state will live on.
 	 */
 #ifdef RCC
-	if (WaitForTxnDependencies())
 	{
-		ereport(ERROR,
-				(errcode(ERRCODE_T_R_SERIALIZATION_FAILURE),
-				errmsg("cannot commit because dependent transaction aborted, %u",
-					   GetTopTransactionIdIfAny())));
+		RccDepResult dep = WaitForTxnDependencies();
+
+		if (dep == RCC_DEP_CYCLE)
+			ereport(ERROR,
+					(errcode(ERRCODE_T_R_SERIALIZATION_FAILURE),
+					 errmsg("could not serialize access due to read/write dependencies among transactions, %u",
+							GetTopTransactionIdIfAny())));
+		else if (dep == RCC_DEP_ABORTED)
+			ereport(ERROR,
+					(errcode(ERRCODE_T_R_SERIALIZATION_FAILURE),
+					 errmsg("could not serialize access because a dependency aborted, %u",
+							GetTopTransactionIdIfAny())));
 	}
-#endif		
+#endif
+#ifndef RCC_SR
+	/*
+	 * RCC_SR replaces PG's SSI commit-time abort (pivot detection) with its own
+	 * RW wait + cycle check in WaitForTxnDependencies above, so skip PG's check.
+	 */
 	if (!is_parallel_worker)
 		PreCommit_CheckForSerializationFailure();
+#endif
 		
 
 	/* Prevent cancel/die interrupt while cleaning up */
@@ -2412,6 +2431,12 @@ CommitTransaction(void)
 	pgStatTxwaitCount += xact_txwait_count;
 	pgStatTupleUpdateWaitTime += xact_tuple_update_wait_time;
 	pgStatTupleUpdateWaitCount += xact_tuple_update_wait_count;
+	{
+		instr_time _xe;
+		INSTR_TIME_SET_CURRENT(_xe);
+		INSTR_TIME_SUBTRACT(_xe, xact_start_instr);
+		pgStatCommittedTotalTime += (PgStat_Counter) INSTR_TIME_GET_MICROSEC(_xe);
+	}
 	xact_tuplock_wait_time = 0;
 	xact_tuplock_wait_count = 0;
 	xact_txwait_time = 0;
@@ -2536,7 +2561,10 @@ PrepareTransaction(void)
 	 * purposes.  This should be done as late as we can put it and still allow
 	 * errors to be raised for failure patterns found at commit.
 	 */
+#ifndef RCC_SR
+	/* RCC_SR disables PG's SSI commit-time abort (see CommitTransaction). */
 	PreCommit_CheckForSerializationFailure();
+#endif
 
 	/*
 	 * Don't allow PREPARE TRANSACTION if we've accessed a temporary table in
@@ -2862,7 +2890,9 @@ AbortTransaction(void)
 	 * record.
 	 */
 	if (!is_parallel_worker)
+	{
 		latestXid = RecordTransactionAbort(false);
+	}
 	else
 	{
 		latestXid = InvalidTransactionId;
@@ -2893,7 +2923,7 @@ AbortTransaction(void)
 	{
 #ifdef RCC
 		CleanupTxnDependency();
-#endif		
+#endif
 #ifdef RCC_DEBUG
 		elog(LOG, "Abort Transaction TX_ID: %u\n", GetTopTransactionIdIfAny());
 #endif
@@ -2934,6 +2964,16 @@ AbortTransaction(void)
 		pgStatAbortedTxwaitCount += xact_txwait_count;
 		pgStatAbortedTupleUpdateWaitTime += xact_tuple_update_wait_time;
 		pgStatAbortedTupleUpdateWaitCount += xact_tuple_update_wait_count;
+		{
+			instr_time _xe;
+			INSTR_TIME_SET_CURRENT(_xe);
+			INSTR_TIME_SUBTRACT(_xe, xact_start_instr);
+			pgStatAbortedTotalTime += (PgStat_Counter) INSTR_TIME_GET_MICROSEC(_xe);
+#ifdef RCC_ABORTPROF
+			/* 사인별 낭비 분해용: 직전 ERROR 라인(같은 pid)과 조인해 분류 */
+			elog(LOG, "[ABORTPROF] us=%ld", (long) INSTR_TIME_GET_MICROSEC(_xe));
+#endif
+		}
 		xact_tuplock_wait_time = 0;
 		xact_tuplock_wait_count = 0;
 		xact_txwait_time = 0;

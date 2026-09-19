@@ -42,6 +42,8 @@ PgStat_Counter pgStatTupleUpdateWaitTime = 0;
 PgStat_Counter pgStatTupleUpdateWaitCount = 0;
 PgStat_Counter pgStatAbortedTupleUpdateWaitTime = 0;
 PgStat_Counter pgStatAbortedTupleUpdateWaitCount = 0;
+PgStat_Counter pgStatCommittedTotalTime = 0;
+PgStat_Counter pgStatAbortedTotalTime = 0;
 /* Breakdown Code End */
 PgStat_Counter pgStatActiveTime = 0;
 PgStat_Counter pgStatTransactionIdleTime = 0;
@@ -319,6 +321,8 @@ pgstat_update_dbstats(TimestampTz ts)
 	dbentry->tuple_update_wait_count += pgStatTupleUpdateWaitCount;
 	dbentry->aborted_tuple_update_wait_time += pgStatAbortedTupleUpdateWaitTime;
 	dbentry->aborted_tuple_update_wait_count += pgStatAbortedTupleUpdateWaitCount;
+	dbentry->committed_total_time += pgStatCommittedTotalTime;
+	dbentry->aborted_total_time += pgStatAbortedTotalTime;
 	/* Breakdown Code End */
 
 	if (pgstat_should_report_connstat())
@@ -356,6 +360,8 @@ pgstat_update_dbstats(TimestampTz ts)
 	pgStatTupleUpdateWaitCount = 0;
 	pgStatAbortedTupleUpdateWaitTime = 0;
 	pgStatAbortedTupleUpdateWaitCount = 0;
+	pgStatCommittedTotalTime = 0;
+	pgStatAbortedTotalTime = 0;
 	/* Breakdown Code End */
 	pgStatActiveTime = 0;
 	pgStatTransactionIdleTime = 0;
@@ -480,6 +486,8 @@ pgstat_database_flush_cb(PgStat_EntryRef *entry_ref, bool nowait)
 	PGSTAT_ACCUM_DBCOUNT(tuple_update_wait_count);
 	PGSTAT_ACCUM_DBCOUNT(aborted_tuple_update_wait_time);
 	PGSTAT_ACCUM_DBCOUNT(aborted_tuple_update_wait_count);
+	PGSTAT_ACCUM_DBCOUNT(committed_total_time);
+	PGSTAT_ACCUM_DBCOUNT(aborted_total_time);
 	/* Breakdown Code End */
 
 	PGSTAT_ACCUM_DBCOUNT(sessions);

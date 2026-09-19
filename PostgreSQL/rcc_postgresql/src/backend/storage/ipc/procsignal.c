@@ -661,6 +661,17 @@ procsignal_sigusr1_handler(SIGNAL_ARGS)
 	if (CheckProcSignal(PROCSIG_PARALLEL_APPLY_MESSAGE))
 		HandleParallelApplyMessageInterrupt();
 
+#ifdef RCC
+	/*
+	 * The mark itself lives in MyProc->rccDoomedXid (shared memory), so a
+	 * signal that finds us idle is harmless: the next CheckAbortedDependencies
+	 * (every safe point) reads the mark.  Here we only make sure a backend
+	 * parked in a commit wait (ProcSleep) re-runs ProcessInterrupts.
+	 */
+	if (CheckProcSignal(PROCSIG_RCC_CASCADE_ABORT))
+		InterruptPending = true;
+#endif
+
 	if (CheckProcSignal(PROCSIG_RECOVERY_CONFLICT_DATABASE))
 		RecoveryConflictInterrupt(PROCSIG_RECOVERY_CONFLICT_DATABASE);
 

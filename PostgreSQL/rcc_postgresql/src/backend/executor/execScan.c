@@ -21,6 +21,107 @@
 #include "executor/executor.h"
 #include "miscadmin.h"
 #include "utils/memutils.h"
+#ifdef RCC_SR
+#include "access/htup_details.h"
+#include "access/parallel.h"
+#include "access/rcc.h"
+#include "access/xact.h"
+#include "storage/predicate.h"
+#include "storage/procarray.h"
+
+/*
+ * RCC_SR: a SELECT just read the latest (speculative) version of a row (the scan
+ * runs under SnapshotDirty, see RccSrGetReadSnapshot).  If that version was
+ * written by an in-progress writer W, the reader now depends on W's uncommitted
+ * data -> record a WR read dependency so the reader waits for W and cascade-aborts
+ * if W aborts.
+ *
+ * It also leaves an SSI SIRead predicate lock on the version it read, so a later
+ * writer that overwrites it discovers this reader (CheckForSerializableConflictIn
+ * -> RccRecordRwDep) and the RW anti-dependency is recorded.  Read-latest scans
+ * run under SnapshotDirty (non-MVCC), which the SSI gate skips, so the lock is
+ * registered with the query's MVCC snapshot (es_snapshot).
+ *
+ * (Only plain SELECT calls this; UPDATE/SFU record their own dependency in heapam.c.)
+ *
+ * Returns true when the tuple must be SUPPRESSED (not returned): it is a
+ * speculative version, born while this scan was already running, of a row this
+ * very scan already returned.  Without this guard the scan would return the
+ * same row twice (once per version) and the second read would manufacture an
+ * RW+WR 2-cycle with the row's writer -- the dominant abort pattern on hot
+ * rows.  Suppressed tuples record no dependency and leave no SIRead.
+ */
+static inline bool
+RccSrRecordSpecRead(ScanState *node, TupleTableSlot *slot)
+{
+	bool		shouldFree;
+	HeapTuple	ht;
+	TransactionId wxid;
+	TransactionId myxid;
+
+	if (TupIsNull(slot) || node->ss_currentRelation == NULL)
+		return false;
+	if (IsInParallelMode())
+		return false;			/* cannot assign an xid in a parallel worker */
+
+	/*
+	 * Only a plain read-only SELECT (no rowMarks) is a speculative read.  A
+	 * SELECT FOR UPDATE/SHARE locks/writes the row, so it must NOT register an
+	 * SIREAD predicate lock -- doing so makes the row's writer see it as a
+	 * reader and form a bogus RW anti-dependency against same-row writers,
+	 * aborting both.  Matches RccSrGetReadSnapshot's read-latest condition.
+	 * (FOR UPDATE's own WR dependency is recorded in heap_lock_tuple.)
+	 */
+	if (node->ps.state->es_plannedstmt == NULL ||
+		node->ps.state->es_plannedstmt->rowMarks != NIL)
+		return false;
+
+	/*
+	 * Force an xid for this reader.  A writer that later overwrites the row
+	 * records its RW anti-dependency against the reader's xid (the SSI
+	 * sxact->topXid).  A read-only reader would otherwise have no xid, be
+	 * invisible to the overwriting writer, and write skew would slip through.
+	 */
+	myxid = GetTopTransactionId();
+
+	ht = ExecFetchSlotHeapTuple(slot, false, &shouldFree);
+	wxid = HeapTupleHeaderGetRawXmin(ht->t_data);
+
+	/* WR: depend on an in-progress writer whose (speculative) version we read. */
+	if (TransactionIdIsInProgress(wxid) &&
+		!TransactionIdIsCurrentTransactionId(wxid))
+	{
+		/*
+		 * Dup guard: only an in-progress writer can have created a version
+		 * mid-scan, so only speculative tuples need the chain check.
+		 */
+		for (int i = 0; i < node->rcc_nreturned; i++)
+		{
+			if (RccVersionChainReaches(node->ss_currentRelation,
+									   &node->rcc_returned[i],
+									   &slot->tts_tid, wxid))
+			{
+				if (shouldFree)
+					heap_freetuple(ht);
+				return true;	/* newer version of an already-returned row */
+			}
+		}
+		RecordReadDependency(wxid, myxid);
+	}
+
+	/* RW: register an SIRead lock so an overwriting writer finds this read. */
+	PredicateLockTID(node->ss_currentRelation, &slot->tts_tid,
+					 node->ps.state->es_snapshot, wxid);
+
+	/* Remember the returned TID for the dup guard above. */
+	if (node->rcc_nreturned < lengthof(node->rcc_returned))
+		node->rcc_returned[node->rcc_nreturned++] = slot->tts_tid;
+
+	if (shouldFree)
+		heap_freetuple(ht);
+	return false;
+}
+#endif
 
 
 
@@ -178,7 +279,29 @@ ExecScan(ScanState *node,
 	if (!qual && !projInfo)
 	{
 		ResetExprContext(econtext);
+#ifdef RCC_SR
+		for (;;)
+		{
+			TupleTableSlot *slot = ExecScanFetch(node, accessMtd, recheckMtd);
+
+			/*
+			 * Register this row as read (safe here: no buffer lock held).
+			 * Only genuine SELECT reads count -- the locate-scan of an
+			 * UPDATE/DELETE must NOT register the row, otherwise blind writers
+			 * would be treated as readers and form spurious RW cycles.
+			 * A true return means the tuple is a mid-scan-born duplicate of an
+			 * already-returned row: skip it and fetch the next tuple.
+			 */
+			if (!TupIsNull(slot) && node->ss_currentRelation != NULL &&
+				node->ps.state->es_plannedstmt != NULL &&
+				node->ps.state->es_plannedstmt->commandType == CMD_SELECT &&
+				RccSrRecordSpecRead(node, slot))
+				continue;
+			return slot;
+		}
+#else
 		return ExecScanFetch(node, accessMtd, recheckMtd);
+#endif
 	}
 
 	/*
@@ -228,6 +351,20 @@ ExecScan(ScanState *node,
 			/*
 			 * Found a satisfactory scan tuple.
 			 */
+#ifdef RCC_SR
+			/*
+			 * Register this returned row as read (no buffer lock held).
+			 * Only genuine SELECT reads count -- exclude UPDATE/DELETE
+			 * locate-scans (see note in the no-qual fast path above).
+			 * A true return means the tuple is a mid-scan-born duplicate
+			 * of an already-returned row: skip it like a failed qual.
+			 */
+			if (node->ss_currentRelation != NULL &&
+				node->ps.state->es_plannedstmt != NULL &&
+				node->ps.state->es_plannedstmt->commandType == CMD_SELECT &&
+				RccSrRecordSpecRead(node, slot))
+				continue;
+#endif
 			if (projInfo)
 			{
 				/*

@@ -358,6 +358,9 @@ typedef struct PgStat_StatDBEntry
 	PgStat_Counter tuple_update_wait_count;	/* tuple update wait count */
 	PgStat_Counter aborted_tuple_update_wait_time;
 	PgStat_Counter aborted_tuple_update_wait_count;
+	/* Breakdown Code - total transaction time (start->end) */
+	PgStat_Counter committed_total_time;	/* total time of committed txns, us */
+	PgStat_Counter aborted_total_time;		/* total time of aborted txns, us */
 	/* Breakdown Code End */
 	PgStat_Counter sessions;
 	PgStat_Counter session_time;
@@ -786,6 +789,8 @@ extern PGDLLIMPORT PgStat_Counter pgStatTupleUpdateWaitTime;
 extern PGDLLIMPORT PgStat_Counter pgStatTupleUpdateWaitCount;
 extern PGDLLIMPORT PgStat_Counter pgStatAbortedTupleUpdateWaitTime;
 extern PGDLLIMPORT PgStat_Counter pgStatAbortedTupleUpdateWaitCount;
+extern PGDLLIMPORT PgStat_Counter pgStatCommittedTotalTime;
+extern PGDLLIMPORT PgStat_Counter pgStatAbortedTotalTime;
 /* Breakdown Code End */
 
 /*

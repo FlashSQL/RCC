@@ -24,7 +24,42 @@ ffi.cdef[[
 void sb_counter_inc(int, sb_counter_type);
 typedef uint32_t useconds_t;
 int usleep(useconds_t useconds);
+struct sb_timeval { long tv_sec; long tv_usec; };
+int gettimeofday(struct sb_timeval *tv, void *tz);
 ]]
+
+-- Wall-clock microseconds; used to measure per-transaction-type latency
+-- (New-Order / Payment) from first attempt until the commit succeeds, i.e.
+-- including all client-side retries.
+function now_us()
+   local tv = ffi.new("struct sb_timeval")
+   ffi.C.gettimeofday(tv, nil)
+   return tonumber(tv.tv_sec) * 1000000 + tonumber(tv.tv_usec)
+end
+
+-- Sleep before retrying an aborted transaction, like tpcc-mysql's
+-- retry_backoff().  attempt is 0-based (attempt+1 tries have failed so far).
+-- Returns the microseconds slept so the caller can keep the sleep out of the
+-- per-transaction latency counters (it is client think time, not DB time).
+function retry_backoff(attempt)
+   if sysbench.opt.backoff_on == 0 then return 0 end
+   local wait_us = sysbench.opt.backoff_base_us
+   local k = 0
+   while k < attempt and wait_us < sysbench.opt.backoff_cap_us do
+      wait_us = wait_us * sysbench.opt.backoff_factor
+      k = k + 1
+   end
+   if wait_us > sysbench.opt.backoff_cap_us then
+      wait_us = sysbench.opt.backoff_cap_us
+   end
+   if sysbench.opt.backoff_jitter ~= 0 then
+      wait_us = wait_us * sysbench.rand.uniform_double()
+   end
+   wait_us = math.floor(wait_us)
+   if wait_us <= 0 then return 0 end
+   ffi.C.usleep(wait_us)
+   return wait_us
+end
 
 function init()
    assert(event ~= nil,
@@ -67,7 +102,19 @@ sysbench.cmdline.options = {
    splittable =
       {"Create READ WRITE or READ ONLY transactions to allow using a splitting proxy", "no"},
    retry_on_fail =
-      {"Retry failed transactions (new_order, payment) on error (yes, no)", "no"}
+      {"Retry failed transactions (new_order, payment) on error (yes, no)", "no"},
+   -- Retry backoff (same rule/defaults as tpcc-mysql's retry_backoff()):
+   -- wait = min(base * factor^attempt, cap); with jitter, uniform in [0, wait).
+   backoff_on =
+      {"Sleep before each retry of a failed transaction (1 = on, 0 = off)", 0},
+   backoff_base_us =
+      {"Backoff before the first retry, in microseconds", 2000},
+   backoff_cap_us =
+      {"Upper bound of the backoff, in microseconds", 200000},
+   backoff_factor =
+      {"Multiplier applied to the backoff on every further retry (1 = fixed)", 2},
+   backoff_jitter =
+      {"1 = full jitter: draw the actual sleep uniformly from [0, wait)", 1}
 }
 
 function sleep(n)
@@ -645,6 +692,14 @@ end
 
 
 function thread_done()
+   -- Per-transaction-type attempt/abort counters (NewOrder vs Payment).
+   -- Aggregate across threads by summing the [ABORTSTATS] lines.
+   -- no_lat_us/pay_lat_us = total wall time (us) from first attempt to a
+   -- successful commit, incl. retries but excl. retry backoff sleeps;
+   -- divide by commits for avg latency.
+   print(string.format("[ABORTSTATS] tid=%d no_att=%d no_abrt=%d pay_att=%d pay_abrt=%d no_commits=%d no_lat_us=%d pay_commits=%d pay_lat_us=%d",
+         sysbench.tid, (no_att or 0), (no_abrt or 0), (pay_att or 0), (pay_abrt or 0),
+         (no_commits or 0), (no_lat_us or 0), (pay_commits or 0), (pay_lat_us or 0)))
    con:disconnect()
 end
 
