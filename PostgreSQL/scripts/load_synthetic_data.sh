@@ -1,4 +1,5 @@
 #!/bin/bash
+set -eo pipefail
 
 BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -35,14 +36,13 @@ host    all             all             ::1/128                 trust
 EOF
 
 echo "RUN PostgreSQL"
-$BASE_DIR/rcc_postgresql/bld/bin/postgres -D $DATA_DIR > /dev/null 2>&1 &
-sleep 10
+"$BASE_DIR/rcc_postgresql/bld/bin/pg_ctl" start -D "$DATA_DIR" -l "$LOG_DIR/startup.log" -w -t 300
 
 echo "CREATE DATABASE"
 $BASE_DIR/rcc_postgresql/bld/bin/psql -U postgres -c "CREATE DATABASE synt;" 2>/dev/null
 
 echo "CREATE TABLE AND LOAD DATA"
-$BASE_DIR/rcc_postgresql/bld/bin/psql -U postgres -d synt -f $BASE_DIR/synthetic_benchmark/create_table_synthetic.sql
+$BASE_DIR/rcc_postgresql/bld/bin/psql -U postgres -v ON_ERROR_STOP=1 -d synt -f $BASE_DIR/synthetic_benchmark/create_table_synthetic.sql
 
 echo "Data loading complete. Stopping server..."
 $BASE_DIR/rcc_postgresql/bld/bin/pg_ctl stop -D $DATA_DIR -w -t 300

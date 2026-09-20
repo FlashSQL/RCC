@@ -1,0 +1,60 @@
+
+### s1_t1 ###
+  TPS=1556.84  commits=77844  ignored_errors=385  abort_rate=0.5%  total=50.0s
+  component                   ms       %   ms/commit
+  Execution                49637   99.3%      0.6376
+  Lock wait                    0    0.0%      0.0000
+    - tuplock                  0    0.0%      0.0000
+    - spin(update)             0    0.0%      0.0000
+  Commit wait                  0    0.0%      0.0000
+  Wasted (abort)             362    0.7%      0.0046
+
+### s1_t8 ###
+  TPS=4463.69  commits=223198  ignored_errors=1082  abort_rate=0.5%  total=397.5s
+  component                   ms       %   ms/commit
+  Execution               396162   99.7%      1.7749
+  Lock wait                    0    0.0%      0.0000
+    - tuplock                  0    0.0%      0.0000
+    - spin(update)             0    0.0%      0.0000
+  Commit wait                  0    0.0%      0.0000
+  Wasted (abort)            1359    0.3%      0.0061
+
+### s1_t16 ###
+  TPS=4457.07  commits=222879  ignored_errors=1115  abort_rate=0.5%  total=798.9s
+  component                   ms       %   ms/commit
+  Execution               797607   99.8%      3.5787
+  Lock wait                    0    0.0%      0.0000
+    - tuplock                  0    0.0%      0.0000
+    - spin(update)             0    0.0%      0.0000
+  Commit wait                  0    0.0%      0.0000
+  Wasted (abort)            1322    0.2%      0.0059
+
+### s1_t32 ###
+  TPS=4114.29  commits=205759  ignored_errors=1086  abort_rate=0.5%  total=1597.8s
+  component                   ms       %   ms/commit
+  Execution              1596423   99.9%      7.7587
+  Lock wait                    0    0.0%      0.0000
+    - tuplock                  0    0.0%      0.0000
+    - spin(update)             0    0.0%      0.0000
+  Commit wait                  0    0.0%      0.0000
+  Wasted (abort)            1349    0.1%      0.0066
+
+### s1_t64 ###
+  TPS=3508.7  commits=175522  ignored_errors=911  abort_rate=0.5%  total=3198.6s
+  component                   ms       %   ms/commit
+  Execution              3197350  100.0%     18.2162
+  Lock wait                    0    0.0%      0.0000
+    - tuplock                  0    0.0%      0.0000
+    - spin(update)             0    0.0%      0.0000
+  Commit wait                  0    0.0%      0.0000
+  Wasted (abort)            1213    0.0%      0.0069
+
+### s1_t128 ###
+  TPS=2484.47  commits=124410  ignored_errors=671  abort_rate=0.5%  total=6403.4s
+  component                   ms       %   ms/commit
+  Execution              6402156  100.0%     51.4601
+  Lock wait                    0    0.0%      0.0000
+    - tuplock                  0    0.0%      0.0000
+    - spin(update)             0    0.0%      0.0000
+  Commit wait                  0    0.0%      0.0000
+  Wasted (abort)            1271    0.0%      0.0102

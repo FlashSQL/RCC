@@ -1,1 +1,3 @@
 CLAUDE.md
+# PostgreSQL server logs from experiment runs (too large for GitHub)
+plots/**/results/**/postgresql.log

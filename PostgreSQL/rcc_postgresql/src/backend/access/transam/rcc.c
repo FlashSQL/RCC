@@ -68,7 +68,7 @@ typedef struct TxnReverseDepEntry
 } TxnReverseDepEntry;
 
 /* Partitioned Reverse Dependency Graph */
-#define NUM_DEP_PARTITIONS 64
+#define NUM_DEP_PARTITIONS 256
 #define DEP_PARTITION(xid) ((xid) % NUM_DEP_PARTITIONS)
 
 typedef struct DepGraphPartition
@@ -412,6 +412,56 @@ RccIsMyDependency(TransactionId xid)
     return false;
 }
 
+/* Is "from depends on to" still recorded right now? */
+static bool
+RccDependencyEdgeExists(TransactionId from, TransactionId to)
+{
+	DepGraphPartition *partition = &TxnReverseDepPartitions[DEP_PARTITION(to)];
+	TxnReverseDepEntry *rev;
+	bool        found = false;
+
+	LWLockAcquire(partition->lock, LW_SHARED);
+	rev = hash_search(partition->graph, &to, HASH_FIND, NULL);
+	if (rev)
+		for (int i = 0; i < rev->nfroms; i++)
+			if (rev->from_list[i] == from)
+			{
+				found = true;
+				break;
+			}
+	LWLockRelease(partition->lock);
+	return found;
+}
+
+/* Recheck a candidate path copied while other transactions could finish. */
+static bool
+RccCyclePathIsLive(TransactionId from, TransactionId to, TransactionId myxid,
+				   const TransactionId *visitedXids,
+				   const TransactionId *visitedParent, int visitedCount)
+{
+	while (from != myxid)
+	{
+		if (!TransactionIdIsInProgress(from) ||
+			!RccDependencyEdgeExists(from, to))
+			return false;
+
+		from = to;
+		if (from == myxid)
+			break;
+
+		to = InvalidTransactionId;
+		for (int i = 0; i < visitedCount; i++)
+			if (visitedXids[i] == from)
+			{
+				to = visitedParent[i];
+				break;
+			}
+		if (!TransactionIdIsValid(to))
+			return false;
+	}
+	return true;
+}
+
 /*
  * Single commit-time cycle check.
  *
@@ -426,19 +476,17 @@ RccIsMyDependency(TransactionId xid)
  * live transactions.  A committed transaction already finished waiting on its
  * own deps and so cannot be part of a live cycle.
  *
- * Acquires all partition locks in order to prevent deadlock during check.
+ * Copy each node's adjacency list under only its partition lock, then release
+ * it before traversing or consulting transaction status.  Never hold two graph
+ * partition locks at once.  This is not an atomic snapshot: recheck candidate
+ * paths to discard edges already removed by cleanup.  Cycles formed after a
+ * node was copied are handled by a later committer or the native PG deadlock
+ * detector, just like cycles formed after the old all-lock scan completed.
  */
 static bool
 RccCommitCycleCheck(TransactionId myxid)
 {
     TransactionId depxid = InvalidTransactionId;    /* dep that closed the cycle */
-
-    if (!TransactionIdIsValid(myxid))
-        return false;
-
-    /* Acquire all partition locks in order (prevent lock deadlock) */
-    for (int i = 0; i < NUM_DEP_PARTITIONS; i++)
-        LWLockAcquire(TxnReverseDepPartitions[i].lock, LW_SHARED);
 
     /*
      * DFS: Start from myxid, follow reverse edges (who depends on X).
@@ -450,10 +498,10 @@ RccCommitCycleCheck(TransactionId myxid)
      * pushed once per parent, overflowing the 256-entry stack under dense
      * graphs and silently truncating the search -- missed cycles.)
      *
-     * Reachable nodes are in-progress transactions only, so the real bound
-     * is the number of active backends; RCC_CYCLE_MAX_NODES is far above
-     * that.  If it is ever exceeded, conservatively report a cycle: a
-     * spurious abort is safe, a missed cycle is an undetected deadlock.
+	 * Only in-progress nodes are added, but transaction churn during the scan
+	 * can grow the visited set beyond one snapshot's active backend count.
+	 * If the capacity is exceeded, conservatively report a cycle: a spurious
+	 * abort is safe, a missed cycle would need the native deadlock backstop.
      */
 #define RCC_CYCLE_MAX_NODES 4096
     static TransactionId stack[RCC_CYCLE_MAX_NODES];
@@ -464,6 +512,16 @@ RccCommitCycleCheck(TransactionId myxid)
     bool found = false;
     bool overflow = false;
 
+	if (!TransactionIdIsValid(myxid))
+		return false;
+
+	if (MyReadDependenciesCount == 0
+#ifdef RCC_SR
+		&& MyRwDepsCount == 0
+#endif
+		)
+		return false;
+
     stack[stackSize++] = myxid;
     visitedXids[visitedCount] = myxid;
     visitedParent[visitedCount] = InvalidTransactionId;
@@ -472,17 +530,28 @@ RccCommitCycleCheck(TransactionId myxid)
     while (stackSize > 0 && !found)
     {
         TransactionId current = stack[--stackSize];
+		TransactionId dependents[MAX_DEP];
+		DepGraphPartition *partition =
+			&TxnReverseDepPartitions[DEP_PARTITION(current)];
+		TxnReverseDepEntry *rev;
+		int ndependents = 0;
 
-        /* Look up who depends on current */
-        int part = DEP_PARTITION(current);
-        TxnReverseDepEntry *rev = hash_search(TxnReverseDepPartitions[part].graph,
-                                              &current, HASH_FIND, NULL);
-        if (!rev)
-            continue;
+		CHECK_FOR_INTERRUPTS();
 
-        for (int i = 0; i < rev->nfroms; i++)
+		LWLockAcquire(partition->lock, LW_SHARED);
+		rev = hash_search(partition->graph, &current, HASH_FIND, NULL);
+		if (rev)
         {
-            TransactionId from = rev->from_list[i];
+			ndependents = rev->nfroms;
+			Assert(ndependents >= 0 && ndependents <= MAX_DEP);
+			memcpy(dependents, rev->from_list,
+				   ndependents * sizeof(TransactionId));
+		}
+		LWLockRelease(partition->lock);
+
+		for (int i = 0; i < ndependents; i++)
+		{
+			TransactionId from = dependents[i];
             bool alreadyVisited = false;
 
             /*
@@ -496,6 +565,10 @@ RccCommitCycleCheck(TransactionId myxid)
             /* One of MY dependencies depends back on me -> cycle closed. */
             if (RccIsMyDependency(from))
             {
+				if (!RccCyclePathIsLive(from, current, myxid,
+									   visitedXids, visitedParent, visitedCount))
+					continue;
+
                 if (visitedCount < RCC_CYCLE_MAX_NODES)
                 {
                     visitedXids[visitedCount] = from;
@@ -576,8 +649,7 @@ RccCommitCycleCheck(TransactionId myxid)
         pfree(buf.data);
     }
 #else
-    /* only the debug path logging reads these */
-    (void) visitedParent;
+	/* only the debug path logging reads the closing dependency */
     (void) depxid;
 #endif
 
@@ -624,10 +696,6 @@ RccCommitCycleCheck(TransactionId myxid)
         pfree(buf.data);
     }
 #endif
-    /* Release all partition locks in reverse order */
-    for (int i = NUM_DEP_PARTITIONS - 1; i >= 0; i--)
-        LWLockRelease(TxnReverseDepPartitions[i].lock);
-
     return found;
 }
 
@@ -1015,27 +1083,6 @@ rcc_bg_find_idx(TransactionId xid, const TransactionId *nodes, int nnodes)
     return -1;
 }
 
-/* Is "from depends on to" still recorded right now? */
-static bool
-rcc_bg_edge_exists(TransactionId from, TransactionId to)
-{
-    DepGraphPartition *partition = &TxnReverseDepPartitions[DEP_PARTITION(to)];
-    TxnReverseDepEntry *rev;
-    bool        found = false;
-
-    LWLockAcquire(partition->lock, LW_SHARED);
-    rev = hash_search(partition->graph, &to, HASH_FIND, NULL);
-    if (rev)
-        for (int i = 0; i < rev->nfroms; i++)
-            if (rev->from_list[i] == from)
-            {
-                found = true;
-                break;
-            }
-    LWLockRelease(partition->lock);
-    return found;
-}
-
 static void
 RccDetectorSweep(void)
 {
@@ -1152,7 +1199,7 @@ RccDetectorSweep(void)
                  */
                 TransactionId victim = nodes[u];
                 int         len = 1;
-                bool        real = rcc_bg_edge_exists(nodes[u], nodes[v]) &&
+				bool        real = RccDependencyEdgeExists(nodes[u], nodes[v]) &&
                                    TransactionIdIsInProgress(nodes[u]);
 
                 for (int w = u; real && w != v; w = parent[w])
@@ -1167,7 +1214,7 @@ RccDetectorSweep(void)
                     len++;
                     if (TransactionIdFollows(nodes[pw], victim))
                         victim = nodes[pw];
-                    real = rcc_bg_edge_exists(nodes[pw], nodes[w]) &&
+					real = RccDependencyEdgeExists(nodes[pw], nodes[w]) &&
                            TransactionIdIsInProgress(nodes[pw]);
                 }
                 if (real && !rcc_bg_is_doomed(victim))

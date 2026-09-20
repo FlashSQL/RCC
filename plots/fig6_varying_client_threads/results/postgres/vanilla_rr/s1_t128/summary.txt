@@ -1,0 +1,5 @@
+=== Experiment Summary ===
+Build Mode: vanilla_rr
+Warehouses: 1
+Terminals: 128
+Duration: 50s
