@@ -79,12 +79,12 @@ run_experiment() {
     fi
 }
 
-# run_experiment length bash "$PLOTS_DIR/fig4a_varying_transaction_length.sh" --postgres --skip-plot
-# run_experiment hotspot bash "$PLOTS_DIR/fig4b_varying_hotspot_position.sh" --postgres --skip-plot
-run_experiment threads bash "$SCRIPT_DIR/scripts/run_tpcc_threads.sh" \
-    --results-dir "$PLOTS_DIR/fig6_varying_client_threads/results/postgres"
-# run_experiment warehouses bash "$SCRIPT_DIR/scripts/run_tpcc_warehouses.sh" \
-    # --results-dir "$PLOTS_DIR/fig7_varying_warehouse_count/results/postgres"
+run_experiment length bash "$PLOTS_DIR/fig4a_varying_transaction_length.sh" --postgres --skip-plot
+run_experiment hotspot bash "$PLOTS_DIR/fig4b_varying_hotspot_position.sh" --postgres --skip-plot
+# run_experiment threads bash "$SCRIPT_DIR/scripts/run_tpcc_threads.sh" \
+#     --results-dir "$PLOTS_DIR/fig6_varying_client_threads/results/postgres"
+run_experiment warehouses bash "$SCRIPT_DIR/scripts/run_tpcc_warehouses.sh" \
+    --results-dir "$PLOTS_DIR/fig7_varying_warehouse_count/results/postgres"
 
 if [[ "$DRY_RUN" == false ]]; then
     echo "Experiment scripts finished. Review sysbench.log and consistency.txt for each TPC-C run."

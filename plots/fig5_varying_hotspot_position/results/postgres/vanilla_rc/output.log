@@ -1,0 +1,25 @@
+[CONFIG] isolation=RC (read committed)
+# Running sweep (threads=128, reads=256, distances=[0.0, 0.25, 0.5, 0.75, 1.0])
+
+=== UPDATE_DISTANCE = 0.00 ===
+[RUN] th=128 reads=256 dist=0.00 | TPS=116.3 commits=5813 aborts=0 | avg=1080.98ms p95=170553.64ms p99=280401.90ms
+
+=== UPDATE_DISTANCE = 0.25 ===
+[RUN] th=128 reads=256 dist=0.25 | TPS=161.5 commits=8073 aborts=0 | avg=779.63ms p95=177934.05ms p99=277458.19ms
+
+=== UPDATE_DISTANCE = 0.50 ===
+[RUN] th=128 reads=256 dist=0.50 | TPS=234.2 commits=11709 aborts=0 | avg=539.69ms p95=206753.95ms p99=377603.04ms
+
+=== UPDATE_DISTANCE = 0.75 ===
+[RUN] th=128 reads=256 dist=0.75 | TPS=417.0 commits=20851 aborts=0 | avg=305.02ms p95=172377.60ms p99=280201.47ms
+
+=== UPDATE_DISTANCE = 1.00 ===
+[RUN] th=128 reads=256 dist=1.00 | TPS=4597.1 commits=229853 aborts=0 | avg=27.84ms p95=104369.84ms p99=158480.04ms
+
+# SUMMARY (CSV)
+distance,tps,commits,aborts,avg_ms,p95_ms,p99_ms
+0.0,116.3,5813,0,1080.98,170553.64,280401.90
+0.25,161.5,8073,0,779.63,177934.05,277458.19
+0.5,234.2,11709,0,539.69,206753.95,377603.04
+0.75,417.0,20851,0,305.02,172377.60,280201.47
+1.0,4597.1,229853,0,27.84,104369.84,158480.04

@@ -1,0 +1,7 @@
+=== Experiment Summary ===
+Build Mode: rcc_rr
+Isolation: RR
+NUMA: numactl --cpunodebind=0 --membind=0
+Warehouses: 4
+Terminals: 64
+Duration: 50s

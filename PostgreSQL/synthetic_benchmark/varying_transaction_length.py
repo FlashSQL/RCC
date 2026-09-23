@@ -1,5 +1,6 @@
 # PostgreSQL version of thread/read sweep benchmark
 import time
+import threading
 import random
 import math
 from multiprocessing import Process, Queue, current_process
@@ -35,6 +36,27 @@ def connect():
         password=CONFIG.get("password", "")
     )
 
+
+class _Deadline(Exception):
+    """The phase ended in the middle of a transaction."""
+
+
+def _cancel_at(conn, stop_at):
+    # At the end of a phase, cancel the statement in flight (e.g. a SELECT ... FOR UPDATE queued on the hotspot row):
+    # the phase then ends at stop_at instead of when the lock queue has drained.
+    t = threading.Timer(max(0.0, stop_at - time.monotonic()), conn.cancel)
+    t.daemon = True
+    t.start()
+    return t
+
+
+def _rollback(conn):
+    try:
+        conn.rollback()
+    except Exception:   # the cancel hit the ROLLBACK itself; the timer fires only once
+        conn.rollback()
+
+
 def fetch_ids_for_p(p):
     conn = connect()
     try:
@@ -64,45 +86,52 @@ def worker(proc_idx, total_procs, reads_per_tx, result_q):
     upd_sql = "UPDATE bench_hotread SET val=val+1 WHERE p=-1 AND id=%s"
     read_sql = "SELECT payload FROM bench_hotread WHERE p=%s AND id=%s"
 
+    def one_tx(stop_at):
+        # the phase deadline is checked before every statement; a statement blocked at the deadline is cancelled
+        cur.execute("BEGIN")
+        cur.execute(sfu_sql, (CONFIG["hotspot_id"],))
+        cur.fetchall()  # Consume SELECT result
+        cur.execute(upd_sql, (CONFIG["hotspot_id"],))
+        for _ in range(reads_per_tx):
+            if time.monotonic() >= stop_at:
+                raise _Deadline()
+            rid = random.choice(id_pool)
+            cur.execute(read_sql, (p, rid))
+            cur.fetchall()  # Consume results
+        if time.monotonic() >= stop_at:
+            raise _Deadline()
+        conn.commit()
+
     # Warmup phase
     stop_at = time.monotonic() + CONFIG["warmup_sec"]
+    timer = _cancel_at(conn, stop_at)
     while time.monotonic() < stop_at:
         try:
-            cur.execute("BEGIN")
-            cur.execute(sfu_sql, (CONFIG["hotspot_id"],))
-            cur.fetchall()  # Consume SELECT result
-            cur.execute(upd_sql, (CONFIG["hotspot_id"],))
-            for _ in range(reads_per_tx):
-                rid = random.choice(id_pool)
-                cur.execute(read_sql, (p, rid))
-                cur.fetchall()  # Consume results
-            conn.commit()
+            one_tx(stop_at)
         except Exception:
-            conn.rollback()
+            _rollback(conn)
+    timer.join()   # its cancel has been sent before the measurement starts
 
-    # Measurement phase
+    # Measurement phase: ends at stop_at; the transaction in flight then is rolled back and not counted
     commits = 0
     aborts = 0
     latencies = []
     stop_at = time.monotonic() + CONFIG["measure_sec"]
+    timer = _cancel_at(conn, stop_at)
 
     while time.monotonic() < stop_at:
         t0 = time.monotonic()
         try:
-            cur.execute("BEGIN")
-            cur.execute(sfu_sql, (CONFIG["hotspot_id"],))
-            cur.fetchall()  # Consume SELECT result
-            cur.execute(upd_sql, (CONFIG["hotspot_id"],))
-            for _ in range(reads_per_tx):
-                rid = random.choice(id_pool)
-                cur.execute(read_sql, (p, rid))
-                cur.fetchall()  # Consume results
-            conn.commit()
+            one_tx(stop_at)
             commits += 1
             latencies.append((time.monotonic() - t0) * 1000.0)
+        except _Deadline:
+            _rollback(conn)
         except Exception:
-            conn.rollback()
-            aborts += 1
+            _rollback(conn)
+            if time.monotonic() < stop_at:   # cancelled at the deadline: not an abort
+                aborts += 1
+    timer.join()
 
     cur.close()
     conn.close()

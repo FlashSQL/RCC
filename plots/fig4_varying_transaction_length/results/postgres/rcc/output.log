@@ -1,0 +1,47 @@
+[CONFIG] isolation=RR (repeatable read)
+# Running sweep...
+
+=== READS_PER_TX = 64 ===
+[RUN] threads=  1 reads= 64 | TPS=571.1 commits=28553 aborts=0 | avg=1.75ms p95=48152.79ms p99=50360.12ms
+[RUN] threads=  8 reads= 64 | TPS=3965.9 commits=198293 aborts=12 | avg=2.02ms p95=50292.40ms p99=54377.34ms
+[RUN] threads= 16 reads= 64 | TPS=7468.8 commits=373442 aborts=112 | avg=2.14ms p95=50321.01ms p99=56957.12ms
+[RUN] threads= 32 reads= 64 | TPS=11129.3 commits=556467 aborts=211 | avg=2.87ms p95=78808.99ms p99=91703.83ms
+[RUN] threads= 64 reads= 64 | TPS=6435.9 commits=321794 aborts=220 | avg=9.94ms p95=123470.05ms p99=198734.54ms
+[RUN] threads=128 reads= 64 | TPS=3833.0 commits=191652 aborts=273 | avg=33.37ms p95=150529.77ms p99=242173.38ms
+
+=== READS_PER_TX = 128 ===
+[RUN] threads=  1 reads=128 | TPS=293.0 commits=14649 aborts=0 | avg=3.41ms p95=48300.82ms p99=50521.11ms
+[RUN] threads=  8 reads=128 | TPS=1987.0 commits=99349 aborts=12 | avg=4.03ms p95=49273.33ms p99=51992.30ms
+[RUN] threads= 16 reads=128 | TPS=3891.3 commits=194567 aborts=87 | avg=4.11ms p95=50454.88ms p99=55071.70ms
+[RUN] threads= 32 reads=128 | TPS=7086.0 commits=354298 aborts=287 | avg=4.51ms p95=51815.41ms p99=66026.41ms
+[RUN] threads= 64 reads=128 | TPS=6454.2 commits=322709 aborts=451 | avg=9.91ms p95=94276.74ms p99=143398.88ms
+[RUN] threads=128 reads=128 | TPS=3595.7 commits=179784 aborts=215 | avg=35.55ms p95=140372.66ms p99=226344.29ms
+
+=== READS_PER_TX = 256 ===
+[RUN] threads=  1 reads=256 | TPS=145.6 commits=7280 aborts=0 | avg=6.87ms p95=47969.13ms p99=50213.63ms
+[RUN] threads=  8 reads=256 | TPS=1076.6 commits=53828 aborts=11 | avg=7.43ms p95=48467.85ms p99=51052.60ms
+[RUN] threads= 16 reads=256 | TPS=2026.0 commits=101300 aborts=62 | avg=7.90ms p95=48812.85ms p99=51873.87ms
+[RUN] threads= 32 reads=256 | TPS=3710.2 commits=185512 aborts=185 | avg=8.62ms p95=51547.33ms p99=57365.54ms
+[RUN] threads= 64 reads=256 | TPS=4848.7 commits=242436 aborts=1334 | avg=13.14ms p95=56010.65ms p99=67143.70ms
+[RUN] threads=128 reads=256 | TPS=3408.6 commits=170430 aborts=848 | avg=37.47ms p95=120047.50ms p99=193483.69ms
+
+# SUMMARY (CSV-like)
+threads,reads_per_tx,tps,commits,aborts,avg_ms,p95_ms,p99_ms,note
+1,64,571.1,28553,0,1.75,48152.79,50360.12,
+8,64,3965.9,198293,12,2.02,50292.40,54377.34,
+16,64,7468.8,373442,112,2.14,50321.01,56957.12,
+32,64,11129.3,556467,211,2.87,78808.99,91703.83,
+64,64,6435.9,321794,220,9.94,123470.05,198734.54,
+128,64,3833.0,191652,273,33.37,150529.77,242173.38,
+1,128,293.0,14649,0,3.41,48300.82,50521.11,
+8,128,1987.0,99349,12,4.03,49273.33,51992.30,
+16,128,3891.3,194567,87,4.11,50454.88,55071.70,
+32,128,7086.0,354298,287,4.51,51815.41,66026.41,
+64,128,6454.2,322709,451,9.91,94276.74,143398.88,
+128,128,3595.7,179784,215,35.55,140372.66,226344.29,
+1,256,145.6,7280,0,6.87,47969.13,50213.63,
+8,256,1076.6,53828,11,7.43,48467.85,51052.60,
+16,256,2026.0,101300,62,7.90,48812.85,51873.87,
+32,256,3710.2,185512,185,8.62,51547.33,57365.54,
+64,256,4848.7,242436,1334,13.14,56010.65,67143.70,
+128,256,3408.6,170430,848,37.47,120047.50,193483.69,
