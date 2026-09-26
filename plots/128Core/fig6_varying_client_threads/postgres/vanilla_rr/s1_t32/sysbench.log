@@ -1,0 +1,154 @@
+sysbench 1.1.0-3ceba0b (using bundled LuaJIT 2.1.0-beta3)
+
+Running the test with following options:
+Number of threads: 32
+Report intermediate results every 1 second(s)
+Initializing random number generator from current time
+
+
+Initializing worker threads...
+
+DB SCHEMA public
+backoff: on=0 base=2000us cap=200000us factor=2.00 jitter=1
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+Threads started!
+
+[ 1s ] thds: 32 tps: 1073.28 qps: 53008.51 (r/w/o: 14746.13/14959.98/23302.40) lat (ms,95%): 139.85 err/s 10535.95 reconn/s: 0.00
+[ 2s ] thds: 32 tps: 1210.08 qps: 58823.71 (r/w/o: 16166.02/16491.04/26166.65) lat (ms,95%): 130.13 err/s 11884.75 reconn/s: 0.00
+[ 3s ] thds: 32 tps: 1181.98 qps: 58075.78 (r/w/o: 15775.67/16011.66/26288.45) lat (ms,95%): 125.52 err/s 11968.75 reconn/s: 0.00
+[ 4s ] thds: 32 tps: 1174.98 qps: 57697.22 (r/w/o: 15546.79/15804.79/26345.64) lat (ms,95%): 134.90 err/s 12005.84 reconn/s: 0.00
+[ 5s ] thds: 32 tps: 1174.01 qps: 57664.29 (r/w/o: 15557.08/15805.08/26302.13) lat (ms,95%): 125.52 err/s 11984.06 reconn/s: 0.00
+[ 6s ] thds: 32 tps: 1193.01 qps: 58837.37 (r/w/o: 16096.10/16373.10/26368.16) lat (ms,95%): 121.08 err/s 11998.08 reconn/s: 0.00
+[ 7s ] thds: 32 tps: 1233.97 qps: 59832.55 (r/w/o: 16581.60/16870.59/26380.36) lat (ms,95%): 134.90 err/s 11961.71 reconn/s: 0.00
+[ 8s ] thds: 32 tps: 1197.03 qps: 57993.51 (r/w/o: 15685.41/15968.42/26339.69) lat (ms,95%): 123.28 err/s 11982.31 reconn/s: 0.00
+[ 9s ] thds: 32 tps: 1216.02 qps: 59313.16 (r/w/o: 16556.32/16782.33/25974.51) lat (ms,95%): 134.90 err/s 11776.23 reconn/s: 0.00
+[ 10s ] thds: 32 tps: 1130.97 qps: 55987.38 (r/w/o: 14774.57/15029.57/26183.24) lat (ms,95%): 127.81 err/s 11965.65 reconn/s: 0.00
+[ 11s ] thds: 32 tps: 1186.99 qps: 58794.70 (r/w/o: 16290.92/16549.92/25953.87) lat (ms,95%): 127.81 err/s 11793.94 reconn/s: 0.00
+[ 12s ] thds: 32 tps: 1254.02 qps: 60863.92 (r/w/o: 16898.26/17120.26/26845.41) lat (ms,95%): 118.92 err/s 12181.18 reconn/s: 0.00
+[ 13s ] thds: 32 tps: 1176.04 qps: 57014.85 (r/w/o: 15666.51/15942.52/25405.82) lat (ms,95%): 137.35 err/s 11532.37 reconn/s: 0.00
+[ 14s ] thds: 32 tps: 1171.97 qps: 57524.64 (r/w/o: 15360.64/15642.63/26521.37) lat (ms,95%): 134.90 err/s 12097.71 reconn/s: 0.00
+[ 15s ] thds: 32 tps: 1158.00 qps: 57103.87 (r/w/o: 15683.96/15941.96/25477.94) lat (ms,95%): 134.90 err/s 11588.97 reconn/s: 0.00
+[ 16s ] thds: 32 tps: 1233.03 qps: 60634.49 (r/w/o: 16729.41/16990.42/26914.66) lat (ms,95%): 123.28 err/s 12230.30 reconn/s: 0.00
+[ 17s ] thds: 32 tps: 1242.01 qps: 60255.66 (r/w/o: 16394.18/16647.18/27214.30) lat (ms,95%): 121.08 err/s 12371.14 reconn/s: 0.00
+[ 18s ] thds: 32 tps: 1195.93 qps: 58785.41 (r/w/o: 16031.02/16294.01/26460.39) lat (ms,95%): 130.13 err/s 12040.27 reconn/s: 0.00
+[ 19s ] thds: 32 tps: 1211.05 qps: 58978.57 (r/w/o: 16069.70/16321.71/26587.16) lat (ms,95%): 132.49 err/s 12090.53 reconn/s: 0.00
+[ 20s ] thds: 32 tps: 1184.94 qps: 58749.10 (r/w/o: 16408.19/16690.18/25650.73) lat (ms,95%): 137.35 err/s 11646.43 reconn/s: 0.00
+[ 21s ] thds: 32 tps: 1203.03 qps: 59040.50 (r/w/o: 16012.41/16307.42/26720.68) lat (ms,95%): 134.90 err/s 12159.31 reconn/s: 0.00
+[ 22s ] thds: 32 tps: 1231.01 qps: 60327.30 (r/w/o: 16450.08/16705.08/27172.14) lat (ms,95%): 116.80 err/s 12362.06 reconn/s: 0.00
+[ 23s ] thds: 32 tps: 1254.01 qps: 61298.37 (r/w/o: 17234.11/17544.11/26520.16) lat (ms,95%): 127.81 err/s 12014.07 reconn/s: 0.00
+[ 24s ] thds: 32 tps: 1205.99 qps: 58836.57 (r/w/o: 15821.89/16110.88/26903.80) lat (ms,95%): 139.85 err/s 12251.91 reconn/s: 0.00
+[ 25s ] thds: 32 tps: 1226.99 qps: 60204.58 (r/w/o: 16718.88/17013.88/26471.82) lat (ms,95%): 147.61 err/s 12011.92 reconn/s: 0.00
+[ 26s ] thds: 32 tps: 1278.97 qps: 62228.72 (r/w/o: 17929.63/18217.63/26081.46) lat (ms,95%): 132.49 err/s 11767.76 reconn/s: 0.00
+[ 27s ] thds: 32 tps: 1240.97 qps: 60729.75 (r/w/o: 16951.65/17220.65/26557.45) lat (ms,95%): 134.90 err/s 12047.75 reconn/s: 0.00
+[ 28s ] thds: 32 tps: 1167.03 qps: 57458.37 (r/w/o: 15393.37/15602.37/26462.63) lat (ms,95%): 142.39 err/s 12068.29 reconn/s: 0.00
+[ 29s ] thds: 32 tps: 1235.07 qps: 60539.37 (r/w/o: 16902.94/17206.96/26429.47) lat (ms,95%): 137.35 err/s 11987.67 reconn/s: 0.00
+[ 30s ] thds: 32 tps: 1257.88 qps: 61980.21 (r/w/o: 17134.40/17362.38/27483.43) lat (ms,95%): 123.28 err/s 12480.83 reconn/s: 0.00
+[ 31s ] thds: 32 tps: 1236.07 qps: 60203.64 (r/w/o: 15851.96/16123.98/28227.71) lat (ms,95%): 132.49 err/s 12883.78 reconn/s: 0.00
+[ 32s ] thds: 32 tps: 1203.99 qps: 59009.38 (r/w/o: 15806.84/16072.83/27129.72) lat (ms,95%): 150.29 err/s 12366.87 reconn/s: 0.00
+[ 33s ] thds: 32 tps: 1184.00 qps: 58385.91 (r/w/o: 15993.97/16265.97/26125.96) lat (ms,95%): 147.61 err/s 11885.98 reconn/s: 0.00
+[ 34s ] thds: 32 tps: 1255.01 qps: 61267.34 (r/w/o: 16886.09/17222.10/27159.15) lat (ms,95%): 130.13 err/s 12329.07 reconn/s: 0.00
+[ 35s ] thds: 32 tps: 1213.02 qps: 59107.11 (r/w/o: 16186.30/16489.31/26431.50) lat (ms,95%): 125.52 err/s 12013.23 reconn/s: 0.00
+[ 36s ] thds: 32 tps: 1203.98 qps: 59200.98 (r/w/o: 16408.72/16656.71/26135.55) lat (ms,95%): 139.85 err/s 11868.80 reconn/s: 0.00
+[ 37s ] thds: 32 tps: 1212.01 qps: 59495.32 (r/w/o: 16370.09/16617.09/26508.14) lat (ms,95%): 142.39 err/s 12048.06 reconn/s: 0.00
+[ 38s ] thds: 32 tps: 1210.03 qps: 59547.25 (r/w/o: 16099.34/16363.34/27084.57) lat (ms,95%): 134.90 err/s 12336.26 reconn/s: 0.00
+[ 39s ] thds: 32 tps: 1216.98 qps: 59519.10 (r/w/o: 16101.76/16305.75/27111.59) lat (ms,95%): 142.39 err/s 12349.81 reconn/s: 0.00
+[ 40s ] thds: 32 tps: 1195.99 qps: 58788.46 (r/w/o: 16404.85/16757.85/25625.76) lat (ms,95%): 125.52 err/s 11620.89 reconn/s: 0.00
+[ 41s ] thds: 32 tps: 1272.01 qps: 61411.42 (r/w/o: 16940.12/17247.12/27224.19) lat (ms,95%): 127.81 err/s 12345.09 reconn/s: 0.00
+[ 42s ] thds: 32 tps: 1252.95 qps: 60865.45 (r/w/o: 16881.29/17188.28/26795.88) lat (ms,95%): 144.97 err/s 12152.49 reconn/s: 0.00
+[ 43s ] thds: 32 tps: 1209.00 qps: 58739.99 (r/w/o: 15948.00/16241.00/26551.00) lat (ms,95%): 137.35 err/s 12070.00 reconn/s: 0.00
+[ 44s ] thds: 32 tps: 977.04 qps: 48327.04 (r/w/o: 13566.57/13835.58/20924.88) lat (ms,95%): 150.29 err/s 9489.40 reconn/s: 0.00
+[ 45s ] thds: 32 tps: 1204.02 qps: 58477.78 (r/w/o: 15926.21/16213.22/26338.35) lat (ms,95%): 150.29 err/s 11969.16 reconn/s: 0.00
+[ 46s ] thds: 32 tps: 1219.00 qps: 59309.92 (r/w/o: 16052.98/16314.98/26941.96) lat (ms,95%): 127.81 err/s 12264.98 reconn/s: 0.00
+[ 47s ] thds: 32 tps: 1148.99 qps: 56772.42 (r/w/o: 15549.84/15834.84/25387.74) lat (ms,95%): 137.35 err/s 11549.88 reconn/s: 0.00
+[ 48s ] thds: 32 tps: 1184.00 qps: 58251.86 (r/w/o: 15833.96/16087.96/26329.93) lat (ms,95%): 134.90 err/s 11986.97 reconn/s: 0.00
+[ 49s ] thds: 32 tps: 1176.97 qps: 57548.56 (r/w/o: 15647.61/15901.60/25999.35) lat (ms,95%): 147.61 err/s 11827.70 reconn/s: 0.00
+[ABORTSTATS] tid=2 no_att=1230 no_abrt=238 pay_att=19396 pay_abrt=18352 no_commits=992 no_lat_us=4101436 pay_commits=1044 pay_lat_us=45893304
+[ 50s ] thds: 32 tps: 1213.04 qps: 60044.83 (r/w/o: 16881.52/17154.52/26008.79) lat (ms,95%): 134.90 err/s 11799.36 reconn/s: 0.00
+[ABORTSTATS] tid=12 no_att=1346 no_abrt=265 pay_att=19457 pay_abrt=18373 no_commits=1081 no_lat_us=4451548 pay_commits=1084 pay_lat_us=45544382
+[ABORTSTATS] tid=10 no_att=1147 no_abrt=240 pay_att=19308 pay_abrt=18394 no_commits=907 no_lat_us=3788490 pay_commits=914 pay_lat_us=46208489
+[ABORTSTATS] tid=1 no_att=1279 no_abrt=234 pay_att=19444 pay_abrt=18371 no_commits=1045 no_lat_us=4360780 pay_commits=1073 pay_lat_us=45636033
+[ABORTSTATS] tid=27 no_att=1281 no_abrt=244 pay_att=19697 pay_abrt=18646 no_commits=1037 no_lat_us=4244926 pay_commits=1051 pay_lat_us=45753140
+[ABORTSTATS] tid=18 no_att=1025 no_abrt=212 pay_att=19630 pay_abrt=18799 no_commits=813 no_lat_us=3406137 pay_commits=831 pay_lat_us=46593789
+[ABORTSTATS] tid=24 no_att=1030 no_abrt=228 pay_att=19245 pay_abrt=18411 no_commits=802 no_lat_us=3478740 pay_commits=834 pay_lat_us=46522497
+[ABORTSTATS] tid=11 no_att=1252 no_abrt=259 pay_att=19694 pay_abrt=18691 no_commits=993 no_lat_us=4109211 pay_commits=1003 pay_lat_us=45892760
+[ABORTSTATS] tid=20 no_att=1105 no_abrt=205 pay_att=19454 pay_abrt=18485 no_commits=900 no_lat_us=3678630 pay_commits=969 pay_lat_us=46324285
+[ABORTSTATS] tid=23 no_att=1149 no_abrt=224 pay_att=19496 pay_abrt=18506 no_commits=925 no_lat_us=3769956 pay_commits=990 pay_lat_us=46233954
+[ABORTSTATS] tid=13 no_att=982 no_abrt=196 pay_att=19179 pay_abrt=18441 no_commits=786 no_lat_us=3242700 pay_commits=738 pay_lat_us=46763496
+[ABORTSTATS] tid=25 no_att=1049 no_abrt=192 pay_att=19344 pay_abrt=18487 no_commits=857 no_lat_us=3537662 pay_commits=857 pay_lat_us=46469624
+[ABORTSTATS] tid=16 no_att=1075 no_abrt=194 pay_att=19446 pay_abrt=18533 no_commits=881 no_lat_us=3685920 pay_commits=913 pay_lat_us=46322266
+[ABORTSTATS] tid=19 no_att=1030 no_abrt=200 pay_att=19455 pay_abrt=18673 no_commits=830 no_lat_us=3443135 pay_commits=782 pay_lat_us=46566239
+[ABORTSTATS] tid=28 no_att=1316 no_abrt=275 pay_att=19517 pay_abrt=18435 no_commits=1041 no_lat_us=4270975 pay_commits=1082 pay_lat_us=45738523
+[ABORTSTATS] tid=31 no_att=1121 no_abrt=200 pay_att=19389 pay_abrt=18445 no_commits=921 no_lat_us=3763119 pay_commits=944 pay_lat_us=46248089
+[ABORTSTATS] tid=29 no_att=1404 no_abrt=268 pay_att=19647 pay_abrt=18525 no_commits=1136 no_lat_us=4645852 pay_commits=1122 pay_lat_us=45365995
+[ABORTSTATS] tid=7 no_att=1198 no_abrt=235 pay_att=19477 pay_abrt=18488 no_commits=963 no_lat_us=3937574 pay_commits=989 pay_lat_us=46075430
+[ABORTSTATS] tid=26 no_att=1031 no_abrt=209 pay_att=19178 pay_abrt=18360 no_commits=822 no_lat_us=3439058 pay_commits=818 pay_lat_us=46575617
+[ABORTSTATS] tid=4 no_att=1148 no_abrt=232 pay_att=19326 pay_abrt=18443 no_commits=916 no_lat_us=3807049 pay_commits=883 pay_lat_us=46209097
+[ABORTSTATS] tid=14 no_att=1290 no_abrt=240 pay_att=19184 pay_abrt=18213 no_commits=1050 no_lat_us=4319848 pay_commits=971 pay_lat_us=45697061
+[ABORTSTATS] tid=22 no_att=922 no_abrt=178 pay_att=19533 pay_abrt=18714 no_commits=744 no_lat_us=3118754 pay_commits=819 pay_lat_us=46900036
+[ABORTSTATS] tid=30 no_att=1341 no_abrt=241 pay_att=19387 pay_abrt=18332 no_commits=1100 no_lat_us=4466129 pay_commits=1055 pay_lat_us=45552842
+[ABORTSTATS] tid=3 no_att=1225 no_abrt=237 pay_att=19458 pay_abrt=18441 no_commits=988 no_lat_us=4129209 pay_commits=1017 pay_lat_us=45891366
+[ABORTSTATS] tid=8 no_att=1298 no_abrt=240 pay_att=19293 pay_abrt=18252 no_commits=1058 no_lat_us=4325751 pay_commits=1041 pay_lat_us=45695686
+[ABORTSTATS] tid=15 no_att=1255 no_abrt=236 pay_att=19433 pay_abrt=18425 no_commits=1019 no_lat_us=4186083 pay_commits=1008 pay_lat_us=45836403
+[ABORTSTATS] tid=5 no_att=1130 no_abrt=237 pay_att=19302 pay_abrt=18397 no_commits=893 no_lat_us=3706009 pay_commits=905 pay_lat_us=46317858
+[ABORTSTATS] tid=21 no_att=1105 no_abrt=211 pay_att=19389 pay_abrt=18546 no_commits=894 no_lat_us=3698125 pay_commits=843 pay_lat_us=46326961
+[ABORTSTATS] tid=6 no_att=918 no_abrt=187 pay_att=19090 pay_abrt=18410 no_commits=731 no_lat_us=3053927 pay_commits=680 pay_lat_us=46973487
+[ABORTSTATS] tid=9 no_att=1278 no_abrt=265 pay_att=19349 pay_abrt=18369 no_commits=1013 no_lat_us=4249460 pay_commits=980 pay_lat_us=45777855
+[ABORTSTATS] tid=0 no_att=1315 no_abrt=261 pay_att=19465 pay_abrt=18467 no_commits=1054 no_lat_us=4417375 pay_commits=998 pay_lat_us=45611154
+[ABORTSTATS] tid=17 no_att=1031 no_abrt=190 pay_att=19143 pay_abrt=18293 no_commits=841 no_lat_us=3527657 pay_commits=850 pay_lat_us=46502904
+SQL statistics:
+    queries performed:
+        read:                            807062
+        write:                           820570
+        other:                           1316286
+        total:                           2943918
+    transactions:                        60121  (1201.54 per sec.)
+    queries:                             2943918 (58835.49 per sec.)
+    ignored errors:                      598306 (11957.41 per sec.)
+    reconnects:                          0      (0.00 per sec.)
+
+Throughput:
+    events/s (eps):                      1201.5446
+    time elapsed:                        50.0364s
+    total number of events:              60121
+
+Latency (ms):
+         min:                                    0.70
+         avg:                                   26.62
+         max:                                 2005.47
+         95th percentile:                      134.90
+         sum:                              1600487.34
+
+Threads fairness:
+    events (avg/stddev):           1878.7812/212.89
+    execution time (avg/stddev):   50.0152/0.01
+

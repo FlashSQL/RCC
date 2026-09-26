@@ -6104,6 +6104,21 @@ skip_visibility_check_in_lock:
 						result = TM_Deleted;
 						goto failed;
 					}
+					if(CheckAbortedDependencies()){
+						/* Breakdown Code - ereport 전에 측정 */
+						INSTR_TIME_SET_CURRENT(txwait_end);
+						INSTR_TIME_SUBTRACT(txwait_end, txwait_start);
+						xact_count_tuple_update_wait_time(INSTR_TIME_GET_MICROSEC(txwait_end));
+						/* Breakdown Code End */
+						/* 의존 트랜잭션이 abort 되었으므로 직렬화 실패 (heap_update 스핀과 동일) */
+						if (have_tuple_lock)
+							UnlockTupleTuplock(relation, tid, mode);
+						if (BufferIsValid(vmbuffer))
+							ReleaseBuffer(vmbuffer);
+						ereport(ERROR,
+								(errcode(ERRCODE_T_R_SERIALIZATION_FAILURE),
+								 errmsg("cannot proceed because dependent transaction aborted 15, current TX_ID: %u", GetTopTransactionIdIfAny())));
+					}
 					// if(mode == LockTupleKeyShare){
 					// 	if(GetTopTransactionIdIfAny() == xmin){
 					// 		/* Breakdown Code - goto 전에 측정 */

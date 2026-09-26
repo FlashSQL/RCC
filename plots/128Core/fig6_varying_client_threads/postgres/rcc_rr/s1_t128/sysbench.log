@@ -1,0 +1,346 @@
+sysbench 1.1.0-3ceba0b (using bundled LuaJIT 2.1.0-beta3)
+
+Running the test with following options:
+Number of threads: 128
+Report intermediate results every 1 second(s)
+Initializing random number generator from current time
+
+
+Initializing worker threads...
+
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+backoff: on=0 base=2000us cap=200000us factor=2.00 jitter=1
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA publicDB SCHEMA public
+
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+DB SCHEMA public
+Threads started!
+
+[ 1s ] thds: 128 tps: 6425.21 qps: 202439.95 (r/w/o: 92450.02/94221.70/15768.23) lat (ms,95%): 69.29 err/s 1293.04 reconn/s: 0.00
+[ 2s ] thds: 128 tps: 6664.38 qps: 211989.09 (r/w/o: 96728.52/98491.62/16768.96) lat (ms,95%): 70.55 err/s 1757.10 reconn/s: 0.00
+[ 3s ] thds: 128 tps: 6844.49 qps: 212768.22 (r/w/o: 97227.79/99093.65/16446.78) lat (ms,95%): 68.05 err/s 1406.90 reconn/s: 0.00
+[ 4s ] thds: 128 tps: 6851.42 qps: 212647.11 (r/w/o: 97081.99/98875.10/16690.03) lat (ms,95%): 66.84 err/s 1526.09 reconn/s: 0.00
+[ 5s ] thds: 128 tps: 6974.07 qps: 218329.26 (r/w/o: 99695.03/101525.05/17109.18) lat (ms,95%): 65.65 err/s 1609.02 reconn/s: 0.00
+[ 6s ] thds: 128 tps: 6955.82 qps: 225185.26 (r/w/o: 102857.38/104653.33/17674.55) lat (ms,95%): 69.29 err/s 1923.95 reconn/s: 0.00
+[ 7s ] thds: 128 tps: 6415.21 qps: 203689.70 (r/w/o: 92655.05/94019.09/17015.56) lat (ms,95%): 74.46 err/s 2137.07 reconn/s: 0.00
+[ 8s ] thds: 128 tps: 7153.27 qps: 225697.63 (r/w/o: 103031.94/104961.02/17704.68) lat (ms,95%): 65.65 err/s 1731.07 reconn/s: 0.00
+[ 9s ] thds: 128 tps: 7029.71 qps: 222795.88 (r/w/o: 101739.83/103586.76/17469.28) lat (ms,95%): 66.84 err/s 1747.93 reconn/s: 0.00
+[ 10s ] thds: 128 tps: 7298.54 qps: 233585.12 (r/w/o: 106668.21/108666.08/18250.84) lat (ms,95%): 64.47 err/s 1871.88 reconn/s: 0.00
+[ 11s ] thds: 128 tps: 7160.23 qps: 230483.32 (r/w/o: 105271.34/107331.41/17880.57) lat (ms,95%): 68.05 err/s 1819.06 reconn/s: 0.00
+[ 12s ] thds: 128 tps: 6949.83 qps: 227339.37 (r/w/o: 103718.43/105405.39/18215.55) lat (ms,95%): 66.84 err/s 2194.95 reconn/s: 0.00
+[ 13s ] thds: 128 tps: 7017.50 qps: 223434.79 (r/w/o: 101989.21/103739.33/17706.25) lat (ms,95%): 69.29 err/s 1870.13 reconn/s: 0.00
+[ 14s ] thds: 128 tps: 6881.63 qps: 221189.12 (r/w/o: 100873.58/102605.49/17710.05) lat (ms,95%): 70.55 err/s 2010.89 reconn/s: 0.00
+[ 15s ] thds: 128 tps: 7163.89 qps: 226064.42 (r/w/o: 103161.37/105260.33/17642.72) lat (ms,95%): 65.65 err/s 1691.97 reconn/s: 0.00
+[ 16s ] thds: 128 tps: 7074.19 qps: 227331.98 (r/w/o: 103689.73/105644.78/17997.47) lat (ms,95%): 69.29 err/s 1964.05 reconn/s: 0.00
+[ 17s ] thds: 128 tps: 6568.89 qps: 224505.20 (r/w/o: 102322.27/103863.24/18319.69) lat (ms,95%): 71.83 err/s 2629.96 reconn/s: 0.00
+[ 18s ] thds: 128 tps: 6865.04 qps: 220879.13 (r/w/o: 100661.52/102453.53/17764.09) lat (ms,95%): 68.05 err/s 2053.01 reconn/s: 0.00
+[ 19s ] thds: 128 tps: 7302.71 qps: 228542.83 (r/w/o: 104352.81/106501.72/17688.29) lat (ms,95%): 64.47 err/s 1581.94 reconn/s: 0.00
+[ 20s ] thds: 128 tps: 6958.44 qps: 225453.28 (r/w/o: 103000.52/104596.62/17856.13) lat (ms,95%): 69.29 err/s 2008.13 reconn/s: 0.00
+[ 21s ] thds: 128 tps: 7475.99 qps: 234173.78 (r/w/o: 107003.90/109191.90/17977.98) lat (ms,95%): 63.32 err/s 1549.00 reconn/s: 0.00
+[ 22s ] thds: 128 tps: 7457.83 qps: 235867.74 (r/w/o: 107820.60/109919.55/18127.60) lat (ms,95%): 62.19 err/s 1635.96 reconn/s: 0.00
+[ 23s ] thds: 128 tps: 7036.35 qps: 225057.28 (r/w/o: 102701.15/104375.23/17980.90) lat (ms,95%): 66.84 err/s 1998.10 reconn/s: 0.00
+[ 24s ] thds: 128 tps: 7007.70 qps: 220868.57 (r/w/o: 100797.70/102551.62/17519.25) lat (ms,95%): 66.84 err/s 1793.92 reconn/s: 0.00
+[ 25s ] thds: 128 tps: 7048.17 qps: 222815.48 (r/w/o: 101629.50/103550.55/17635.43) lat (ms,95%): 65.65 err/s 1816.04 reconn/s: 0.00
+[ 26s ] thds: 128 tps: 6712.94 qps: 215707.03 (r/w/o: 98418.10/99906.09/17382.84) lat (ms,95%): 73.13 err/s 2013.98 reconn/s: 0.00
+[ 27s ] thds: 128 tps: 7113.89 qps: 221616.67 (r/w/o: 101082.48/103078.45/17455.74) lat (ms,95%): 68.05 err/s 1656.98 reconn/s: 0.00
+[ 28s ] thds: 128 tps: 7114.70 qps: 227901.45 (r/w/o: 104125.64/105816.57/17959.25) lat (ms,95%): 66.84 err/s 1903.92 reconn/s: 0.00
+[ 29s ] thds: 128 tps: 7207.43 qps: 228950.82 (r/w/o: 104480.30/106431.42/18039.09) lat (ms,95%): 65.65 err/s 1849.11 reconn/s: 0.00
+[ 30s ] thds: 128 tps: 7274.67 qps: 228000.62 (r/w/o: 104045.26/106002.17/17953.18) lat (ms,95%): 65.65 err/s 1734.92 reconn/s: 0.00
+[ 31s ] thds: 128 tps: 7268.14 qps: 230069.58 (r/w/o: 105053.09/107039.13/17977.36) lat (ms,95%): 64.47 err/s 1754.03 reconn/s: 0.00
+[ 32s ] thds: 128 tps: 7293.99 qps: 230978.67 (r/w/o: 105409.85/107582.84/17985.97) lat (ms,95%): 64.47 err/s 1740.00 reconn/s: 0.00
+[ 33s ] thds: 128 tps: 7250.95 qps: 220788.41 (r/w/o: 100760.27/102649.26/17378.87) lat (ms,95%): 64.47 err/s 1476.99 reconn/s: 0.00
+[ 34s ] thds: 128 tps: 7086.08 qps: 227987.70 (r/w/o: 104043.23/106074.26/17870.21) lat (ms,95%): 64.47 err/s 1886.02 reconn/s: 0.00
+[ 35s ] thds: 128 tps: 7147.91 qps: 227460.19 (r/w/o: 103934.71/105729.69/17795.78) lat (ms,95%): 68.05 err/s 1787.98 reconn/s: 0.00
+[ 36s ] thds: 128 tps: 7522.88 qps: 235766.15 (r/w/o: 107644.24/110018.20/18103.70) lat (ms,95%): 63.32 err/s 1556.97 reconn/s: 0.00
+[ 37s ] thds: 128 tps: 7046.47 qps: 222506.72 (r/w/o: 101547.72/103277.83/17681.17) lat (ms,95%): 68.05 err/s 1840.12 reconn/s: 0.00
+[ 38s ] thds: 128 tps: 7254.90 qps: 231483.78 (r/w/o: 105720.53/107771.50/17991.75) lat (ms,95%): 66.84 err/s 1779.98 reconn/s: 0.00
+[ 39s ] thds: 128 tps: 7248.03 qps: 226368.82 (r/w/o: 103311.37/105266.38/17791.06) lat (ms,95%): 63.32 err/s 1689.01 reconn/s: 0.00
+[ 40s ] thds: 128 tps: 6921.79 qps: 219968.21 (r/w/o: 100427.90/102119.85/17420.46) lat (ms,95%): 70.55 err/s 1818.94 reconn/s: 0.00
+[ 41s ] thds: 128 tps: 6879.89 qps: 218661.53 (r/w/o: 99756.42/101323.39/17581.72) lat (ms,95%): 69.29 err/s 1950.97 reconn/s: 0.00
+[ 42s ] thds: 128 tps: 6935.19 qps: 220420.13 (r/w/o: 100563.80/102375.85/17480.49) lat (ms,95%): 68.05 err/s 1842.05 reconn/s: 0.00
+[ 43s ] thds: 128 tps: 7400.79 qps: 228516.42 (r/w/o: 104284.00/106442.94/17789.49) lat (ms,95%): 62.19 err/s 1526.96 reconn/s: 0.00
+[ 44s ] thds: 128 tps: 6837.29 qps: 212609.03 (r/w/o: 97274.13/99246.22/16088.68) lat (ms,95%): 70.55 err/s 1236.05 reconn/s: 0.00
+[ 45s ] thds: 128 tps: 6191.92 qps: 190049.61 (r/w/o: 86916.91/88591.88/14540.82) lat (ms,95%): 80.03 err/s 1104.99 reconn/s: 0.00
+[ 46s ] thds: 128 tps: 7467.82 qps: 229091.61 (r/w/o: 104758.54/106860.49/17472.59) lat (ms,95%): 63.32 err/s 1297.97 reconn/s: 0.00
+[ 47s ] thds: 128 tps: 6980.36 qps: 227390.64 (r/w/o: 103844.31/105597.40/17948.92) lat (ms,95%): 69.29 err/s 2044.10 reconn/s: 0.00
+[ 48s ] thds: 128 tps: 7107.84 qps: 221299.02 (r/w/o: 101102.72/102966.68/17229.61) lat (ms,95%): 69.29 err/s 1551.97 reconn/s: 0.00
+[ 49s ] thds: 128 tps: 7423.82 qps: 230080.57 (r/w/o: 105191.52/107065.47/17823.58) lat (ms,95%): 64.47 err/s 1514.96 reconn/s: 0.00
+[ABORTSTATS] tid=106 no_att=1571 no_abrt=195 pay_att=1841 pay_abrt=485 no_commits=1376 no_lat_us=7098745 pay_commits=1356 pay_lat_us=42889835
+[ABORTSTATS] tid=62 no_att=1490 no_abrt=176 pay_att=1814 pay_abrt=466 no_commits=1314 no_lat_us=6818968 pay_commits=1348 pay_lat_us=43169751
+[ABORTSTATS] tid=96 no_att=1515 no_abrt=152 pay_att=1894 pay_abrt=509 no_commits=1363 no_lat_us=7058558 pay_commits=1385 pay_lat_us=42929521
+[ABORTSTATS] tid=8 no_att=1537 no_abrt=160 pay_att=1926 pay_abrt=492 no_commits=1377 no_lat_us=7023985 pay_commits=1434 pay_lat_us=42964680
+[ABORTSTATS] tid=36 no_att=1519 no_abrt=181 pay_att=1885 pay_abrt=503 no_commits=1338 no_lat_us=6888001 pay_commits=1382 pay_lat_us=43100676
+[ABORTSTATS] tid=54 no_att=1592 no_abrt=155 pay_att=1878 pay_abrt=491 no_commits=1437 no_lat_us=7319290 pay_commits=1387 pay_lat_us=42669752
+[ 50s ] thds: 128 tps: 7444.71 qps: 233713.83 (r/w/o: 106879.81/109025.72/17808.30) lat (ms,95%): 62.19 err/s 1500.94 reconn/s: 0.00
+[ABORTSTATS] tid=79 no_att=1625 no_abrt=185 pay_att=1830 pay_abrt=469 no_commits=1440 no_lat_us=7370986 pay_commits=1361 pay_lat_us=42618380
+[ABORTSTATS] tid=101 no_att=1542 no_abrt=199 pay_att=1899 pay_abrt=517 no_commits=1343 no_lat_us=6948375 pay_commits=1382 pay_lat_us=43040911
+[ABORTSTATS] tid=100 no_att=1599 no_abrt=187 pay_att=1875 pay_abrt=464 no_commits=1412 no_lat_us=7384018 pay_commits=1411 pay_lat_us=42604946
+[ABORTSTATS] tid=97 no_att=1489 no_abrt=174 pay_att=1882 pay_abrt=521 no_commits=1315 no_lat_us=6816495 pay_commits=1361 pay_lat_us=43172790
+[ABORTSTATS] tid=4 no_att=1467 no_abrt=163 pay_att=1834 pay_abrt=484 no_commits=1304 no_lat_us=6747461 pay_commits=1350 pay_lat_us=43242150
+[ABORTSTATS] tid=120 no_att=1488 no_abrt=166 pay_att=1879 pay_abrt=523 no_commits=1322 no_lat_us=6736254 pay_commits=1356 pay_lat_us=43254301
+[ABORTSTATS] tid=121 no_att=1622 no_abrt=173 pay_att=1911 pay_abrt=499 no_commits=1449 no_lat_us=7475109 pay_commits=1412 pay_lat_us=42514846
+[ABORTSTATS] tid=109 no_att=1510 no_abrt=182 pay_att=1856 pay_abrt=508 no_commits=1328 no_lat_us=6875957 pay_commits=1348 pay_lat_us=43114489
+[ABORTSTATS] tid=78 no_att=1539 no_abrt=182 pay_att=1843 pay_abrt=517 no_commits=1357 no_lat_us=7007397 pay_commits=1326 pay_lat_us=42982613
+[ABORTSTATS] tid=12 no_att=1685 no_abrt=181 pay_att=1895 pay_abrt=470 no_commits=1504 no_lat_us=7713190 pay_commits=1425 pay_lat_us=42276541
+[ABORTSTATS] tid=114 no_att=1511 no_abrt=197 pay_att=1871 pay_abrt=454 no_commits=1314 no_lat_us=6868157 pay_commits=1417 pay_lat_us=43122079
+[ABORTSTATS] tid=117 no_att=1583 no_abrt=185 pay_att=1881 pay_abrt=543 no_commits=1398 no_lat_us=7241156 pay_commits=1338 pay_lat_us=42749304
+[ABORTSTATS] tid=118 no_att=1527 no_abrt=184 pay_att=1890 pay_abrt=481 no_commits=1343 no_lat_us=6979336 pay_commits=1409 pay_lat_us=43010904
+[ABORTSTATS] tid=29 no_att=1572 no_abrt=178 pay_att=1869 pay_abrt=493 no_commits=1394 no_lat_us=7088732 pay_commits=1376 pay_lat_us=42902097
+[ABORTSTATS] tid=2 no_att=1582 no_abrt=198 pay_att=1889 pay_abrt=457 no_commits=1384 no_lat_us=7183895 pay_commits=1432 pay_lat_us=42806304
+[ABORTSTATS] tid=98 no_att=1475 no_abrt=149 pay_att=1869 pay_abrt=502 no_commits=1326 no_lat_us=6831399 pay_commits=1367 pay_lat_us=43159368
+[ABORTSTATS] tid=15 no_att=1623 no_abrt=192 pay_att=1879 pay_abrt=475 no_commits=1431 no_lat_us=7349997 pay_commits=1404 pay_lat_us=42640309
+[ABORTSTATS] tid=107 no_att=1541 no_abrt=186 pay_att=1965 pay_abrt=553 no_commits=1355 no_lat_us=6986920 pay_commits=1412 pay_lat_us=43004107
+[ABORTSTATS] tid=77 no_att=1579 no_abrt=173 pay_att=1891 pay_abrt=514 no_commits=1406 no_lat_us=7280748 pay_commits=1377 pay_lat_us=42709981
+[ABORTSTATS] tid=18 no_att=1583 no_abrt=159 pay_att=1860 pay_abrt=464 no_commits=1424 no_lat_us=7235039 pay_commits=1396 pay_lat_us=42755827
+[ABORTSTATS] tid=32 no_att=1455 no_abrt=163 pay_att=1852 pay_abrt=470 no_commits=1292 no_lat_us=6687507 pay_commits=1382 pay_lat_us=43303767
+[ABORTSTATS] tid=20 no_att=1557 no_abrt=201 pay_att=1915 pay_abrt=498 no_commits=1356 no_lat_us=7132687 pay_commits=1417 pay_lat_us=42857949
+[ABORTSTATS] tid=14 no_att=1434 no_abrt=161 pay_att=1819 pay_abrt=460 no_commits=1273 no_lat_us=6529674 pay_commits=1359 pay_lat_us=43462294
+[ABORTSTATS] tid=68 no_att=1614 no_abrt=185 pay_att=1864 pay_abrt=483 no_commits=1429 no_lat_us=7249184 pay_commits=1381 pay_lat_us=42742055
+[ABORTSTATS] tid=127 no_att=1617 no_abrt=187 pay_att=1845 pay_abrt=477 no_commits=1430 no_lat_us=7271836 pay_commits=1368 pay_lat_us=42719994
+[ABORTSTATS] tid=22 no_att=1670 no_abrt=193 pay_att=1822 pay_abrt=466 no_commits=1477 no_lat_us=7561147 pay_commits=1356 pay_lat_us=42429995
+[ABORTSTATS] tid=92 no_att=1601 no_abrt=176 pay_att=1929 pay_abrt=519 no_commits=1425 no_lat_us=7307166 pay_commits=1410 pay_lat_us=42683986
+[ABORTSTATS] tid=119 no_att=1572 no_abrt=177 pay_att=1909 pay_abrt=475 no_commits=1395 no_lat_us=7267194 pay_commits=1434 pay_lat_us=42725173
+[ABORTSTATS] tid=3 no_att=1566 no_abrt=193 pay_att=1913 pay_abrt=500 no_commits=1373 no_lat_us=7104708 pay_commits=1413 pay_lat_us=42887409
+[ABORTSTATS] tid=43 no_att=1627 no_abrt=204 pay_att=1823 pay_abrt=476 no_commits=1423 no_lat_us=7393161 pay_commits=1347 pay_lat_us=42599321
+[ABORTSTATS] tid=23 no_att=1572 no_abrt=188 pay_att=1896 pay_abrt=494 no_commits=1384 no_lat_us=7260232 pay_commits=1402 pay_lat_us=42730929
+[ABORTSTATS] tid=53 no_att=1575 no_abrt=182 pay_att=1905 pay_abrt=489 no_commits=1393 no_lat_us=7264531 pay_commits=1416 pay_lat_us=42727508
+[ABORTSTATS] tid=66 no_att=1588 no_abrt=182 pay_att=1910 pay_abrt=486 no_commits=1406 no_lat_us=7114242 pay_commits=1424 pay_lat_us=42877718
+[ABORTSTATS] tid=35 no_att=1449 no_abrt=159 pay_att=1856 pay_abrt=511 no_commits=1290 no_lat_us=6593136 pay_commits=1345 pay_lat_us=43400073
+[ABORTSTATS] tid=44 no_att=1586 no_abrt=169 pay_att=1870 pay_abrt=472 no_commits=1417 no_lat_us=7291584 pay_commits=1398 pay_lat_us=42701254
+[ABORTSTATS] tid=33 no_att=1638 no_abrt=190 pay_att=1860 pay_abrt=494 no_commits=1448 no_lat_us=7508234 pay_commits=1366 pay_lat_us=42484776
+[ABORTSTATS] tid=47 no_att=1540 no_abrt=184 pay_att=1880 pay_abrt=488 no_commits=1356 no_lat_us=7054208 pay_commits=1392 pay_lat_us=42938534
+[ABORTSTATS] tid=30 no_att=1439 no_abrt=166 pay_att=1806 pay_abrt=504 no_commits=1273 no_lat_us=6491739 pay_commits=1302 pay_lat_us=43502178
+[ABORTSTATS] tid=6 no_att=1546 no_abrt=184 pay_att=1915 pay_abrt=485 no_commits=1362 no_lat_us=7118732 pay_commits=1430 pay_lat_us=42873944
+[ABORTSTATS] tid=21 no_att=1588 no_abrt=186 pay_att=1878 pay_abrt=505 no_commits=1402 no_lat_us=7275869 pay_commits=1373 pay_lat_us=42717361
+[ABORTSTATS] tid=105 no_att=1613 no_abrt=179 pay_att=1852 pay_abrt=494 no_commits=1434 no_lat_us=7406927 pay_commits=1358 pay_lat_us=42586467
+[ABORTSTATS] tid=28 no_att=1592 no_abrt=180 pay_att=1881 pay_abrt=509 no_commits=1412 no_lat_us=7397641 pay_commits=1372 pay_lat_us=42595570
+[ABORTSTATS] tid=70 no_att=1635 no_abrt=204 pay_att=1867 pay_abrt=452 no_commits=1431 no_lat_us=7385893 pay_commits=1415 pay_lat_us=42606906
+[ABORTSTATS] tid=41 no_att=1687 no_abrt=200 pay_att=1899 pay_abrt=471 no_commits=1487 no_lat_us=7688971 pay_commits=1428 pay_lat_us=42304134
+[ABORTSTATS] tid=82 no_att=1524 no_abrt=188 pay_att=1799 pay_abrt=459 no_commits=1336 no_lat_us=6920924 pay_commits=1340 pay_lat_us=43072529
+[ABORTSTATS] tid=0 no_att=1527 no_abrt=181 pay_att=1865 pay_abrt=500 no_commits=1346 no_lat_us=6907451 pay_commits=1365 pay_lat_us=43086801
+[ABORTSTATS] tid=84 no_att=1659 no_abrt=194 pay_att=1857 pay_abrt=464 no_commits=1465 no_lat_us=7600965 pay_commits=1393 pay_lat_us=42392841
+[ABORTSTATS] tid=94 no_att=1628 no_abrt=175 pay_att=1885 pay_abrt=495 no_commits=1453 no_lat_us=7396286 pay_commits=1390 pay_lat_us=42597163
+[ABORTSTATS] tid=113 no_att=1549 no_abrt=181 pay_att=1849 pay_abrt=474 no_commits=1368 no_lat_us=7026076 pay_commits=1375 pay_lat_us=42967101
+[ABORTSTATS] tid=19 no_att=1518 no_abrt=164 pay_att=1871 pay_abrt=506 no_commits=1354 no_lat_us=6978355 pay_commits=1365 pay_lat_us=43014682
+[ABORTSTATS] tid=124 no_att=1532 no_abrt=191 pay_att=1863 pay_abrt=508 no_commits=1341 no_lat_us=6995778 pay_commits=1355 pay_lat_us=42996842
+[ABORTSTATS] tid=104 no_att=1471 no_abrt=153 pay_att=1861 pay_abrt=492 no_commits=1318 no_lat_us=6793855 pay_commits=1369 pay_lat_us=43200666
+[ABORTSTATS] tid=80 no_att=1612 no_abrt=210 pay_att=1891 pay_abrt=490 no_commits=1402 no_lat_us=7190237 pay_commits=1401 pay_lat_us=42804146
+[ABORTSTATS] tid=122 no_att=1561 no_abrt=165 pay_att=1878 pay_abrt=532 no_commits=1396 no_lat_us=7363674 pay_commits=1346 pay_lat_us=42630574
+[ABORTSTATS] tid=116 no_att=1581 no_abrt=177 pay_att=1917 pay_abrt=510 no_commits=1404 no_lat_us=7332987 pay_commits=1407 pay_lat_us=42660796
+[ABORTSTATS] tid=64 no_att=1613 no_abrt=183 pay_att=1884 pay_abrt=466 no_commits=1430 no_lat_us=7397684 pay_commits=1418 pay_lat_us=42597035
+[ABORTSTATS] tid=110 no_att=1485 no_abrt=186 pay_att=1864 pay_abrt=503 no_commits=1299 no_lat_us=6820133 pay_commits=1361 pay_lat_us=43174384
+[ABORTSTATS] tid=74 no_att=1496 no_abrt=163 pay_att=1812 pay_abrt=472 no_commits=1333 no_lat_us=6920838 pay_commits=1340 pay_lat_us=43073911
+[ABORTSTATS] tid=112 no_att=1509 no_abrt=170 pay_att=1852 pay_abrt=505 no_commits=1339 no_lat_us=6976323 pay_commits=1347 pay_lat_us=43018556
+[ABORTSTATS] tid=71 no_att=1469 no_abrt=151 pay_att=1846 pay_abrt=482 no_commits=1318 no_lat_us=6797385 pay_commits=1364 pay_lat_us=43197050
+[ABORTSTATS] tid=31 no_att=1407 no_abrt=131 pay_att=1887 pay_abrt=529 no_commits=1276 no_lat_us=6568992 pay_commits=1358 pay_lat_us=43425822
+[ABORTSTATS] tid=17 no_att=1572 no_abrt=188 pay_att=1860 pay_abrt=487 no_commits=1384 no_lat_us=7099914 pay_commits=1373 pay_lat_us=42894720
+[ABORTSTATS] tid=51 no_att=1518 no_abrt=144 pay_att=1875 pay_abrt=511 no_commits=1374 no_lat_us=7032567 pay_commits=1364 pay_lat_us=42961854
+[ABORTSTATS] tid=49 no_att=1463 no_abrt=148 pay_att=1897 pay_abrt=494 no_commits=1315 no_lat_us=6827222 pay_commits=1403 pay_lat_us=43167234
+[ABORTSTATS] tid=7 no_att=1547 no_abrt=161 pay_att=1934 pay_abrt=519 no_commits=1386 no_lat_us=7130830 pay_commits=1415 pay_lat_us=42863564
+[ABORTSTATS] tid=85 no_att=1509 no_abrt=187 pay_att=1874 pay_abrt=522 no_commits=1322 no_lat_us=6909591 pay_commits=1352 pay_lat_us=43085729
+[ABORTSTATS] tid=57 no_att=1546 no_abrt=200 pay_att=1921 pay_abrt=513 no_commits=1346 no_lat_us=7017121 pay_commits=1408 pay_lat_us=42977056
+[ABORTSTATS] tid=34 no_att=1611 no_abrt=200 pay_att=1859 pay_abrt=493 no_commits=1411 no_lat_us=7226832 pay_commits=1366 pay_lat_us=42768508
+[ABORTSTATS] tid=61 no_att=1429 no_abrt=145 pay_att=1919 pay_abrt=554 no_commits=1284 no_lat_us=6556638 pay_commits=1365 pay_lat_us=43439081
+[ABORTSTATS] tid=42 no_att=1603 no_abrt=189 pay_att=1892 pay_abrt=519 no_commits=1414 no_lat_us=7280231 pay_commits=1373 pay_lat_us=42715461
+[ABORTSTATS] tid=56 no_att=1738 no_abrt=219 pay_att=1880 pay_abrt=451 no_commits=1519 no_lat_us=7876035 pay_commits=1429 pay_lat_us=42119532
+[ABORTSTATS] tid=58 no_att=1470 no_abrt=140 pay_att=1881 pay_abrt=485 no_commits=1330 no_lat_us=6756859 pay_commits=1396 pay_lat_us=43239388
+[ABORTSTATS] tid=13 no_att=1576 no_abrt=195 pay_att=1872 pay_abrt=510 no_commits=1381 no_lat_us=7121478 pay_commits=1362 pay_lat_us=42875257
+[ABORTSTATS] tid=1 no_att=1481 no_abrt=182 pay_att=1889 pay_abrt=481 no_commits=1299 no_lat_us=6726157 pay_commits=1408 pay_lat_us=43270994
+[ABORTSTATS] tid=9 no_att=1603 no_abrt=191 pay_att=1871 pay_abrt=483 no_commits=1412 no_lat_us=7272457 pay_commits=1388 pay_lat_us=42724499
+[ABORTSTATS] tid=60 no_att=1578 no_abrt=170 pay_att=1901 pay_abrt=494 no_commits=1408 no_lat_us=7213752 pay_commits=1407 pay_lat_us=42782472
+[ABORTSTATS] tid=46 no_att=1469 no_abrt=154 pay_att=1891 pay_abrt=526 no_commits=1315 no_lat_us=6673681 pay_commits=1365 pay_lat_us=43323628
+[ABORTSTATS] tid=108 no_att=1484 no_abrt=165 pay_att=1952 pay_abrt=528 no_commits=1319 no_lat_us=6844320 pay_commits=1424 pay_lat_us=43152919
+[ABORTSTATS] tid=72 no_att=1703 no_abrt=211 pay_att=1886 pay_abrt=466 no_commits=1492 no_lat_us=7696301 pay_commits=1420 pay_lat_us=42300870
+[ABORTSTATS] tid=37 no_att=1489 no_abrt=176 pay_att=1869 pay_abrt=561 no_commits=1313 no_lat_us=6730827 pay_commits=1308 pay_lat_us=43267763
+[ABORTSTATS] tid=63 no_att=1581 no_abrt=178 pay_att=1797 pay_abrt=457 no_commits=1403 no_lat_us=7275961 pay_commits=1340 pay_lat_us=42722061
+[ABORTSTATS] tid=75 no_att=1554 no_abrt=180 pay_att=1876 pay_abrt=480 no_commits=1374 no_lat_us=7054516 pay_commits=1396 pay_lat_us=42944087
+[ABORTSTATS] tid=76 no_att=1652 no_abrt=198 pay_att=1783 pay_abrt=458 no_commits=1454 no_lat_us=7397296 pay_commits=1325 pay_lat_us=42603150
+[ABORTSTATS] tid=86 no_att=1462 no_abrt=172 pay_att=1843 pay_abrt=499 no_commits=1290 no_lat_us=6709214 pay_commits=1344 pay_lat_us=43292699
+[ABORTSTATS] tid=103 no_att=1616 no_abrt=183 pay_att=1809 pay_abrt=460 no_commits=1433 no_lat_us=7409683 pay_commits=1349 pay_lat_us=42589784
+[ABORTSTATS] tid=59 no_att=1488 no_abrt=177 pay_att=1854 pay_abrt=485 no_commits=1311 no_lat_us=6866559 pay_commits=1369 pay_lat_us=43132917
+[ABORTSTATS] tid=126 no_att=1562 no_abrt=178 pay_att=1835 pay_abrt=447 no_commits=1384 no_lat_us=7219234 pay_commits=1388 pay_lat_us=42782710
+[ABORTSTATS] tid=50 no_att=1518 no_abrt=171 pay_att=1845 pay_abrt=490 no_commits=1347 no_lat_us=6942988 pay_commits=1355 pay_lat_us=43057174
+[ABORTSTATS] tid=65 no_att=1530 no_abrt=164 pay_att=1909 pay_abrt=533 no_commits=1366 no_lat_us=7029618 pay_commits=1376 pay_lat_us=42970097
+[ABORTSTATS] tid=83 no_att=1526 no_abrt=184 pay_att=1925 pay_abrt=512 no_commits=1342 no_lat_us=6992371 pay_commits=1413 pay_lat_us=43008367[ABORTSTATS] tid=11 no_att=1556 no_abrt=194 pay_att=1879 pay_abrt=510 no_commits=1362 no_lat_us=7099901 pay_commits=1369 pay_lat_us=42900652
+
+[ABORTSTATS] tid=45 no_att=1591 no_abrt=179 pay_att=1869 pay_abrt=483 no_commits=1412 no_lat_us=7245188 pay_commits=1386 pay_lat_us=42755510
+[ABORTSTATS] tid=5 no_att=1689 no_abrt=221 pay_att=1917 pay_abrt=501 no_commits=1468 no_lat_us=7571761 pay_commits=1416 pay_lat_us=42429083
+[ABORTSTATS] tid=81 no_att=1558 no_abrt=171 pay_att=1831 pay_abrt=469 no_commits=1387 no_lat_us=7051479 pay_commits=1362 pay_lat_us=42949299
+[ABORTSTATS] tid=95 no_att=1581 no_abrt=180 pay_att=1885 pay_abrt=509 no_commits=1401 no_lat_us=7233569 pay_commits=1376 pay_lat_us=42768131
+[ABORTSTATS] tid=123 no_att=1450 no_abrt=131 pay_att=1906 pay_abrt=503 no_commits=1319 no_lat_us=6668736 pay_commits=1403 pay_lat_us=43332553
+[ABORTSTATS] tid=69 no_att=1516 no_abrt=149 pay_att=1842 pay_abrt=484 no_commits=1367 no_lat_us=7012199 pay_commits=1358 pay_lat_us=42989629
+[ABORTSTATS] tid=93 no_att=1514 no_abrt=154 pay_att=1887 pay_abrt=471 no_commits=1360 no_lat_us=7001055 pay_commits=1416 pay_lat_us=43000945
+[ABORTSTATS] tid=26 no_att=1592 no_abrt=177 pay_att=1919 pay_abrt=532 no_commits=1415 no_lat_us=7287916 pay_commits=1387 pay_lat_us=42714471
+[ABORTSTATS] tid=27 no_att=1582 no_abrt=156 pay_att=1878 pay_abrt=499 no_commits=1426 no_lat_us=7282458 pay_commits=1379 pay_lat_us=42718410
+[ABORTSTATS] tid=89 no_att=1601 no_abrt=192 pay_att=1836 pay_abrt=437 no_commits=1409 no_lat_us=7281778 pay_commits=1399 pay_lat_us=42721399
+[ABORTSTATS] tid=67 no_att=1531 no_abrt=166 pay_att=1914 pay_abrt=539 no_commits=1365 no_lat_us=7146186 pay_commits=1375 pay_lat_us=42856864
+[ABORTSTATS] tid=90 no_att=1572 no_abrt=173 pay_att=1913 pay_abrt=497 no_commits=1399 no_lat_us=7115013 pay_commits=1416 pay_lat_us=42888501
+[ABORTSTATS] tid=52 no_att=1530 no_abrt=165 pay_att=1922 pay_abrt=485 no_commits=1365 no_lat_us=6986010 pay_commits=1437 pay_lat_us=43017171
+[ABORTSTATS] tid=111 no_att=1489 no_abrt=173 pay_att=1799 pay_abrt=463 no_commits=1316 no_lat_us=6970114 pay_commits=1336 pay_lat_us=43033962
+[ABORTSTATS] tid=115 no_att=1529 no_abrt=163 pay_att=1911 pay_abrt=490 no_commits=1366 no_lat_us=6992591 pay_commits=1421 pay_lat_us=43011796
+[ABORTSTATS] tid=99 no_att=1610 no_abrt=190 pay_att=1898 pay_abrt=495 no_commits=1420 no_lat_us=7346705 pay_commits=1403 pay_lat_us=42657650
+[ABORTSTATS] tid=88 no_att=1631 no_abrt=198 pay_att=1827 pay_abrt=467 no_commits=1433 no_lat_us=7433718 pay_commits=1360 pay_lat_us=42571127
+[ABORTSTATS] tid=73 no_att=1562 no_abrt=181 pay_att=1860 pay_abrt=482 no_commits=1381 no_lat_us=7136189 pay_commits=1378 pay_lat_us=42868309
+[ABORTSTATS] tid=40 no_att=1524 no_abrt=161 pay_att=1862 pay_abrt=493 no_commits=1363 no_lat_us=7091531 pay_commits=1369 pay_lat_us=42914017
+[ABORTSTATS] tid=55 no_att=1667 no_abrt=189 pay_att=1881 pay_abrt=529 no_commits=1478 no_lat_us=7609616 pay_commits=1352 pay_lat_us=42396252
+[ABORTSTATS] tid=38 no_att=1554 no_abrt=159 pay_att=1854 pay_abrt=512 no_commits=1395 no_lat_us=7082778 pay_commits=1342 pay_lat_us=42923312
+[ABORTSTATS] tid=10 no_att=1579 no_abrt=198 pay_att=1829 pay_abrt=479 no_commits=1381 no_lat_us=7128322 pay_commits=1350 pay_lat_us=42877125
+[ABORTSTATS] tid=87 no_att=1623 no_abrt=202 pay_att=1851 pay_abrt=487 no_commits=1421 no_lat_us=7330585 pay_commits=1364 pay_lat_us=42675753
+[ABORTSTATS] tid=102 no_att=1564 no_abrt=184 pay_att=1876 pay_abrt=460 no_commits=1380 no_lat_us=7048645 pay_commits=1416 pay_lat_us=42957495
+[ABORTSTATS] tid=48 no_att=1411 no_abrt=156 pay_att=1891 pay_abrt=498 no_commits=1255 no_lat_us=6457746 pay_commits=1393 pay_lat_us=43548928
+[ABORTSTATS] tid=24 no_att=1496 no_abrt=163 pay_att=1868 pay_abrt=519 no_commits=1333 no_lat_us=6903581 pay_commits=1349 pay_lat_us=43102969
+[ABORTSTATS] tid=125 no_att=1601 no_abrt=190 pay_att=1854 pay_abrt=496 no_commits=1411 no_lat_us=7360413 pay_commits=1358 pay_lat_us=42646467
+[ABORTSTATS] tid=16 no_att=1604 no_abrt=173 pay_att=1895 pay_abrt=530 no_commits=1431 no_lat_us=7243970 pay_commits=1365 pay_lat_us=42763089
+[ABORTSTATS] tid=39 no_att=1514 no_abrt=175 pay_att=1779 pay_abrt=470 no_commits=1339 no_lat_us=7006555 pay_commits=1309 pay_lat_us=43002070
+[ABORTSTATS] tid=91 no_att=1482 no_abrt=165 pay_att=1846 pay_abrt=473 no_commits=1317 no_lat_us=6822195 pay_commits=1373 pay_lat_us=43185952
+[ABORTSTATS] tid=25 no_att=1557 no_abrt=196 pay_att=1839 pay_abrt=490 no_commits=1361 no_lat_us=7018966 pay_commits=1349 pay_lat_us=42989517
+SQL statistics:
+    queries performed:
+        read:                            5100515
+        write:                           5194142
+        other:                           877608
+        total:                           11172265
+    transactions:                        352845 (7051.54 per sec.)
+    queries:                             11172265 (223275.60 per sec.)
+    ignored errors:                      87682  (1752.31 per sec.)
+    reconnects:                          0      (0.00 per sec.)
+
+Throughput:
+    events/s (eps):                      7051.5406
+    time elapsed:                        50.0380s
+    total number of events:              352845
+
+Latency (ms):
+         min:                                    0.83
+         avg:                                   18.14
+         max:                                  360.38
+         95th percentile:                       66.84
+         sum:                              6400354.59
+
+Threads fairness:
+    events (avg/stddev):           2756.6016/68.55
+    execution time (avg/stddev):   50.0028/0.01
+

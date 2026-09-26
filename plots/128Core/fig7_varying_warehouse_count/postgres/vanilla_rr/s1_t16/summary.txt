@@ -1,0 +1,8 @@
+=== Experiment Summary ===
+Build Mode: vanilla_rr
+Isolation: RR
+NUMA: numactl --cpunodebind=0 --membind=0
+Warehouses: 1
+Terminals: 16
+Duration: 50s
+rcc_bg_detect: n/a
