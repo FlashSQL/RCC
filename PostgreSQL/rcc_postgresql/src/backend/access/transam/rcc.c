@@ -24,6 +24,8 @@
 #include "utils/wait_event.h"
 #include "access/rcc.h"
 #include "storage/lock.h"
+#include "utils/timeout.h"
+#include "utils/timestamp.h"
 
 /* See rcc.h: true while executing a FOR UPDATE/SHARE statement. */
 bool RccStmtForUpdate = false;
@@ -699,6 +701,33 @@ RccCommitCycleCheck(TransactionId myxid)
     return found;
 }
 
+/*
+ * Periodic dependency re-check during the commit wait.  XactLockTableWait
+ * sleeps until one dependency ends; a cascade abort of any other dependency
+ * sends no wake-up, so the sleeper would not notice it.  While parked, this
+ * timer raises an interrupt every RCC_DEP_RECHECK_MS so the dependencies are
+ * checked again (see WaitForTxnDependencies).
+ */
+#define RCC_DEP_RECHECK_MS	1
+static TimeoutId rccDepRecheckTimeout = MAX_TIMEOUTS;	/* registered on first use */
+
+static void
+RccDepRecheckHandler(void)
+{
+    InterruptPending = true;
+    SetLatch(MyLatch);
+}
+
+static void
+RccEnableDepRecheck(void)
+{
+    if (rccDepRecheckTimeout == MAX_TIMEOUTS)
+        rccDepRecheckTimeout = RegisterTimeout(USER_TIMEOUT, RccDepRecheckHandler);
+    enable_timeout_every(rccDepRecheckTimeout,
+                         TimestampTzPlusMilliseconds(GetCurrentTimestamp(), RCC_DEP_RECHECK_MS),
+                         RCC_DEP_RECHECK_MS);
+}
+
 RccDepResult
 WaitForTxnDependencies(void)
 {
@@ -756,12 +785,26 @@ WaitForTxnDependencies(void)
          */
         if (TransactionIdIsInProgress(depxid))
         {
+            /* Any dependency (not only depxid) already aborted: no need to wait. */
+            if (CheckAbortedDependencies())
+                return RCC_DEP_ABORTED;
 
             /* Breakdown Code - measure txwait time for dependency wait */
             instr_time txwait_start, txwait_end;
             INSTR_TIME_SET_CURRENT(txwait_start);
 
+            /*
+             * Keep checking while parked: another dependency may abort while we
+             * sleep on depxid, and nobody wakes us for it.  If depxid is itself
+             * waiting on us (e.g. spinning on a version we created), we would
+             * sleep forever.  The timer only raises an interrupt; the ProcSleep
+             * loop then runs ProcessInterrupts, whose RCC branch (postgres.c)
+             * aborts us via CheckAbortedDependencies().  On ERROR the timer is
+             * cleared by PostgresMain's disable_all_timeouts().
+             */
+            RccEnableDepRecheck();
             XactLockTableWait(depxid, NULL, NULL, XLTW_None);
+            disable_timeout(rccDepRecheckTimeout, false);
 
             INSTR_TIME_SET_CURRENT(txwait_end);
             INSTR_TIME_SUBTRACT(txwait_end, txwait_start);

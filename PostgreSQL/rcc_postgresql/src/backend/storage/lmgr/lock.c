@@ -190,19 +190,22 @@ static bool IsRelationExtensionLockHeld PG_USED_FOR_ASSERTS_ONLY = false;
 #define FAST_PATH_BITS_PER_SLOT			3
 #define FAST_PATH_LOCKNUMBER_OFFSET		1
 #define FAST_PATH_MASK					((1 << FAST_PATH_BITS_PER_SLOT) - 1)
+/* fpLockBits is an array of words, FP_LOCK_SLOTS_PER_WORD slots each (as in PG18) */
+#define FAST_PATH_WORD(n)		((n) / FP_LOCK_SLOTS_PER_WORD)
+#define FAST_PATH_SHIFT(n)		(FAST_PATH_BITS_PER_SLOT * ((n) % FP_LOCK_SLOTS_PER_WORD))
 #define FAST_PATH_GET_BITS(proc, n) \
-	(((proc)->fpLockBits >> (FAST_PATH_BITS_PER_SLOT * n)) & FAST_PATH_MASK)
+	(((proc)->fpLockBits[FAST_PATH_WORD(n)] >> FAST_PATH_SHIFT(n)) & FAST_PATH_MASK)
 #define FAST_PATH_BIT_POSITION(n, l) \
 	(AssertMacro((l) >= FAST_PATH_LOCKNUMBER_OFFSET), \
 	 AssertMacro((l) < FAST_PATH_BITS_PER_SLOT+FAST_PATH_LOCKNUMBER_OFFSET), \
 	 AssertMacro((n) < FP_LOCK_SLOTS_PER_BACKEND), \
-	 ((l) - FAST_PATH_LOCKNUMBER_OFFSET + FAST_PATH_BITS_PER_SLOT * (n)))
+	 ((l) - FAST_PATH_LOCKNUMBER_OFFSET + FAST_PATH_SHIFT(n)))
 #define FAST_PATH_SET_LOCKMODE(proc, n, l) \
-	 (proc)->fpLockBits |= UINT64CONST(1) << FAST_PATH_BIT_POSITION(n, l)
+	 (proc)->fpLockBits[FAST_PATH_WORD(n)] |= UINT64CONST(1) << FAST_PATH_BIT_POSITION(n, l)
 #define FAST_PATH_CLEAR_LOCKMODE(proc, n, l) \
-	 (proc)->fpLockBits &= ~(UINT64CONST(1) << FAST_PATH_BIT_POSITION(n, l))
+	 (proc)->fpLockBits[FAST_PATH_WORD(n)] &= ~(UINT64CONST(1) << FAST_PATH_BIT_POSITION(n, l))
 #define FAST_PATH_CHECK_LOCKMODE(proc, n, l) \
-	 ((proc)->fpLockBits & (UINT64CONST(1) << FAST_PATH_BIT_POSITION(n, l)))
+	 ((proc)->fpLockBits[FAST_PATH_WORD(n)] & (UINT64CONST(1) << FAST_PATH_BIT_POSITION(n, l)))
 
 /*
  * The fast-path lock mechanism is concerned only with relation locks on

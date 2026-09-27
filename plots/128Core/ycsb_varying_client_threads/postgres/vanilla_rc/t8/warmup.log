@@ -1,0 +1,121 @@
+sysbench 1.1.0-3ceba0b (using bundled LuaJIT 2.1.0-beta3)
+
+Running the test with following options:
+Number of threads: 8
+Report intermediate results every 1 second(s)
+Initializing random number generator from current time
+
+
+Initializing worker threads...
+
+Threads started!
+
+[ 1s ] thds: 8 tps: 759.49 qps: 13713.82 (r/w/o: 6091.92/6094.92/1526.98) lat (ms,95%): 36.24 err/s: 0.00 reconn/s: 0.00
+[ 2s ] thds: 8 tps: 1366.10 qps: 24633.85 (r/w/o: 10949.82/10951.82/2732.21) lat (ms,95%): 20.37 err/s: 0.00 reconn/s: 0.00
+[ 3s ] thds: 8 tps: 1709.02 qps: 30758.37 (r/w/o: 13668.16/13672.16/3418.04) lat (ms,95%): 16.41 err/s: 0.00 reconn/s: 0.00
+[ 4s ] thds: 8 tps: 2095.93 qps: 37707.69 (r/w/o: 16762.42/16753.42/4191.85) lat (ms,95%): 11.45 err/s: 0.00 reconn/s: 0.00
+[ 5s ] thds: 8 tps: 2187.01 qps: 39343.15 (r/w/o: 17486.07/17483.07/4374.02) lat (ms,95%): 11.24 err/s: 0.00 reconn/s: 0.00
+[ 6s ] thds: 8 tps: 2411.98 qps: 43481.65 (r/w/o: 19329.84/19327.84/4823.96) lat (ms,95%): 9.22 err/s: 0.00 reconn/s: 0.00
+[ 7s ] thds: 8 tps: 2824.88 qps: 50823.88 (r/w/o: 22583.06/22591.06/5649.76) lat (ms,95%): 7.30 err/s: 0.00 reconn/s: 0.00
+[ 8s ] thds: 8 tps: 2850.07 qps: 51288.22 (r/w/o: 22796.54/22791.54/5700.14) lat (ms,95%): 7.17 err/s: 0.00 reconn/s: 0.00
+[ 9s ] thds: 8 tps: 2855.95 qps: 51372.08 (r/w/o: 22828.59/22831.59/5711.90) lat (ms,95%): 7.84 err/s: 0.00 reconn/s: 0.00
+[ 10s ] thds: 8 tps: 3147.00 qps: 56638.06 (r/w/o: 25172.03/25172.03/6294.01) lat (ms,95%): 6.67 err/s: 0.00 reconn/s: 0.00
+[ 11s ] thds: 8 tps: 3325.01 qps: 59876.17 (r/w/o: 26618.07/26608.07/6650.02) lat (ms,95%): 6.09 err/s: 0.00 reconn/s: 0.00
+[ 12s ] thds: 8 tps: 3247.91 qps: 58453.46 (r/w/o: 25974.31/25983.31/6495.83) lat (ms,95%): 6.55 err/s: 0.00 reconn/s: 0.00
+[ 13s ] thds: 8 tps: 3683.05 qps: 66276.94 (r/w/o: 29458.42/29452.42/7366.10) lat (ms,95%): 5.00 err/s: 0.00 reconn/s: 0.00
+[ 14s ] thds: 8 tps: 3680.98 qps: 66291.58 (r/w/o: 29464.81/29465.81/7360.95) lat (ms,95%): 5.18 err/s: 0.00 reconn/s: 0.00
+[ 15s ] thds: 8 tps: 3634.03 qps: 65419.50 (r/w/o: 29073.22/29077.22/7269.06) lat (ms,95%): 5.47 err/s: 0.00 reconn/s: 0.00
+[ 16s ] thds: 8 tps: 3801.02 qps: 68434.29 (r/w/o: 30418.13/30414.13/7602.03) lat (ms,95%): 5.09 err/s: 0.00 reconn/s: 0.00
+[ 17s ] thds: 8 tps: 3796.99 qps: 68313.82 (r/w/o: 30356.92/30362.92/7593.98) lat (ms,95%): 5.18 err/s: 0.00 reconn/s: 0.00
+[ 18s ] thds: 8 tps: 3810.85 qps: 68596.34 (r/w/o: 30487.82/30486.82/7621.70) lat (ms,95%): 5.28 err/s: 0.00 reconn/s: 0.00
+[ 19s ] thds: 8 tps: 3690.30 qps: 66412.32 (r/w/o: 29515.36/29516.36/7380.59) lat (ms,95%): 5.47 err/s: 0.00 reconn/s: 0.00
+[ 20s ] thds: 8 tps: 3918.85 qps: 70554.36 (r/w/o: 31360.83/31355.83/7837.71) lat (ms,95%): 5.37 err/s: 0.00 reconn/s: 0.00
+[ 21s ] thds: 8 tps: 3952.92 qps: 71112.54 (r/w/o: 31601.35/31605.35/7905.84) lat (ms,95%): 5.09 err/s: 0.00 reconn/s: 0.00
+[ 22s ] thds: 8 tps: 4231.15 qps: 76198.72 (r/w/o: 33868.21/33868.21/8462.30) lat (ms,95%): 4.41 err/s: 0.00 reconn/s: 0.00
+[ 23s ] thds: 8 tps: 3931.06 qps: 70745.03 (r/w/o: 31442.46/31440.46/7862.11) lat (ms,95%): 5.09 err/s: 0.00 reconn/s: 0.00
+[ 24s ] thds: 8 tps: 3893.94 qps: 70087.89 (r/w/o: 31149.51/31150.51/7787.88) lat (ms,95%): 5.37 err/s: 0.00 reconn/s: 0.00
+[ 25s ] thds: 8 tps: 4143.98 qps: 74605.67 (r/w/o: 33162.85/33154.85/8287.96) lat (ms,95%): 4.74 err/s: 0.00 reconn/s: 0.00
+[ 26s ] thds: 8 tps: 3849.04 qps: 69299.80 (r/w/o: 30797.36/30804.36/7698.09) lat (ms,95%): 5.67 err/s: 0.00 reconn/s: 0.00
+[ 27s ] thds: 8 tps: 2588.18 qps: 46545.18 (r/w/o: 20683.41/20685.41/5176.35) lat (ms,95%): 9.06 err/s: 0.00 reconn/s: 0.00
+[ 28s ] thds: 8 tps: 1979.90 qps: 35707.23 (r/w/o: 15875.21/15872.21/3959.80) lat (ms,95%): 12.75 err/s: 0.00 reconn/s: 0.00
+[ 29s ] thds: 8 tps: 2711.00 qps: 48774.04 (r/w/o: 21672.02/21680.02/5422.00) lat (ms,95%): 8.43 err/s: 0.00 reconn/s: 0.00
+[ 30s ] thds: 8 tps: 4262.88 qps: 76709.80 (r/w/o: 34095.02/34089.02/8525.76) lat (ms,95%): 4.82 err/s: 0.00 reconn/s: 0.00
+[ 31s ] thds: 8 tps: 4241.76 qps: 76348.73 (r/w/o: 33930.10/33936.10/8482.53) lat (ms,95%): 4.82 err/s: 0.00 reconn/s: 0.00
+[ 32s ] thds: 8 tps: 4376.29 qps: 78767.22 (r/w/o: 35010.32/35003.32/8753.58) lat (ms,95%): 4.57 err/s: 0.00 reconn/s: 0.00
+[ 33s ] thds: 8 tps: 4169.89 qps: 75067.06 (r/w/o: 33358.14/33369.14/8339.78) lat (ms,95%): 4.82 err/s: 0.00 reconn/s: 0.00
+[ 34s ] thds: 8 tps: 4409.84 qps: 79394.18 (r/w/o: 35291.75/35282.75/8819.69) lat (ms,95%): 4.49 err/s: 0.00 reconn/s: 0.00
+[ 35s ] thds: 8 tps: 4357.97 qps: 78422.44 (r/w/o: 34853.75/34852.75/8715.94) lat (ms,95%): 4.65 err/s: 0.00 reconn/s: 0.00
+[ 36s ] thds: 8 tps: 4397.19 qps: 79181.47 (r/w/o: 35191.54/35195.54/8794.39) lat (ms,95%): 4.49 err/s: 0.00 reconn/s: 0.00
+[ 37s ] thds: 8 tps: 4376.96 qps: 78750.22 (r/w/o: 34997.65/34999.65/8752.91) lat (ms,95%): 4.57 err/s: 0.00 reconn/s: 0.00
+[ 38s ] thds: 8 tps: 4379.03 qps: 78826.59 (r/w/o: 35036.26/35031.26/8759.07) lat (ms,95%): 4.65 err/s: 0.00 reconn/s: 0.00
+[ 39s ] thds: 8 tps: 4488.98 qps: 80796.55 (r/w/o: 35909.80/35908.80/8977.95) lat (ms,95%): 4.41 err/s: 0.00 reconn/s: 0.00
+[ 40s ] thds: 8 tps: 4349.15 qps: 78303.69 (r/w/o: 34802.20/34803.20/8698.30) lat (ms,95%): 4.57 err/s: 0.00 reconn/s: 0.00
+[ 41s ] thds: 8 tps: 4535.82 qps: 81662.73 (r/w/o: 36295.55/36297.55/9069.64) lat (ms,95%): 4.49 err/s: 0.00 reconn/s: 0.00
+[ 42s ] thds: 8 tps: 4384.09 qps: 78879.57 (r/w/o: 35052.70/35056.70/8770.17) lat (ms,95%): 4.65 err/s: 0.00 reconn/s: 0.00
+[ 43s ] thds: 8 tps: 4207.03 qps: 75762.57 (r/w/o: 33675.25/33673.25/8414.06) lat (ms,95%): 4.91 err/s: 0.00 reconn/s: 0.00
+[ 44s ] thds: 8 tps: 3959.08 qps: 71241.44 (r/w/o: 31666.64/31656.64/7918.16) lat (ms,95%): 5.67 err/s: 0.00 reconn/s: 0.00
+[ 45s ] thds: 8 tps: 4266.97 qps: 76789.53 (r/w/o: 34125.79/34129.79/8533.95) lat (ms,95%): 4.82 err/s: 0.00 reconn/s: 0.00
+[ 46s ] thds: 8 tps: 4434.09 qps: 79813.66 (r/w/o: 35473.74/35471.74/8868.18) lat (ms,95%): 4.57 err/s: 0.00 reconn/s: 0.00
+[ 47s ] thds: 8 tps: 4659.91 qps: 83874.32 (r/w/o: 37276.25/37279.25/9318.81) lat (ms,95%): 4.25 err/s: 0.00 reconn/s: 0.00
+[ 48s ] thds: 8 tps: 4339.87 qps: 78122.68 (r/w/o: 34721.97/34719.97/8680.74) lat (ms,95%): 4.65 err/s: 0.00 reconn/s: 0.00
+[ 49s ] thds: 8 tps: 4382.06 qps: 78869.10 (r/w/o: 35050.49/35054.49/8764.12) lat (ms,95%): 4.74 err/s: 0.00 reconn/s: 0.00
+[TIME] commits=22754 aborts=0 exec_us=49828766 wasted_us=0
+[ABUF] maxbuf=0 leftover=0 | 신규 22754 시도 0 어보트(0.0%) | 버퍼복귀 0 시도 0 어보트(0.0%) | 커밋 22754 커밋당시도 1.00 max 1 배압 0
+[HIST] <=1:22754 <=2:0 <=4:0 <=8:0 <=16:0 <=32:0 <=64:0 <=128:0 <=256:0 <=512:0 <=1024:0 >1024:0
+[HOTKEY] 전체 평균 최소키 50 (n=22754) | att>=32 평균 최소키 0 (n=0)
+[ 50s ] thds: 8 tps: 4576.97 qps: 82392.52 (r/w/o: 36619.78/36618.78/9153.95) lat (ms,95%): 4.33 err/s: 0.00 reconn/s: 0.00
+[TIME] commits=22771 aborts=0 exec_us=49832606 wasted_us=0
+[ABUF] maxbuf=0 leftover=0 | 신규 22771 시도 0 어보트(0.0%) | 버퍼복귀 0 시도 0 어보트(0.0%) | 커밋 22771 커밋당시도 1.00 max 1 배압 0
+[HIST] <=1:22771 <=2:0 <=4:0 <=8:0 <=16:0 <=32:0 <=64:0 <=128:0 <=256:0 <=512:0 <=1024:0 >1024:0
+[HOTKEY] 전체 평균 최소키 52 (n=22771) | att>=32 평균 최소키 0 (n=0)
+[TIME] commits=22601 aborts=0 exec_us=49833272 wasted_us=0
+[ABUF] maxbuf=0 leftover=0 | 신규 22601 시도 0 어보트(0.0%) | 버퍼복귀 0 시도 0 어보트(0.0%) | 커밋 22601 커밋당시도 1.00 max 1 배압 0
+[HIST] <=1:22601 <=2:0 <=4:0 <=8:0 <=16:0 <=32:0 <=64:0 <=128:0 <=256:0 <=512:0 <=1024:0 >1024:0
+[HOTKEY] 전체 평균 최소키 51 (n=22601) | att>=32 평균 최소키 0 (n=0)
+[TIME] commits=22671 aborts=0 exec_us=49834569 wasted_us=0
+[TIME] commits=22829 aborts=0 exec_us=49833380 wasted_us=0
+[ABUF] maxbuf=0 leftover=0 | 신규 22671 시도 0 어보트(0.0%) | 버퍼복귀 0 시도 0 어보트(0.0%) | 커밋 22671 커밋당시도 1.00 max 1 배압 0
+[ABUF] maxbuf=0 leftover=0 | 신규 22829 시도 0 어보트(0.0%) | 버퍼복귀 0 시도 0 어보트(0.0%) | 커밋 22829 커밋당시도 1.00 max 1 배압 0
+[HIST] <=1:22671 <=2:0 <=4:0 <=8:0 <=16:0 <=32:0 <=64:0 <=128:0 <=256:0 <=512:0 <=1024:0 >1024:0
+[HIST] <=1:22829 <=2:0 <=4:0 <=8:0 <=16:0 <=32:0 <=64:0 <=128:0 <=256:0 <=512:0 <=1024:0 >1024:0
+[HOTKEY] 전체 평균 최소키 51 (n=22829) | att>=32 평균 최소키 0 (n=0)
+[HOTKEY] 전체 평균 최소키 52 (n=22671) | att>=32 평균 최소키 0 (n=0)
+[TIME] commits=22485 aborts=0 exec_us=49831536 wasted_us=0
+[ABUF] maxbuf=0 leftover=0 | 신규 22485 시도 0 어보트(0.0%) | 버퍼복귀 0 시도 0 어보트(0.0%) | 커밋 22485 커밋당시도 1.00 max 1 배압 0
+[HIST] <=1:22485 <=2:0 <=4:0 <=8:0 <=16:0 <=32:0 <=64:0 <=128:0 <=256:0 <=512:0 <=1024:0 >1024:0
+[HOTKEY] 전체 평균 최소키 49 (n=22485) | att>=32 평균 최소키 0 (n=0)
+[TIME] commits=22965 aborts=0 exec_us=49832346 wasted_us=0
+[ABUF] maxbuf=0 leftover=0 | 신규 22965 시도 0 어보트(0.0%) | 버퍼복귀 0 시도 0 어보트(0.0%) | 커밋 22965 커밋당시도 1.00 max 1 배압 0
+[HIST] <=1:22965 <=2:0 <=4:0 <=8:0 <=16:0 <=32:0 <=64:0 <=128:0 <=256:0 <=512:0 <=1024:0 >1024:0
+[HOTKEY] 전체 평균 최소키 56 (n=22965) | att>=32 평균 최소키 0 (n=0)
+[TIME] commits=22566 aborts=0 exec_us=49831435 wasted_us=0
+[ABUF] maxbuf=0 leftover=0 | 신규 22566 시도 0 어보트(0.0%) | 버퍼복귀 0 시도 0 어보트(0.0%) | 커밋 22566 커밋당시도 1.00 max 1 배압 0
+[HIST] <=1:22566 <=2:0 <=4:0 <=8:0 <=16:0 <=32:0 <=64:0 <=128:0 <=256:0 <=512:0 <=1024:0 >1024:0
+[HOTKEY] 전체 평균 최소키 58 (n=22566) | att>=32 평균 최소키 0 (n=0)
+SQL statistics:
+    queries performed:
+        read:                            1453136
+        write:                           1453136
+        other:                           363284
+        total:                           3269556
+    transactions:                        181642 (3632.50 per sec.)
+    queries:                             3269556 (65384.98 per sec.)
+    ignored errors:                      0      (0.00 per sec.)
+    reconnects:                          0      (0.00 per sec.)
+
+Throughput:
+    events/s (eps):                      3632.4987
+    time elapsed:                        50.0047s
+    total number of events:              181642
+
+Latency (ms):
+         min:                                    1.16
+         avg:                                    2.20
+         max:                                  156.98
+         95th percentile:                        5.57
+         sum:                               399918.43
+
+Threads fairness:
+    events (avg/stddev):           22705.2500/145.53
+    execution time (avg/stddev):   49.9898/0.00
+

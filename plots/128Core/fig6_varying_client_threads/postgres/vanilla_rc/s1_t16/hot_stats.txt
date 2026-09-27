@@ -1,9 +1,9 @@
     relname    | n_tup_upd | n_tup_hot_upd | non_hot 
 ---------------+-----------+---------------+---------
- stock1        |    367738 |        364338 |    3400
- district1_w1  |     73680 |         73650 |      30
- warehouse1_w1 |     36863 |         36531 |     332
- customer1     |     36863 |         36356 |     507
+ stock1        |    369757 |        365381 |    4376
+ district1_w1  |     73548 |         73514 |      34
+ warehouse1_w1 |     36568 |         36244 |     324
+ customer1     |     36568 |         36061 |     507
  district1     |         0 |             0 |       0
  orders1       |         0 |             0 |       0
  warehouse1    |         0 |             0 |       0

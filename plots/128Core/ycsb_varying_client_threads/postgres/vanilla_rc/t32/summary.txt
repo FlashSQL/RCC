@@ -1,0 +1,8 @@
+=== Experiment Summary ===
+Build Mode: vanilla_rc
+Isolation: read committed
+Threads: 32
+Duration: 50s (warmup 50s)
+Table: 10000000 rows, HASH(id) 128 partitions, zipf 0.9, 8R+8W sorted
+sysbench exit: 0
+rcc_bg_detect: n/a
