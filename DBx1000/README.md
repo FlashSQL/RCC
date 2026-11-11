@@ -1,7 +1,12 @@
-# RCC: Speculative Write Versioning for DBx1000
+# RCC on DBx1000
 
 Implemented on DBx1000 as the concurrency control algorithm `CC_ALG = RCC`, next to `WOUND_WAIT`, `BAMBOO` and `SILO`.
 The code base is [DBx1000](https://github.com/yxymit/DBx1000) with the Wound-Wait, Bamboo and Silo implementations of [Bamboo-Public](https://github.com/ScarletGuo/Bamboo-Public).
+
+## Limitations
+
+- **No redo logging.** For a fair comparison, RCC runs with the same configuration as Wound-Wait and Bamboo, without logging. Speculative versions are full tuple copies in each transaction's local memory instead of redo log entries.
+- **No RCC-C.** DBx1000 copies the entire tuple on each write and keeps no column-level update deltas, so columnar RCC is not supported. RCC on DBx1000 tracks dependencies at the record level.
 
 ---
 
@@ -14,7 +19,7 @@ The code base is [DBx1000](https://github.com/yxymit/DBx1000) with the Wound-Wai
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y g++ make numactl libnuma-dev libtbb-dev
+sudo apt-get install -y g++ make numactl libnuma-dev libtbb-dev gnuplot
 ```
 
 > **Note:** `CPU_FREQ` in `config-std.h` and `configs/*.h` is the TSC rate of the paper server (2.25 GHz). On another machine, set it to that machine's TSC rate (`dmesg | grep tsc`); timing and throughput are computed from it.
@@ -28,9 +33,10 @@ The build reads `config.h`. Each file of `configs/` is the configuration of one 
 ```bash
 cp configs/fig7a_ycsb_threads.h config.h
 make -j
-# RCC: the detector on CPU 127, the workers off its core (CPUs 127 and 255 of the paper server); see Section 3
-RCC_DETECT_CPUS=127 UNPINNED_CPUS=$(seq -s, 0 126),$(seq -s, 128 254) numactl --interleave all ./rundb
+numactl --interleave all ./rundb
 ```
+
+For RCC, the experiment scripts (see [Reproducing Experiments](#3-reproducing-experiments)) also give the deadlock detector a dedicated core; a plain `./rundb` run does not.
 
 The algorithm and the thread count are `CC_ALG` and `THREAD_CNT` in `config.h`. RCC's techniques are switched by:
 
@@ -86,6 +92,16 @@ results/Fig7a/
 ```bash
 cat results/Fig7a/summary.txt
 grep "^\[summary\]" results/Fig7a/RCC_128_r1/run.out
+```
+
+### Plot
+
+The plot scripts are in `../plots/`. Each one averages the repetitions of every run, writes the plotted data into the results directory (`tps_128.csv`, and `time_split.dat` for Fig8) and renders the paper's figure there:
+
+```bash
+bash ../plots/plot_fig7a.sh     # results/Fig7a/fig7a_ycsb.pdf
+bash ../plots/plot_fig7b.sh     # results/Fig7b/fig7b_tpcc.pdf
+bash ../plots/plot_fig8.sh      # results/Fig8/fig8a_tps.pdf, fig8b_time.pdf
 ```
 
 ---
