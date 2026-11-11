@@ -21,7 +21,7 @@ On top of this, RCC introduces two techniques:
 
 Each system's README covers its setup, build, experiments and results.
 
-> **Correctness:** The MySQL TPC-C runner checks seven data consistency conditions after loading and after each measured run. Post-run checks use Vanilla MySQL on the measured engine's cleanly shut-down data, outside the timing window. Failed checks stop the experiment. DBx1000 runs its checks when built with `TPCC_CONSISTENCY true` ([details](DBx1000/README.md#tpc-c-consistency-check)).
+> **Correctness:** All TPC-C runs on MySQL and PostgreSQL passed the BenchmarkSQL consistency checks (`scripts/consistency_check.sql`). DBx1000 runs the same checks when built with `TPCC_CONSISTENCY true` ([details](DBx1000/README.md#tpc-c-consistency-check)).
 
 ## Hardware Configuration
 
