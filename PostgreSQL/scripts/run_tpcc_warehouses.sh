@@ -11,7 +11,7 @@ BASE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 POSTGRESQL_HOME="$BASE_DIR/rcc_postgresql"
 SYSBENCH_HOME="$BASE_DIR/sysbench-tpcc"
 # sysbench (built with --with-pgsql) for tpcc.lua's `#!/usr/bin/env sysbench`
-export PATH="/home/vldb/sysbench/src:$PATH"
+export PATH="${SYSBENCH_BIN_DIR:-$HOME/sysbench/src}:$PATH"
 BLD_PATH="${POSTGRESQL_HOME}/bld"
 PSQL_BIN="${BLD_PATH}/bin/psql"
 PG_BIN="${BLD_PATH}/bin/postgres"
@@ -249,7 +249,7 @@ if [[ -z "$DATA_DIR" ]] || [[ -z "$LOG_DIR" ]]; then
 fi
 
 # Get sudo password (from env or prompt)
-if [[ -z "$PASSWD" ]]; then
+if ! sudo -n true 2>/dev/null && [[ -z "${PASSWD:-}" ]]; then
     read -s -p "Enter sudo password: " PASSWD
     echo ""
 fi

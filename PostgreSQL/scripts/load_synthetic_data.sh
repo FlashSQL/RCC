@@ -1,4 +1,5 @@
 #!/bin/bash
+set -eo pipefail
 
 BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -34,15 +35,26 @@ host    all             all             127.0.0.1/32            trust
 host    all             all             ::1/128                 trust
 EOF
 
-echo "RUN PostgreSQL"
-$BASE_DIR/rcc_postgresql/bld/bin/postgres -D $DATA_DIR > /dev/null 2>&1 &
-sleep 10
+echo "RUN PostgreSQL (load settings: fewer checkpoints, more index-build memory; the benchmark server uses postgresql.conf as is)"
+"$BASE_DIR/rcc_postgresql/bld/bin/pg_ctl" start -D "$DATA_DIR" -l "$LOG_DIR/startup.log" -w -t 300 \
+    -o "-c max_wal_size=64GB -c checkpoint_timeout=1h -c maintenance_work_mem=1GB"
 
 echo "CREATE DATABASE"
 $BASE_DIR/rcc_postgresql/bld/bin/psql -U postgres -c "CREATE DATABASE synt;" 2>/dev/null
 
-echo "CREATE TABLE AND LOAD DATA"
-$BASE_DIR/rcc_postgresql/bld/bin/psql -U postgres -d synt -f $BASE_DIR/synthetic_benchmark/create_table_synthetic.sql
+echo "CREATE TABLE"
+$BASE_DIR/rcc_postgresql/bld/bin/psql -U postgres -v ON_ERROR_STOP=1 -d synt -f $BASE_DIR/synthetic_benchmark/create_table_synthetic.sql
+
+# Rows of the 128 read partitions, in parallel: one statement per partition (100,000 rows, then its id index)
+LOAD_JOBS="${LOAD_JOBS:-32}"
+echo "LOAD DATA: 128 partitions x 100,000 rows, $LOAD_JOBS sessions"
+load_start=$SECONDS
+seq 0 127 | xargs -P "$LOAD_JOBS" -I{} "$BASE_DIR/rcc_postgresql/bld/bin/psql" -U postgres -v ON_ERROR_STOP=1 -d synt -q -c \
+    "INSERT INTO bench_hotread (p, val, payload) SELECT {}, 0, repeat('x', 2048)::bytea FROM seq1000 a CROSS JOIN seq100 b; CREATE INDEX idx_bench_hotread_p{}_id ON bench_hotread_p{}(id);"
+$BASE_DIR/rcc_postgresql/bld/bin/psql -U postgres -v ON_ERROR_STOP=1 -d synt -c "ANALYZE bench_hotread;"
+rows=$($BASE_DIR/rcc_postgresql/bld/bin/psql -U postgres -d synt -tAc "SELECT count(*) FROM bench_hotread")
+echo "LOADED $rows rows in $((SECONDS - load_start)) s"
+[[ "$rows" == "12800001" ]] || { echo "[ERROR] expected 12800001 rows (128 x 100000 + hotspot), got $rows"; exit 1; }
 
 echo "Data loading complete. Stopping server..."
 $BASE_DIR/rcc_postgresql/bld/bin/pg_ctl stop -D $DATA_DIR -w -t 300

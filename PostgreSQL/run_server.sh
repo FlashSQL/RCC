@@ -117,7 +117,7 @@ if [[ -z "$LOG_DIR" ]]; then
 fi
 
 # Get sudo password (from env or prompt)
-if [[ -z "$PASSWD" ]]; then
+if ! sudo -n true 2>/dev/null && [[ -z "${PASSWD:-}" ]]; then
     read -s -p "Enter sudo password: " PASSWD
     echo ""
 fi

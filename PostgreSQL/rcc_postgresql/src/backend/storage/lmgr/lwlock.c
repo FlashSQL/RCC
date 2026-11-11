@@ -217,7 +217,12 @@ LWLockPadded *MainLWLockArray = NULL;
  * occasionally the number can be much higher; for example, the pg_buffercache
  * extension locks all buffer partitions simultaneously.
  */
+#ifdef RCC
+/* Whole lock-table operations need room for all partitions and caller locks. */
+#define MAX_SIMUL_LWLOCKS	(NUM_LOCK_PARTITIONS + 200)
+#else
 #define MAX_SIMUL_LWLOCKS	200
+#endif
 
 /* struct representing the LWLocks we're holding */
 typedef struct LWLockHandle

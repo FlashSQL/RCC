@@ -1,6 +1,6 @@
 #!/bin/bash
 
-BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # Parse arguments
 DATA_DIR=""
@@ -17,4 +17,4 @@ if [[ -z "$DATA_DIR" ]]; then
     exit 1
 fi
 
-$BASE_DIR/rcc_postgresql/bld/bin/pg_ctl stop -D $DATA_DIR -w -t 300
+"$BASE_DIR/rcc_postgresql/bld/bin/pg_ctl" stop -D "$DATA_DIR" -w -t 300

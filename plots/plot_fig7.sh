@@ -76,20 +76,23 @@ echo "=== Plotting Fig7: Varying Warehouse Count ==="
 # ==========================================
 # MySQL plot
 # ==========================================
-MYSQL_OUT_DIR="$FIG_DIR/mysql"
-mkdir -p "$MYSQL_OUT_DIR"
-generate_wh_csv "$RESULTS_DIR/mysql" "Vanilla" "RCC" \
-    "$MYSQL_OUT_DIR/varying_wh_my.csv" extract_tps_mysql
-cd "$MYSQL_OUT_DIR"
-gnuplot "$SCRIPT_DIR/templates/mysql/varying_wh.gnu"
-echo "[INFO] Generated: $MYSQL_OUT_DIR/varying_wh_tpcc_my.pdf"
+if [[ -d "$RESULTS_DIR/mysql" ]]; then   # no MySQL results: do not draw an all-zero MySQL figure
+    MYSQL_OUT_DIR="$FIG_DIR/mysql"
+    mkdir -p "$MYSQL_OUT_DIR"
+    generate_wh_csv "$RESULTS_DIR/mysql" "Vanilla" "RCC" \
+        "$MYSQL_OUT_DIR/varying_wh_my.csv" extract_tps_mysql
+    cd "$MYSQL_OUT_DIR"
+    gnuplot "$SCRIPT_DIR/templates/mysql/varying_wh.gnu"
+    echo "[INFO] Generated: $MYSQL_OUT_DIR/varying_wh_tpcc_my.pdf"
+fi
 
 # ==========================================
 # PostgreSQL plot
 # ==========================================
 PG_OUT_DIR="$FIG_DIR/postgres"
 mkdir -p "$PG_OUT_DIR"
-generate_wh_csv "$RESULTS_DIR/postgres" "vanilla" "rcc" \
+# the modes of PostgreSQL/scripts/run_tpcc_warehouses.sh: RCC (RR) against vanilla at the same isolation level
+generate_wh_csv "$RESULTS_DIR/postgres" "vanilla_rr" "rcc_rr" \
     "$PG_OUT_DIR/varying_wh_pg.csv" extract_tps_pg
 cd "$PG_OUT_DIR"
 gnuplot "$SCRIPT_DIR/templates/postgres/varying_wh_pg.gnu"

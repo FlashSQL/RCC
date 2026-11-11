@@ -48,25 +48,10 @@ END $$;
 INSERT INTO bench_hotread (p, id, val, payload)
 VALUES (-1, 1, 0, repeat('x', 2048)::bytea);
 
--- Generate data for partitions 0..127
--- Each partition gets 100,000 rows (1000 * 100)
-INSERT INTO bench_hotread (p, val, payload)
-SELECT pset.p, 0, repeat('x', 2048)::bytea
-FROM (SELECT i AS p FROM generate_series(0, 127) AS i) AS pset
-CROSS JOIN seq1000 a
-CROSS JOIN seq100 b;
+-- Index for the hotspot partition
+CREATE INDEX idx_bench_hotread_hot_id ON bench_hotread_hot(id);
 
--- Create indexes on each partition for better performance
-DO $$
-BEGIN
-  -- Index for hotspot partition
-  EXECUTE 'CREATE INDEX idx_bench_hotread_hot_id ON bench_hotread_hot(id)';
-
-  -- Indexes for read partitions
-  FOR i IN 0..127 LOOP
-    EXECUTE format('CREATE INDEX idx_bench_hotread_p%s_id ON bench_hotread_p%s(id)', i, i);
-  END LOOP;
-END $$;
-
--- Analyze the table for query optimization
-ANALYZE bench_hotread;
+-- The rows of partitions 0..127 (100,000 each = seq1000 x seq100, payload 2048 bytes, val 0), their id indexes and
+-- ANALYZE are done by scripts/load_synthetic_data.sh: one partition per statement, several sessions in parallel.
+-- Ids come from the shared sequence in cached blocks, so they are unique but not contiguous per partition.
+ALTER SEQUENCE bench_hotread_id_seq CACHE 1000;

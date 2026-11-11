@@ -100,7 +100,7 @@ extern PGDLLIMPORT int NamedLWLockTrancheRequests;
 
 /* Number of partitions the shared lock tables are divided into */
 #ifdef RCC
-#define LOG2_NUM_LOCK_PARTITIONS  6
+#define LOG2_NUM_LOCK_PARTITIONS  8
 #else
 #define LOG2_NUM_LOCK_PARTITIONS  4
 #endif

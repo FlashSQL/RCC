@@ -10,9 +10,9 @@ set key inside left top reverse Left samplen 3 font "Helvetica, 14"
 
 set xrange [-0.3:3.3]
 
-set yrange [0:30000]
+set yrange [0:40000]
 set ytics 10000
-set ytics ("0" 0, "15K" 15000, "30K" 30000)
+set ytics ("0" 0, "10K" 10000, "20K" 20000, "30K" 30000, "40K" 40000)
 set xtics out 
 set ytics out
 set tics scale 0.5

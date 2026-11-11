@@ -16,9 +16,9 @@ set xrange [-0.3:4.3]
 # 첫 시리즈에서만 xtic(1)로 라벨 부착 (다른 시리즈는 생략)
 # 참고: xtic(1)은 1열 값을 문자열로 라벨링
 
-set yrange [0:5000]
+set yrange [0:8000]
 set ytics 2000
-set ytics ("0" 0, "2K" 2000, "4K" 4000)
+set ytics ("0" 0, "2K" 2000, "4K" 4000, "6K" 6000, "8K" 8000)
 set xtics nomirror
 set ytics nomirror
 

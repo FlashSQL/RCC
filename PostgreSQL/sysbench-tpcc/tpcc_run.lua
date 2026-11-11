@@ -49,14 +49,15 @@ function new_order_prep()
     local itemid = {}
     local supware = {}
     local qty = {}
+    local ol_num_seq = {}
     local all_local = 1
 
     for i = 1, ol_cnt
     do
         itemid[i] = NURand(8191, 1, MAXITEMS)
-        if ((i == ol_cnt - 1) and (rbk == 1))
+        if ((i == ol_cnt) and (rbk == 1))
 	then
-            itemid[i] = -1
+            itemid[i] = MAXITEMS + 1
         end
         if sysbench.rand.uniform(1, 100) ~= 1
 	then
@@ -66,11 +67,23 @@ function new_order_prep()
             all_local = 0
         end
         qty[i] = sysbench.rand.uniform(1, 10)
+        ol_num_seq[i] = i
    end
+
+    -- Match tpcc-mysql's stock lock order; retries reuse this permutation.
+    table.sort(ol_num_seq, function(a, b)
+        if supware[a] ~= supware[b] then
+            return supware[a] < supware[b]
+        end
+        if itemid[a] ~= itemid[b] then
+            return itemid[a] < itemid[b]
+        end
+        return a < b
+    end)
 
     return {table_num = table_num, w_id = w_id, d_id = d_id, c_id = c_id,
             ol_cnt = ol_cnt, itemid = itemid, supware = supware, qty = qty,
-            all_local = all_local}
+            all_local = all_local, ol_num_seq = ol_num_seq}
 end
 
 function new_order_impl(p)
@@ -148,9 +161,10 @@ function new_order_impl(p)
                    format(table_num, d_next_o_id, d_id, w_id))
 
   for ol_number=1, ol_cnt do
-	local ol_supply_w_id = supware[ol_number]
-	local ol_i_id = itemid[ol_number]
-	local ol_quantity = qty[ol_number]
+	local item_index = p.ol_num_seq[ol_number]
+	local ol_supply_w_id = supware[item_index]
+	local ol_i_id = itemid[item_index]
+	local ol_quantity = qty[item_index]
 
 -- SELECT i_price, i_name, i_data
 --	INTO :i_price, :i_name, :i_data

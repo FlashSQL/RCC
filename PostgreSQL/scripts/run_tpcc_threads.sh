@@ -11,15 +11,12 @@ BASE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 POSTGRESQL_HOME="$BASE_DIR/rcc_postgresql"
 SYSBENCH_HOME="$BASE_DIR/sysbench-tpcc"
 # sysbench (built with --with-pgsql) for tpcc.lua's `#!/usr/bin/env sysbench`
-export PATH="/home/vldb/sysbench/src:$PATH"
+export PATH="${SYSBENCH_BIN_DIR:-$HOME/sysbench/src}:$PATH"
 BLD_PATH="${POSTGRESQL_HOME}/bld"
 PSQL_BIN="${BLD_PATH}/bin/psql"
 PG_BIN="${BLD_PATH}/bin/postgres"
 INITDB_BIN="${BLD_PATH}/bin/initdb"
-# NUMA policy, chosen per experiment by set_numa_policy (2 sockets x 48 logical CPUs):
-#   up to NUMA_PIN_MAX_THREADS client threads : CPUs and memory pinned to node 0
-#   above that                                : all CPUs, memory interleaved over both nodes
-# Applied to the server and to sysbench alike.  Empty if numactl is missing.
+# Use the original shared-node placement for both server and clients.
 NUMA_PIN_MAX_THREADS=128
 NUMACTL=""
 set_numa_policy() {
@@ -45,7 +42,7 @@ PAGE_SIZE=16
 #   vanilla_rc / vanilla_rr : stock PostgreSQL (-O2) at Read Committed / Repeatable Read
 #   rcc_rr                  : RCC (-O2 -DRCC) at Repeatable Read
 #   sr                      : RCC_SR (-O2 -DRCC -DRCC_SR) at Serializable
-BUILD_MODES=("vanilla_rc" "vanilla_rr" "rcc_rr")
+BUILD_MODES=("rcc_rr" "vanilla_rc" "vanilla_rr")
 # BUILD_MODES=("sr")
 
 # Format: "name:warehouses,terminals,duration"
@@ -56,7 +53,7 @@ EXPERIMENTS=(
     "s1_t32:1,32,50"
     "s1_t64:1,64,50"
     "s1_t128:1,128,50"
-    "s1_t256:1,256,50"
+    # "s1_t256:1,256,50"
 )
 
 # ==========================================
@@ -292,7 +289,7 @@ if [[ -n "$RESULTS_DIR" ]]; then
 fi
 
 # Get sudo password (from env or prompt)
-if [[ -z "$PASSWD" ]]; then
+if ! sudo -n true 2>/dev/null && [[ -z "${PASSWD:-}" ]]; then
     read -s -p "Enter sudo password: " PASSWD
     echo ""
 fi

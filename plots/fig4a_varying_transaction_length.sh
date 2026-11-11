@@ -1,4 +1,5 @@
 #!/bin/bash
+set -o pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -18,6 +19,7 @@ fi
 # ==========================================
 RUN_MYSQL=false
 RUN_POSTGRES=false
+SKIP_PLOT=false
 
 usage() {
     echo "Usage: $0 [options]"
@@ -26,6 +28,7 @@ usage() {
     echo "  --mysql       Run MySQL experiments only"
     echo "  --postgres    Run PostgreSQL experiments only"
     echo "  --all         Run both MySQL and PostgreSQL (default)"
+    echo "  --skip-plot   Run benchmarks without legacy plot generation"
     echo "  -h, --help    Show this help"
     exit 0
 }
@@ -35,6 +38,7 @@ while [[ $# -gt 0 ]]; do
         --mysql)    RUN_MYSQL=true; shift ;;
         --postgres) RUN_POSTGRES=true; shift ;;
         --all)      RUN_MYSQL=true; RUN_POSTGRES=true; shift ;;
+        --skip-plot) SKIP_PLOT=true; shift ;;
         -h|--help)  usage ;;
         *)          echo "[ERROR] Unknown option: $1"; usage ;;
     esac
@@ -47,7 +51,7 @@ if [[ "$RUN_MYSQL" == false && "$RUN_POSTGRES" == false ]]; then
 fi
 
 # Get sudo password once
-if [[ -z "$PASSWD" ]]; then
+if ! sudo -n true 2>/dev/null && [[ -z "${PASSWD:-}" ]]; then
     read -s -p "Enter sudo password: " PASSWD
     echo ""
     export PASSWD
@@ -113,7 +117,7 @@ if [[ "$RUN_POSTGRES" == true ]]; then
     BLD_PATH="${POSTGRESQL_HOME}/bld"
     PAGE_SIZE=16
 
-    POSTGRES_BUILD_MODES=("vanilla" "rcc")
+    POSTGRES_BUILD_MODES=("vanilla" "vanilla_rc" "rcc")
 
     # Clean rcc_data_dir and rcc_log_dir at the start
     echo "[INFO] Cleaning rcc_data_dir and rcc_log_dir..."
@@ -134,25 +138,36 @@ if [[ "$RUN_POSTGRES" == true ]]; then
         mkdir -p "$POSTGRESQL_HOME/bld"
         cd "$POSTGRESQL_HOME/bld"
         echo $PASSWD | sudo -S rm -rf $BLD_PATH/*
-        make clean > /dev/null 2>&1
-
-        if [[ "$BUILD_MODE" == "vanilla" ]]; then
-            ../configure --prefix=$POSTGRESQL_HOME/bld --with-blocksize=$PAGE_SIZE CFLAGS="-O2" > /dev/null 2>&1
-        else
-            ../configure --prefix=$POSTGRESQL_HOME/bld --with-blocksize=$PAGE_SIZE CFLAGS="-O2 -DRCC" > /dev/null 2>&1
+        CONFIG_LOG="$RESULT_DIR/postgres/$BUILD_MODE/configure.log"
+        BUILD_LOG="$RESULT_DIR/postgres/$BUILD_MODE/build.log"
+        CFLAGS_MODE="-O2"
+        [[ "$BUILD_MODE" != rcc ]] || CFLAGS_MODE="-O2 -DRCC"
+        if ! ../configure --prefix="$BLD_PATH" --with-blocksize="$PAGE_SIZE" CFLAGS="$CFLAGS_MODE" > "$CONFIG_LOG" 2>&1; then
+            tail -n 40 "$CONFIG_LOG"
+            echo "[ERROR] Configure failed: $CONFIG_LOG" >&2
+            exit 1
+        fi
+        if ! make -j"${BUILD_JOBS:-16}" > "$BUILD_LOG" 2>&1 ||
+           ! make install >> "$BUILD_LOG" 2>&1; then
+            tail -n 60 "$BUILD_LOG"
+            echo "[ERROR] Build/install failed: $BUILD_LOG" >&2
+            exit 1
+        fi
+        if [[ ! -x "$BLD_PATH/bin/initdb" ]]; then
+            echo "[ERROR] Missing $BLD_PATH/bin/initdb" >&2
+            exit 1
         fi
 
-        make -j > /dev/null 2>&1
-        make install > /dev/null 2>&1
-
         # Load data and run server
-        bash "$POSTGRES_DIR/scripts/load_synthetic_data.sh"
+        bash "$POSTGRES_DIR/scripts/load_synthetic_data.sh" || exit 1
         bash "$POSTGRES_DIR/run_server.sh" --skip-build
 
         # Run benchmark
         echo "[INFO] Running synthetic benchmark..."
-        python3 "$POSTGRES_DIR/synthetic_benchmark/varying_transaction_length.py" \
-            | tee "$RESULT_DIR/postgres/$BUILD_MODE/output.log"
+        ISOLATION=RR
+        [[ "$BUILD_MODE" != "vanilla_rc" ]] || ISOLATION=RC
+        python3 "$POSTGRES_DIR/synthetic_benchmark/varying_transaction_length.py" --isolation "$ISOLATION" \
+            | tee "$RESULT_DIR/postgres/$BUILD_MODE/output.log" || exit 1
 
         # Shutdown
         bash "$POSTGRES_DIR/util/shutdown.sh" --data-dir $rcc_data_dir
@@ -167,5 +182,7 @@ echo "Results saved to: $RESULT_DIR"
 
 # Generate plot
 echo ""
-echo "[INFO] Generating plot..."
-bash "$SCRIPT_DIR/plot_fig4.sh"
+if [[ "$SKIP_PLOT" == false ]]; then
+    echo "[INFO] Generating plot..."
+    bash "$SCRIPT_DIR/plot_fig4.sh"
+fi
