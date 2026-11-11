@@ -1,7 +1,0 @@
-CLAUDE.md
-# PostgreSQL server logs from experiment runs (too large for GitHub)
-plots/**/results/**/postgresql.log
-
-# Python bytecode cache
-__pycache__/
-*.pyc

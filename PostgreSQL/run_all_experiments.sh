@@ -1,10 +1,15 @@
 #!/bin/bash
 set -eo pipefail
 
-# Default paths; exported rcc_data_dir / rcc_log_dir override these.
-DATA_DIR="/mnt/mysql_data"    # PostgreSQL data directory
-LOG_DIR="/mnt/mysql_log"      # PostgreSQL log directory
+# ==========================================
+# USER CONFIGURATION - Set paths below
+# ==========================================
+DATA_DIR="/mnt/test_data"    # PostgreSQL data directory
+LOG_DIR="/mnt/test_log"      # PostgreSQL log directory
 
+# ==========================================
+# DO NOT MODIFY BELOW
+# ==========================================
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PLOTS_DIR="$SCRIPT_DIR/../plots"
 export rcc_data_dir="${rcc_data_dir:-$DATA_DIR}"
@@ -49,7 +54,7 @@ esac
 printf 'Data: %s\nLog:  %s\n' "$rcc_data_dir" "$rcc_log_dir"
 if [[ "$DRY_RUN" == false ]]; then
     # These experiments erase both directories. Never reuse a MySQL datadir
-    # or redo-log directory, even if it was selected in the defaults above.
+    # or redo-log directory.
     for dir in "$rcc_data_dir" "$rcc_log_dir"; do
         if [[ -e "$dir/ibdata1" || -d "$dir/mysql" || -d "$dir/#innodb_redo" ]]; then
             echo "ERROR: MySQL data found in $dir; refusing to erase it." >&2
