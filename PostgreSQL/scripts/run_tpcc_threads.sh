@@ -41,9 +41,7 @@ PAGE_SIZE=16
 # Configurations to sweep, as <build>_<isolation>:
 #   vanilla_rc / vanilla_rr : stock PostgreSQL (-O2) at Read Committed / Repeatable Read
 #   rcc_rr                  : RCC (-O2 -DRCC) at Repeatable Read
-#   sr                      : RCC_SR (-O2 -DRCC -DRCC_SR) at Serializable
 BUILD_MODES=("rcc_rr" "vanilla_rc" "vanilla_rr")
-# BUILD_MODES=("sr")
 
 # Format: "name:warehouses,terminals,duration"
 EXPERIMENTS=(
@@ -121,8 +119,6 @@ start_postgresql() {
 
     if [[ "$BUILD_MODE" == vanilla* ]]; then
         ../configure --prefix=$POSTGRESQL_HOME/bld --with-blocksize=$PAGE_SIZE CFLAGS="-O2" > "$CONFIG_LOG" 2>&1
-    elif [[ "$BUILD_MODE" == "sr" ]]; then
-        ../configure --prefix=$POSTGRESQL_HOME/bld --with-blocksize=$PAGE_SIZE CFLAGS="-O2 -DRCC -DRCC_SR" > "$CONFIG_LOG" 2>&1
     else
         ../configure --prefix=$POSTGRESQL_HOME/bld --with-blocksize=$PAGE_SIZE CFLAGS="-O2 -DRCC" > "$CONFIG_LOG" 2>&1
     fi

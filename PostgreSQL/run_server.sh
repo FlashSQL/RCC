@@ -47,7 +47,6 @@ usage() {
     echo "Options:"
     echo "  --vanilla             Build vanilla PostgreSQL (without RCC)"
     echo "  --rr                  Build RCC for Repeatable Read experiments (-DRCC) [default]"
-    echo "  --sr                  Build RCC Speculative Read mode: read latest + RW deps (-DRCC -DRCC_SR)"
     echo "  --skip-build          Skip build step (use existing binaries)"
     echo "  --numa <mode>         Server NUMA policy: pin (CPUs+memory on node 0) [default],"
     echo "                        interleave (all CPUs, memory interleaved; use for 256 threads), none"
@@ -77,10 +76,6 @@ while [[ $# -gt 0 ]]; do
             ;;
         --rr)
             BUILD_MODE="rr"
-            shift
-            ;;
-        --sr)
-            BUILD_MODE="sr"
             shift
             ;;
         --skip-build)
@@ -143,10 +138,6 @@ if [[ "$SKIP_BUILD" == false ]]; then
 
     if [[ "$BUILD_MODE" == "vanilla" ]]; then
         ../configure --prefix=$BLD_PATH --with-blocksize=$PAGE_SIZE CFLAGS="-O2" > "$CONFIG_LOG" 2>&1
-    elif [[ "$BUILD_MODE" == "sr" ]]; then
-        # RCC_SR = read latest (speculative) version + RW dependency tracking via the
-        # non-blocking last-accessor chain (reuses the RCC_SI registry machinery)
-        ../configure --prefix=$BLD_PATH --with-blocksize=$PAGE_SIZE CFLAGS="-O2 -DRCC -DRCC_SR" > "$CONFIG_LOG" 2>&1
     else
         ../configure --prefix=$BLD_PATH --with-blocksize=$PAGE_SIZE CFLAGS="-O2 -DRCC" > "$CONFIG_LOG" 2>&1
     fi
