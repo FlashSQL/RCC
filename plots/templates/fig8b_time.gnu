@@ -4,7 +4,8 @@ DATA = 'time_split.dat'
 
 set ylabel "Amortized Runtime (ms)" offset 0.8,0
 set xlabel "Number of Threads" offset 0,1
-set yrange [0:1.7]
+YMAX = 1.7
+set yrange [0:YMAX]
 set ytics 0.5 format "%g" font "Helvetica,17"
 set grid ytics lt 1 lc rgb "#dddddd"
 set xrange [0:20]
@@ -53,24 +54,28 @@ set label 202 "RCC (LUI)" at screen 0.55,0.575 left font "Helvetica,13" tc rgb "
 arrow_id = 1000
 do for [i=2:5] {
   do for [j=1:4] {
-    stats DATA every ::i::i using (column(5*j+1)) nooutput
+    # [*:*][*:*]: read values above YMAX too; the hatch lines are cut at YMAX.
+    stats [*:*][*:*] DATA every ::i::i using (column(5*j+1)) nooutput
     wasted = STATS_mean
-    stats DATA every ::i::i using (column(5*j)) nooutput
+    stats [*:*][*:*] DATA every ::i::i using (column(5*j)) nooutput
     prevention = STATS_mean
-    stats DATA every ::i::i using (column(5*j-1)) nooutput
+    stats [*:*][*:*] DATA every ::i::i using (column(5*j-1)) nooutput
     commit = STATS_mean
     if (commit > 0) {
       hatch_count = int(commit/0.05)+1
       do for [h=1:hatch_count] {
         hatch_y = wasted+prevention+commit*h/(hatch_count+1)
-        set arrow arrow_id from first (pos(i,j)-bw/2),first hatch_y to first (pos(i,j)+bw/2),first hatch_y nohead front lw 0.5 lc rgb "#000000"
-        arrow_id = arrow_id+1
+        if (hatch_y < YMAX) {
+          set arrow arrow_id from first (pos(i,j)-bw/2),first hatch_y to first (pos(i,j)+bw/2),first hatch_y nohead front lw 0.5 lc rgb "#000000"
+          arrow_id = arrow_id+1
+        }
       }
     }
-    if (prevention > 0) {
+    if (prevention > 0 && wasted < YMAX) {
+      prev_top = (wasted+prevention < YMAX) ? wasted+prevention : YMAX
       do for [h=1:3] {
         hatch_x = pos(i,j)-bw/2+bw*h/4.0
-        set arrow arrow_id from first hatch_x,first wasted to first hatch_x,first (wasted+prevention) nohead front lw 0.5 lc rgb "#000000"
+        set arrow arrow_id from first hatch_x,first wasted to first hatch_x,first prev_top nohead front lw 0.5 lc rgb "#000000"
         arrow_id = arrow_id+1
       }
     }
