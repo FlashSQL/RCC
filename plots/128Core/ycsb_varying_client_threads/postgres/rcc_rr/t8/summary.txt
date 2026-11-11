@@ -1,8 +1,0 @@
-=== Experiment Summary ===
-Build Mode: rcc_rr
-Isolation: repeatable read
-Threads: 8
-Duration: 50s (warmup 50s)
-Table: 10000000 rows, HASH(id) 128 partitions, zipf 0.9, 8R+8W sorted
-sysbench exit: 0
-rcc_bg_detect: on

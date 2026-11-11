@@ -1,5 +1,0 @@
-=== Experiment Summary ===
-Build Mode: rcc_rr
-Warehouses: 1
-Terminals: 32
-Duration: 50s

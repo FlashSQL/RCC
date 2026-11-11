@@ -1,6 +1,0 @@
-=== Experiment Summary ===
-Build Mode: vanilla_rc
-Warehouses: 1
-Terminals: 16
-Duration: 50s
-rcc_bg_detect: n/a

@@ -1,7 +1,0 @@
-committed_total_ms=383168.817
-aborted_total_ms=11746.547
-lock_wait_ms=894.148
-spin_wait_ms=2150.651
-commit_wait_ms=69765.663
-xact_commit=417295
-xact_rollback=25063

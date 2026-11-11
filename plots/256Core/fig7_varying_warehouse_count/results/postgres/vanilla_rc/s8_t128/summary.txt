@@ -1,7 +1,0 @@
-=== Experiment Summary ===
-Build Mode: vanilla_rc
-Isolation: RC
-NUMA: numactl --cpunodebind=0 --membind=0
-Warehouses: 8
-Terminals: 128
-Duration: 50s

@@ -1,2 +1,0 @@
-PostgreSQL: numactl --cpunodebind=0 --membind=0
-Sysbench: numactl --cpunodebind=1 --membind=1

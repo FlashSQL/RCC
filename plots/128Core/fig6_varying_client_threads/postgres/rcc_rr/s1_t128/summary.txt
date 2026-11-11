@@ -1,6 +1,0 @@
-=== Experiment Summary ===
-Build Mode: rcc_rr
-Warehouses: 1
-Terminals: 128
-Duration: 50s
-rcc_bg_detect: on
