@@ -104,6 +104,15 @@ bash ../plots/plot_fig7b.sh     # results/Fig7b/fig7b_tpcc.pdf
 bash ../plots/plot_fig8.sh      # results/Fig8/fig8a_tps.pdf, fig8b_time.pdf
 ```
 
+### TPC-C Consistency Check
+
+With `TPCC_CONSISTENCY true`, `rundb` checks the TPC-C consistency conditions after the run, as `MySQL/scripts/consistency_check.sql` does. The experiment configurations leave it off so that measured runs do no extra work. To check, set it to `true` in `configs/fig7b_tpcc_threads.h` and run:
+
+```bash
+bash scripts/fig7b_tpcc_threads.sh --threads 32
+grep '^\[consistency\]' results/Fig7b/RCC_32_r1/run.out    # last line: [consistency] PASSED (0 failing checks)
+```
+
 ---
 
 ## Experiments Summary

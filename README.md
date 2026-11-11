@@ -2,21 +2,26 @@
 
 ## Overview
 
-This repository contains the implementation of **RCC**, a Redo log-based Concurrency Control scheme for high write contention, on MySQL, PostgreSQL and DBx1000.
+**RCC** is a Redo log-based Concurrency Control scheme for high write contention. This repository implements it on MySQL, PostgreSQL and DBx1000.
 
-With immediate, in-place updates, transactions that update the same record are serialized by write-write conflicts. In RCC, a transaction updates a record out of place by creating a speculative write version from its redo log entry, so conflicting transactions are pipelined without waiting for their predecessors to commit. RCC guarantees serializability with lock-based access-time conflict ordering and dependency graph tracking. Updates are installed lazily at commit, so a transaction aborts by discarding its speculative versions. On top of this, RCC introduces two techniques:
-- **Optimistic deadlock handling** grants locks without checking for deadlocks and detects cycles asynchronously in the dependency graph.
+With in-place updates, write-write conflicts serialize transactions that update the same record. RCC instead:
+- updates a record out of place, as a speculative version built from the redo log entry, so conflicting transactions do not wait for their predecessors to commit;
+- guarantees serializability with lock-based conflict ordering and a dependency graph;
+- installs updates at commit, so an abort only discards speculative versions.
+
+On top of this, RCC introduces two techniques:
+- **Optimistic deadlock handling** grants locks without deadlock checks and detects cycles asynchronously.
 - **Columnar RCC (RCC-C)** removes record-level false conflicts with column-level redo logs.
 
 **Repository layout**
-- `MySQL/` — MySQL with RCC, benchmarks and experiment scripts (see [`MySQL/README.md`](MySQL/README.md))
-- `DBx1000/` — DBx1000 with RCC, experiment configurations and scripts (see [`DBx1000/README.md`](DBx1000/README.md))
-- `PostgreSQL/` — PostgreSQL 16.2 with RCC, benchmarks, experiment and plot scripts (see [`PostgreSQL/README.md`](PostgreSQL/README.md))
+- `MySQL/` — MySQL with RCC (see [`MySQL/README.md`](MySQL/README.md))
+- `DBx1000/` — DBx1000 with RCC (see [`DBx1000/README.md`](DBx1000/README.md))
+- `PostgreSQL/` — PostgreSQL 16.2 with RCC (see [`PostgreSQL/README.md`](PostgreSQL/README.md))
 - `plots/` — plot scripts and gnuplot templates of the paper's figures
 
-Each system's README covers its environment setup, build, experiments and results.
+Each system's README covers its setup, build, experiments and results.
 
-> **Correctness:** All TPC-C runs on MySQL and PostgreSQL passed the consistency checks of BenchmarkSQL (`MySQL/scripts/consistency_check.sql`, `PostgreSQL/scripts/consistency_check.sql`), confirming that RCC preserves the consistency conditions defined in the TPC-C specification.
+> **Correctness:** All TPC-C runs on MySQL and PostgreSQL passed the BenchmarkSQL consistency checks (`scripts/consistency_check.sql`). DBx1000 runs the same checks when built with `TPCC_CONSISTENCY true` ([details](DBx1000/README.md#tpc-c-consistency-check)).
 
 ## Hardware Configuration
 
@@ -35,11 +40,11 @@ Each system's README covers its environment setup, build, experiments and result
 | Fig. 7 | (a) YCSB, (b) TPC-C, varying client threads: throughput | [DBx1000](DBx1000/README.md) |
 | Fig. 8 | YCSB, ablation of RCC: (a) throughput, (b) time breakdown | [DBx1000](DBx1000/README.md) |
 
-PostgreSQL has its own experiments (YCSB and TPC-C with varying client threads, comparing vanilla Read Committed, vanilla Repeatable Read and RCC); see [`PostgreSQL/README.md`](PostgreSQL/README.md).
+PostgreSQL has separate YCSB and TPC-C experiments; see [`PostgreSQL/README.md`](PostgreSQL/README.md).
 
 ## Plotting
 
-`plots/` holds a plot script per figure (`plot_<fig>.sh`) and the gnuplot template of every figure (`templates/fig<N>*.gnu`). A plot script reads the results directory of its experiment, writes the plotted data there, and renders the figure into a PDF in the same directory. It requires gnuplot (`sudo apt-get install -y gnuplot`).
+`plots/` has a plot script per figure (`plot_<fig>.sh`) and the gnuplot templates (`templates/`). Each script reads the results directory of its experiment and writes the plotted data and the PDF there. It needs gnuplot (`sudo apt-get install -y gnuplot`).
 
 ```bash
 bash plots/plot_fig7a.sh               # DBx1000/results/Fig7a/fig7a_ycsb.pdf
