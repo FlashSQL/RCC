@@ -2856,6 +2856,12 @@ static bool row_upd_check_autoinc_counter(const upd_node_t *node, mtr_t *mtr) {
   // mtr->commit();
   //
 
+#ifdef ASYNC
+  if (err != DB_OVERFLOW && err != DB_UNDERFLOW && err != DB_ZIP_OVERFLOW) {
+    goto func_exit;
+  }
+#endif
+
   if (buf_LRU_buf_pool_running_out()) {
     err = DB_LOCK_TABLE_FULL;
     goto func_exit;
@@ -2938,7 +2944,6 @@ static bool row_upd_check_autoinc_counter(const upd_node_t *node, mtr_t *mtr) {
   }
   // [TPL] in 5.7
 	// lock_rec_lock_xx -> lock_rec_get_first: ut_ad(rw_lock_own(&(((buf_block_t*) block)->lock), RW_LOCK_X)
-	// block에 latch 걸어야 lock 생성할 수 있음. mtr_commit을 xx 뒤로 미뤄서 latc를 나중에 풀 수 있도록 수정.
   // mtr->commit();
 
 func_exit:

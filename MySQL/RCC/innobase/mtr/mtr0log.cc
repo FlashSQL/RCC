@@ -416,7 +416,6 @@ const byte *mlog_parse_string(
   return (ptr + len);
 }
 
-// 8.0.27까지만 사용된 redo log 포맷을 위한 하위 호환용으로만 유지, 삭제 예정
 const byte *mlog_parse_index_8027(const byte *ptr, const byte *end_ptr,
                                   bool comp, dict_index_t **index) {
   ulint i;
@@ -1236,7 +1235,6 @@ const byte *mlog_parse_index(const byte *ptr, const byte *end_ptr,
       ptr = mlog_parse_index_v1(ptr, end_ptr, index);
       break;
     case INDEX_LOG_VERSION_0:
-      // 구버전 포맷 (8.0.29 이하)
       /* INDEX_LOG_VERSION_0 is used in 8.0.29 and in 8.0.30 REDO log format
       has changed which expects REDOs from < 8.0.30 to be logically empty. Thus
       we shall never reach here. */
@@ -1259,22 +1257,12 @@ static const byte *mlog_parse_index_v1(const byte *ptr, const byte *end_ptr,
     return nullptr;
   }
 
-  // compact row format 여부
-  // 각 필드 앞에 length + NULL bitmap + hidden system columns (DB_TRX_ID 등)을 저장
   const bool is_comp = IS_COMPACT(flag);
 
-  // row version 지원 여부 (8.0.30+)
-  // row version 포함 -> DDL 변경 추적과 즉시 접근
-  // 칼럼 생성/삭제를 추적하기 위한 versioning
   const bool is_versioned = IS_VERSIONED(flag);
 
-  // Instant DDL 여부
-  // 테이블에 컬럼을 즉시 추가/삭제할 수 있는 기능 (전체 테이블 재구성X -> 메타데이터만 수정)
-  // 모든 레코드에 새 칼럼 물리적으로 추가X -> 레코드에는 추가X, 논리적으로만 보이게
   const bool is_instant = IS_INSTANT(flag);
 
-  // 필드 개수(n)와 고유 인덱스 컬럼 수(n_uniq)를 읽음
-  // Instant DDL이면 Instant Added Column 수(inst_cols)도 같이 읽음
   /* Read n and n_uniq */
   uint16_t n = 0;
   uint16_t n_uniq = 0;
@@ -1314,14 +1302,12 @@ static const byte *mlog_parse_index_v1(const byte *ptr, const byte *end_ptr,
       return ptr;
     }
   } else if (is_versioned) {
-    // versioned row format이면 버전 필드 파싱
     /* Populate dummy cols/fields and link them */
     populate_dummy_fields(ind, table, n IF_DEBUG(, is_comp));
   }
 
   size_t n_dropped = 0;
   if (is_versioned) {
-    // dropped/invisible fields를 포함한 row version 정보 추출
     /* Read the fields with version added/dropped */
     instant_fields_list_t f;
     uint16_t current_row_version = 0;
@@ -1336,7 +1322,6 @@ static const byte *mlog_parse_index_v1(const byte *ptr, const byte *end_ptr,
     /* Update fields INSTANT info */
     update_instant_info(f, ind);
 
-    // physical position array (phy_pos_bitmap)을 통해 물리 위치 보정
     bool *phy_pos_bitmap = new bool[ind->n_def];
     memset(phy_pos_bitmap, false, (sizeof(bool) * ind->n_def));
     for (auto field : f) {
@@ -1344,7 +1329,6 @@ static const byte *mlog_parse_index_v1(const byte *ptr, const byte *end_ptr,
     }
     f.clear();
 
-    // Instant로 추가된 컬럼은 shift_count로 조정
     /* For the remaining columns, update physical pos */
     int shift_count = 0;
     for (size_t i = 0; i < ind->n_def; i++) {
@@ -1377,7 +1361,6 @@ static const byte *mlog_parse_index_v1(const byte *ptr, const byte *end_ptr,
     ind->instant_cols = true;
     const size_t n_instant_fields = ind->get_instant_fields();
 
-    // nullable 필드 재계산(Instant DDL에서는 nullability도 변동됨)
     size_t new_n_nullable = ind->calculate_n_instant_nullable(n_instant_fields);
     ind->set_instant_nullable(new_n_nullable);
   }
@@ -1392,7 +1375,6 @@ static const byte *mlog_parse_index_v1(const byte *ptr, const byte *end_ptr,
     if (is_instant) {
       ind->table->set_upgraded_instant();
     }
-    // nullability bitmap 생성
     ind->type = DICT_CLUSTERED;
     ind->create_nullables(table->current_row_version);
   }

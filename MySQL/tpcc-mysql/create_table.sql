@@ -4,22 +4,35 @@ SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0;
 drop table if exists warehouse;
 
 drop table if exists warehouse;
-CREATE TABLE warehouse (
-    w_id SMALLINT NOT NULL,
-    w_name VARCHAR(10),
-    w_street_1 VARCHAR(20),
-    w_street_2 VARCHAR(20),
-    w_city VARCHAR(20),
-    w_state CHAR(2),
-    w_zip CHAR(9),
-    w_tax DECIMAL(4,2),
-    w_ytd DECIMAL(12,2),
-    PRIMARY KEY (w_id)
-) ENGINE=InnoDB
-PARTITION BY KEY(w_id)
-PARTITIONS 32;
+
+create table warehouse (
+w_id smallint not null,
+w_name varchar(10), 
+w_street_1 varchar(20), 
+w_street_2 varchar(20), 
+w_city varchar(20), 
+w_state char(2), 
+w_zip char(9), 
+w_tax decimal(4,2), 
+w_ytd decimal(12,2),
+primary key (w_id) ) Engine=InnoDB;
 
 drop table if exists district;
+
+-- create table district (
+-- d_id tinyint not null, 
+-- d_w_id smallint not null, 
+-- d_name varchar(10), 
+-- d_street_1 varchar(20), 
+-- d_street_2 varchar(20), 
+-- d_city varchar(20), 
+-- d_state char(2), 
+-- d_zip char(9), 
+-- d_tax decimal(4,2), 
+-- d_ytd decimal(12,2), 
+-- d_next_o_id int,
+-- primary key (d_w_id, d_id) ) Engine=InnoDB;
+
 create table district (
 d_id tinyint not null, 
 d_w_id smallint not null, 
@@ -32,11 +45,47 @@ d_zip char(9),
 d_tax decimal(4,2), 
 d_ytd decimal(12,2), 
 d_next_o_id int,
-primary key (d_w_id, d_id) ) ENGINE=InnoDB
-PARTITION BY KEY(d_w_id, d_id) 
-PARTITIONS 32;           
+primary key (d_w_id, d_id) ) Engine=InnoDB
+-- one district per partition (= per .ibd / per page): d_id 1..10 -> MOD 10 maps 1:1
+-- for W warehouses use: PARTITION BY HASH((d_w_id - 1) * 10 + (d_id - 1)) PARTITIONS <10*W>
+-- PARTITION BY HASH(d_id) PARTITIONS 10;
+PARTITION BY HASH((d_w_id - 1) * 10 + (d_id - 1))
+PARTITIONS 80;
 
+-- TPL --
+-- drop table if exists warehouse;
+-- CREATE TABLE warehouse (
+--     w_id SMALLINT NOT NULL,
+--     w_name VARCHAR(10),
+--     w_street_1 VARCHAR(20),
+--     w_street_2 VARCHAR(20),
+--     w_city VARCHAR(20),
+--     w_state CHAR(2),
+--     w_zip CHAR(9),
+--     w_tax DECIMAL(4,2),
+--     w_ytd DECIMAL(12,2),
+--     PRIMARY KEY (w_id)
+-- ) ENGINE=InnoDB
+-- PARTITION BY KEY(w_id)
+-- PARTITIONS 32;
 
+-- drop table if exists district;
+-- create table district (
+-- d_id tinyint not null, 
+-- d_w_id smallint not null, 
+-- d_name varchar(10), 
+-- d_street_1 varchar(20), 
+-- d_street_2 varchar(20), 
+-- d_city varchar(20), 
+-- d_state char(2), 
+-- d_zip char(9), 
+-- d_tax decimal(4,2), 
+-- d_ytd decimal(12,2), 
+-- d_next_o_id int,
+-- primary key (d_w_id, d_id) ) ENGINE=InnoDB
+-- PARTITION BY KEY(d_w_id, d_id) 
+-- PARTITIONS 32;           
+--
 
 drop table if exists customer;
 
@@ -81,7 +130,8 @@ drop table if exists new_orders;
 create table new_orders (
 no_o_id int not null,
 no_d_id tinyint not null,
-no_w_id smallint not null) Engine=InnoDB;
+no_w_id smallint not null,
+PRIMARY KEY(no_w_id, no_d_id, no_o_id)) Engine=InnoDB;
 
 drop table if exists orders;
 
@@ -93,7 +143,8 @@ o_c_id int,
 o_entry_d datetime,
 o_carrier_id tinyint,
 o_ol_cnt tinyint, 
-o_all_local tinyint) Engine=InnoDB ;
+o_all_local tinyint,
+PRIMARY KEY(o_w_id, o_d_id, o_id) ) Engine=InnoDB ;
 
 drop table if exists order_line;
 
@@ -107,7 +158,8 @@ ol_supply_w_id smallint,
 ol_delivery_d datetime, 
 ol_quantity tinyint, 
 ol_amount decimal(6,2), 
-ol_dist_info char(24)) Engine=InnoDB ;
+ol_dist_info char(24),
+PRIMARY KEY(ol_w_id, ol_d_id, ol_o_id, ol_number) ) Engine=InnoDB ;
 
 drop table if exists item;
 

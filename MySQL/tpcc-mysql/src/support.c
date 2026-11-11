@@ -8,8 +8,38 @@
 #include <string.h>
 #include <time.h>
 #include <ctype.h>
+#include <errno.h>
 
 #include "tpc.h"
+
+int max_items = MAXITEMS;
+
+/* Decimal counts, optionally followed by K or M (1000 or 1000000). */
+int ParseItemCount (const char *value)
+{
+	char *end;
+	long count, multiplier = 1;
+
+	if (!value || !isdigit((unsigned char)value[0]))
+		return 0;
+	errno = 0;
+	count = strtol(value, &end, 10);
+	if (errno == ERANGE || count < 1)
+		return 0;
+	if (*end != '\0') {
+		if (end[1] != '\0')
+			return 0;
+		if (*end == 'k' || *end == 'K')
+			multiplier = 1000;
+		else if (*end == 'm' || *end == 'M')
+			multiplier = 1000000;
+		else
+			return 0;
+	}
+	if (count > MAX_ITEM_COUNT / multiplier)
+		return 0;
+	return (int)(count * multiplier);
+}
 
 static int nums[CUST_PER_DIST];
 static int perm_count;
@@ -174,4 +204,3 @@ void Lastname(num, name)
  
  return;
 }
-

@@ -1280,8 +1280,6 @@ static ulint trx_undo_page_report_modify(
   /*----------------------------------------*/
   /* Store then the fields required to uniquely determine the
   record which will be modified in the clustered index */
-  // 변경 대상 레코드를 "유일하게 식별하기 위한 ordering column 값들"을 undo 로그에 저장하는 단계
-  // dict_index_get_n_unique(index): 유니크하게 레코드를 식별하는 key column 수
 
   // fprintf(stderr, "[DEBUG] trx_undo_page_report_modify - rec: %p, %d\n", rec, dict_index_get_n_unique(index));
 
@@ -1289,14 +1287,9 @@ static ulint trx_undo_page_report_modify(
     field = rec_get_nth_field(index, rec, offsets, i, &flen);
 
     /* The ordering columns must not be stored externally. */
-    // 정렬 키가 아닌 컬럼은 이 루프에서 나타나면 안 됨 (rollback이나 purge 시 이 레코드를 재구성/식별X)
     ut_ad(!rec_offs_nth_extern(index, offsets, i));
     ut_ad(!rec_offs_nth_default(index, offsets, i));
 
-    // InnoDB는 ClusteredIndex는 고유하게 식별하기 위해, ordering col로만으로 구성된다 -> undo에 얘만 저장해도 원래 레코드 찾을 수 있음
-		// if ord_part == true, 해당 칼럼이 인덱스에서 정렬 키로 사용된다는 의미(ordering) -> false인 애들은 식별자로 사용할 수 없음!
-		// Q. purge thread가 이 undo log로 인덱스 서치를 안 하면 이 assert를 생략해도 되지만, 아니면 purge 불가능
-    // ut_ad(index->get_col(i)->ord_part); // ord_part == true가 아니면 undo 로그로부터 다시 이 레코드를 찾을 수 없음
 
     if (trx_undo_left(undo_page, ptr) < 5) {
       return 0;
@@ -2651,8 +2644,6 @@ err_exit:
 
   rw_lock_s_lock(&purge_sys->latch, UT_LOCATION_HERE);
 
-  // true이면: 과거 버전이 더 이상 필요 없거나 삭제된 상태 → undo log가 truncate되어 사라졌을 수 있음.
-  // false이면: 아직 변경사항이 가시하지 않음 → undo record 접근 가능.
   missing_history = purge_sys->view.changes_visible(trx_id, name);
   if (!missing_history) {
     *undo_rec = trx_undo_get_undo_rec_low(roll_ptr, heap, is_temp);

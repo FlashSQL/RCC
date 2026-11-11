@@ -1337,7 +1337,6 @@ static dberr_t row_ins_set_rec_lock(lock_mode mode, ulint type,
   }
 
   // [TPL]
-	// Insert 시, 외래키를 검사하면서 충돌락을 찾는 경우가 있다. 이때 충돌락이면 DB_CONFLICT_LOCKED_REC을 반환하는데, 이는 이미 lock을 가지고 있다는 뜻이므로 DB_SUCCESS로 보아도 된다.
 	if (err == DB_CONFLICT_LOCKED_REC) {
 		err = DB_SUCCESS;
 	}
@@ -2196,7 +2195,7 @@ a newer version of entry (the entry should not be inserted)
       duplicate:
         trx->error_index = cursor->index;
         err = DB_DUPLICATE_KEY;
-        fprintf(stderr, "[DEBUG] (%d) row_ins_duplicate_error_in_clust - %p of %d\n", trx->id, rec, row_get_rec_trx_id(rec, cursor->index, offsets));
+        // fprintf(stderr, "[DEBUG] (%d) row_ins_duplicate_error_in_clust - %p of %d\n", trx->id, rec, row_get_rec_trx_id(rec, cursor->index, offsets));
 
         goto func_exit;
       }
@@ -2482,8 +2481,8 @@ dberr_t row_ins_clust_index_entry_low(uint32_t flags, ulint mode,
     err_exit:
       // DB_DUPLICATE_KEY
       // DUPLICATED PK
-      fprintf(stderr, "[DEBUG] (%d) Duplicated PK: %s (%d)\n", thr_get_trx(thr)->id, index->table_name, err);
-      ut_error;
+      // fprintf(stderr, "[DEBUG] (%d) Duplicated PK: %s (%d)\n", thr_get_trx(thr)->id, index->table_name, err);
+      // ut_error;
       mtr.commit();
       goto func_exit;
     }

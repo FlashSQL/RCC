@@ -44,6 +44,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 /** @file ha_innodb.cc */
 
 #ifndef UNIV_HOTBACKUP
+#include "rcc0duration.h"
 #include "my_config.h"
 #endif /* !UNIV_HOTBACKUP */
 
@@ -193,6 +194,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "trx0rseg.h"
 #include "trx0sys.h"
 #include "trx0trx.h"
+#include "rcc0async.h"
 #include "trx0xa.h"
 #include "ut0mem.h"
 #include "ut0test.h"
@@ -1119,7 +1121,206 @@ static MYSQL_THDVAR_ULONG(ddl_threads, PLUGIN_VAR_RQCMDARG,
                           1,          /* Minimum. */
                           64, 0);     /* Maximum. */
 
+#ifdef ASYNC
+static int rcc_wait_sample_status(THD *, SHOW_VAR *var, char *buff) {
+  const auto sample = rcc_wait_sample();
+  snprintf(buff, SHOW_VAR_FUNC_BUFF_SIZE, "%s",
+           sample.size() < SHOW_VAR_FUNC_BUFF_SIZE ? sample.c_str() : "overflow");
+  var->type = SHOW_CHAR;
+  var->value = buff;
+  return 0;
+}
+template <size_t Index>
+static int rcc_profile_status(THD *, SHOW_VAR *var, char *buff) {
+  const uint64_t value = rcc_profile_value(Index);
+  memcpy(buff, &value, sizeof(value));
+  var->type = SHOW_LONGLONG;
+  var->value = buff;
+  return 0;
+}
+#endif
+
+template <size_t Index>
+static int rcc_duration_status(THD *, SHOW_VAR *var, char *buff) {
+  const auto value = rcc_duration::snapshot(Index);
+  snprintf(buff, SHOW_VAR_FUNC_BUFF_SIZE, "%s", value.c_str());
+  var->type = SHOW_CHAR; var->value = buff; return 0;
+}
+
 static SHOW_VAR innodb_status_variables[] = {
+    {"rcc_duration_row_x", reinterpret_cast<char *>(&rcc_duration_status<0>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_duration_row_abort", reinterpret_cast<char *>(&rcc_duration_status<1>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_duration_row_s", reinterpret_cast<char *>(&rcc_duration_status<2>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_duration_row_other", reinterpret_cast<char *>(&rcc_duration_status<3>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_duration_row_success", reinterpret_cast<char *>(&rcc_duration_status<4>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_duration_x_retire", reinterpret_cast<char *>(&rcc_duration_status<5>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_duration_x_snapshot", reinterpret_cast<char *>(&rcc_duration_status<6>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_duration_x_write", reinterpret_cast<char *>(&rcc_duration_status<7>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_duration_abort_release", reinterpret_cast<char *>(&rcc_duration_status<8>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_duration_rollback_preamble", reinterpret_cast<char *>(&rcc_duration_status<9>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_duration_abort_cleanup", reinterpret_cast<char *>(&rcc_duration_status<10>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_duration_commit_cleanup", reinterpret_cast<char *>(&rcc_duration_status<11>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_duration_release_abort", reinterpret_cast<char *>(&rcc_duration_status<12>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_duration_release_commit", reinterpret_cast<char *>(&rcc_duration_status<13>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_duration_x_unretired", reinterpret_cast<char *>(&rcc_duration_status<14>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_duration_row_before_wake", reinterpret_cast<char *>(&rcc_duration_status<15>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_duration_row_wake_resume", reinterpret_cast<char *>(&rcc_duration_status<16>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_duration_row_resume_cleanup", reinterpret_cast<char *>(&rcc_duration_status<17>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_duration_row_wake_unclassified", reinterpret_cast<char *>(&rcc_duration_status<18>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_duration_row_warehouse", reinterpret_cast<char *>(&rcc_duration_status<19>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_duration_row_district", reinterpret_cast<char *>(&rcc_duration_status<20>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_duration_row_customer", reinterpret_cast<char *>(&rcc_duration_status<21>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_duration_row_stock", reinterpret_cast<char *>(&rcc_duration_status<22>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_duration_row_item", reinterpret_cast<char *>(&rcc_duration_status<23>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_duration_row_remaining", reinterpret_cast<char *>(&rcc_duration_status<24>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_duration_x_warehouse", reinterpret_cast<char *>(&rcc_duration_status<25>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_duration_x_district", reinterpret_cast<char *>(&rcc_duration_status<26>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_duration_x_stock", reinterpret_cast<char *>(&rcc_duration_status<27>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_duration_x_remaining", reinterpret_cast<char *>(&rcc_duration_status<28>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_duration_grant_warehouse", reinterpret_cast<char *>(&rcc_duration_status<29>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_duration_grant_district", reinterpret_cast<char *>(&rcc_duration_status<30>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_duration_grant_stock", reinterpret_cast<char *>(&rcc_duration_status<31>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_duration_grant_remaining", reinterpret_cast<char *>(&rcc_duration_status<32>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_duration_cause_unknown", reinterpret_cast<char *>(&rcc_duration_status<33>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_duration_cause_abort_elsewhere", reinterpret_cast<char *>(&rcc_duration_status<34>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_duration_cause_abort_blocker", reinterpret_cast<char *>(&rcc_duration_status<35>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_duration_cause_x_queued", reinterpret_cast<char *>(&rcc_duration_status<36>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_duration_cause_x_running", reinterpret_cast<char *>(&rcc_duration_status<37>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_duration_cause_s_queued", reinterpret_cast<char *>(&rcc_duration_status<38>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_duration_cause_s_running", reinterpret_cast<char *>(&rcc_duration_status<39>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_duration_cause_other", reinterpret_cast<char *>(&rcc_duration_status<40>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_duration_wh_grant_read", reinterpret_cast<char *>(&rcc_duration_status<41>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_duration_wh_read_snapshot", reinterpret_cast<char *>(&rcc_duration_status<42>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_duration_wh_between_sql", reinterpret_cast<char *>(&rcc_duration_status<43>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_duration_wh_update_retire", reinterpret_cast<char *>(&rcc_duration_status<44>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_duration_wh_matched_total", reinterpret_cast<char *>(&rcc_duration_status<45>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_duration_wh_descriptor_begin", reinterpret_cast<char *>(&rcc_duration_status<46>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_duration_wh_core_read", reinterpret_cast<char *>(&rcc_duration_status<47>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_duration_wh_core_write", reinterpret_cast<char *>(&rcc_duration_status<48>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_duration_wh_write_row_wait", reinterpret_cast<char *>(&rcc_duration_status<49>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_duration_wh_write_row_hold", reinterpret_cast<char *>(&rcc_duration_status<50>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_duration_wh_write_graph_wait", reinterpret_cast<char *>(&rcc_duration_status<51>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_duration_wh_write_graph_hold", reinterpret_cast<char *>(&rcc_duration_status<52>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_duration_wh_write_notify", reinterpret_cast<char *>(&rcc_duration_status<53>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_duration_wh_write_source_wait", reinterpret_cast<char *>(&rcc_duration_status<54>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_duration_wh_write_source_hold", reinterpret_cast<char *>(&rcc_duration_status<55>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_duration_wh_write_registry_wait", reinterpret_cast<char *>(&rcc_duration_status<56>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_duration_wh_write_registry_hold", reinterpret_cast<char *>(&rcc_duration_status<57>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+#ifdef ASYNC
+    {"rcc_wait_sample", reinterpret_cast<char *>(&rcc_wait_sample_status), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_begin_calls", reinterpret_cast<char *>(&rcc_profile_status<0>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_begin_wait_ns", reinterpret_cast<char *>(&rcc_profile_status<1>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_begin_hold_ns", reinterpret_cast<char *>(&rcc_profile_status<2>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_read_calls", reinterpret_cast<char *>(&rcc_profile_status<3>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_read_wait_ns", reinterpret_cast<char *>(&rcc_profile_status<4>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_read_hold_ns", reinterpret_cast<char *>(&rcc_profile_status<5>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_write_calls", reinterpret_cast<char *>(&rcc_profile_status<6>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_write_wait_ns", reinterpret_cast<char *>(&rcc_profile_status<7>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_write_hold_ns", reinterpret_cast<char *>(&rcc_profile_status<8>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_certify_calls", reinterpret_cast<char *>(&rcc_profile_status<9>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_certify_wait_ns", reinterpret_cast<char *>(&rcc_profile_status<10>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_certify_hold_ns", reinterpret_cast<char *>(&rcc_profile_status<11>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_detect_calls", reinterpret_cast<char *>(&rcc_profile_status<12>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_detect_wait_ns", reinterpret_cast<char *>(&rcc_profile_status<13>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_detect_hold_ns", reinterpret_cast<char *>(&rcc_profile_status<14>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_finish_calls", reinterpret_cast<char *>(&rcc_profile_status<15>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_finish_wait_ns", reinterpret_cast<char *>(&rcc_profile_status<16>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_finish_hold_ns", reinterpret_cast<char *>(&rcc_profile_status<17>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_native_calls", reinterpret_cast<char *>(&rcc_profile_status<18>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_native_wait_ns", reinterpret_cast<char *>(&rcc_profile_status<19>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_native_hold_ns", reinterpret_cast<char *>(&rcc_profile_status<20>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_other_calls", reinterpret_cast<char *>(&rcc_profile_status<21>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_other_wait_ns", reinterpret_cast<char *>(&rcc_profile_status<22>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_other_hold_ns", reinterpret_cast<char *>(&rcc_profile_status<23>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_rows", reinterpret_cast<char *>(&rcc_profile_status<24>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_active", reinterpret_cast<char *>(&rcc_profile_status<25>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_queue", reinterpret_cast<char *>(&rcc_profile_status<26>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_checks", reinterpret_cast<char *>(&rcc_profile_status<27>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_early_stamp_aborts", reinterpret_cast<char *>(&rcc_profile_status<28>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_early_value_aborts", reinterpret_cast<char *>(&rcc_profile_status<29>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_cert_exclusions", reinterpret_cast<char *>(&rcc_profile_status<30>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_graph_nodes", reinterpret_cast<char *>(&rcc_profile_status<160>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_graph_edges", reinterpret_cast<char *>(&rcc_profile_status<161>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_graph_peak_nodes", reinterpret_cast<char *>(&rcc_profile_status<162>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_graph_peak_edges", reinterpret_cast<char *>(&rcc_profile_status<163>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_graph_reclaimed", reinterpret_cast<char *>(&rcc_profile_status<164>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_graph_approvals", reinterpret_cast<char *>(&rcc_profile_status<165>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_graph_stale_snapshots", reinterpret_cast<char *>(&rcc_profile_status<166>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_graph_exact_enabled", reinterpret_cast<char *>(&rcc_profile_status<167>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_graph_wait_ns", reinterpret_cast<char *>(&rcc_profile_status<168>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_value_wait_ns", reinterpret_cast<char *>(&rcc_profile_status<169>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_precheck_reused", reinterpret_cast<char *>(&rcc_profile_status<170>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_precheck_missed", reinterpret_cast<char *>(&rcc_profile_status<171>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_precheck_invalidated", reinterpret_cast<char *>(&rcc_profile_status<172>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_graph_per_trx_enabled", reinterpret_cast<char *>(&rcc_profile_status<173>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    // Per-trx edges/peak_edges reflect the last detector collection, not a
+    // contended foreground counter. Expose this changed diagnostic scope.
+    {"rcc_graph_edge_stats_sampled", reinterpret_cast<char *>(&rcc_profile_status<174>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_graph_scans", reinterpret_cast<char *>(&rcc_profile_status<37>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_serialization_victims", reinterpret_cast<char *>(&rcc_profile_status<38>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_mixed_victims", reinterpret_cast<char *>(&rcc_profile_status<39>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_rw_profile_enabled", reinterpret_cast<char *>(&rcc_profile_status<40>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_rw_ready_trx", reinterpret_cast<char *>(&rcc_profile_status<41>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_rw_ready_live_trx", reinterpret_cast<char *>(&rcc_profile_status<42>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_rw_bypass_certified_trx", reinterpret_cast<char *>(&rcc_profile_status<43>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_rw_bypass_certified_readers", reinterpret_cast<char *>(&rcc_profile_status<44>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_rw_bypass_committed_trx", reinterpret_cast<char *>(&rcc_profile_status<45>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_rw_commit_live_trx", reinterpret_cast<char *>(&rcc_profile_status<46>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_rw_commit_live_readers", reinterpret_cast<char *>(&rcc_profile_status<47>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_rw_bypass_aborted_trx", reinterpret_cast<char *>(&rcc_profile_status<48>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_rw_cert_rejected_live_trx", reinterpret_cast<char *>(&rcc_profile_status<49>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_rw_certified_trx", reinterpret_cast<char *>(&rcc_profile_status<50>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_abort_profile_commits", reinterpret_cast<char *>(&rcc_profile_status<64>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_abort_profile_aborts", reinterpret_cast<char *>(&rcc_profile_status<65>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_abort_early_refresh_clear", reinterpret_cast<char *>(&rcc_profile_status<66>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_abort_path_none", reinterpret_cast<char *>(&rcc_profile_status<67 + size_t(rcc::AbortCause::none)>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_abort_path_external", reinterpret_cast<char *>(&rcc_profile_status<67 + size_t(rcc::AbortCause::external)>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_abort_path_early_stamp", reinterpret_cast<char *>(&rcc_profile_status<67 + size_t(rcc::AbortCause::early_stamp)>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_abort_path_cert_stamp", reinterpret_cast<char *>(&rcc_profile_status<67 + size_t(rcc::AbortCause::cert_stamp)>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_abort_path_value_cycle", reinterpret_cast<char *>(&rcc_profile_status<67 + size_t(rcc::AbortCause::value_cycle)>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_abort_path_mixed_cycle", reinterpret_cast<char *>(&rcc_profile_status<67 + size_t(rcc::AbortCause::mixed_cycle)>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_abort_path_failed_read_head", reinterpret_cast<char *>(&rcc_profile_status<67 + size_t(rcc::AbortCause::failed_read_head)>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_abort_path_unavailable_read", reinterpret_cast<char *>(&rcc_profile_status<67 + size_t(rcc::AbortCause::unavailable_read)>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_abort_path_failed_write_head", reinterpret_cast<char *>(&rcc_profile_status<67 + size_t(rcc::AbortCause::failed_write_head)>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_abort_path_missing_write_access", reinterpret_cast<char *>(&rcc_profile_status<67 + size_t(rcc::AbortCause::missing_write_access)>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_abort_path_reupdate_head", reinterpret_cast<char *>(&rcc_profile_status<67 + size_t(rcc::AbortCause::reupdate_head)>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_abort_path_reupdate_consumed", reinterpret_cast<char *>(&rcc_profile_status<67 + size_t(rcc::AbortCause::reupdate_consumed)>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_abort_path_bad_state", reinterpret_cast<char *>(&rcc_profile_status<67 + size_t(rcc::AbortCause::bad_state)>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_abort_path_failed_input", reinterpret_cast<char *>(&rcc_profile_status<67 + size_t(rcc::AbortCause::failed_input)>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_abort_path_cascade", reinterpret_cast<char *>(&rcc_profile_status<67 + size_t(rcc::AbortCause::cascade)>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_abort_path_timeout", reinterpret_cast<char *>(&rcc_profile_status<67 + size_t(rcc::AbortCause::timeout)>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_abort_path_engine_cascade", reinterpret_cast<char *>(&rcc_profile_status<67 + size_t(rcc::AbortCause::engine_cascade)>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_abort_path_native_deadlock", reinterpret_cast<char *>(&rcc_profile_status<67 + size_t(rcc::AbortCause::native_deadlock)>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_abort_path_engine_reupdate", reinterpret_cast<char *>(&rcc_profile_status<67 + size_t(rcc::AbortCause::engine_reupdate)>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_abort_path_serialization_cycle", reinterpret_cast<char *>(&rcc_profile_status<67 + size_t(rcc::AbortCause::serialization_cycle)>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_abort_root_none", reinterpret_cast<char *>(&rcc_profile_status<67 + size_t(rcc::AbortCause::count) + size_t(rcc::AbortCause::none)>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_abort_root_external", reinterpret_cast<char *>(&rcc_profile_status<67 + size_t(rcc::AbortCause::count) + size_t(rcc::AbortCause::external)>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_abort_root_early_stamp", reinterpret_cast<char *>(&rcc_profile_status<67 + size_t(rcc::AbortCause::count) + size_t(rcc::AbortCause::early_stamp)>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_abort_root_cert_stamp", reinterpret_cast<char *>(&rcc_profile_status<67 + size_t(rcc::AbortCause::count) + size_t(rcc::AbortCause::cert_stamp)>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_abort_root_value_cycle", reinterpret_cast<char *>(&rcc_profile_status<67 + size_t(rcc::AbortCause::count) + size_t(rcc::AbortCause::value_cycle)>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_abort_root_mixed_cycle", reinterpret_cast<char *>(&rcc_profile_status<67 + size_t(rcc::AbortCause::count) + size_t(rcc::AbortCause::mixed_cycle)>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_abort_root_failed_read_head", reinterpret_cast<char *>(&rcc_profile_status<67 + size_t(rcc::AbortCause::count) + size_t(rcc::AbortCause::failed_read_head)>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_abort_root_unavailable_read", reinterpret_cast<char *>(&rcc_profile_status<67 + size_t(rcc::AbortCause::count) + size_t(rcc::AbortCause::unavailable_read)>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_abort_root_failed_write_head", reinterpret_cast<char *>(&rcc_profile_status<67 + size_t(rcc::AbortCause::count) + size_t(rcc::AbortCause::failed_write_head)>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_abort_root_missing_write_access", reinterpret_cast<char *>(&rcc_profile_status<67 + size_t(rcc::AbortCause::count) + size_t(rcc::AbortCause::missing_write_access)>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_abort_root_reupdate_head", reinterpret_cast<char *>(&rcc_profile_status<67 + size_t(rcc::AbortCause::count) + size_t(rcc::AbortCause::reupdate_head)>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_abort_root_reupdate_consumed", reinterpret_cast<char *>(&rcc_profile_status<67 + size_t(rcc::AbortCause::count) + size_t(rcc::AbortCause::reupdate_consumed)>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_abort_root_bad_state", reinterpret_cast<char *>(&rcc_profile_status<67 + size_t(rcc::AbortCause::count) + size_t(rcc::AbortCause::bad_state)>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_abort_root_failed_input", reinterpret_cast<char *>(&rcc_profile_status<67 + size_t(rcc::AbortCause::count) + size_t(rcc::AbortCause::failed_input)>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_abort_root_cascade", reinterpret_cast<char *>(&rcc_profile_status<67 + size_t(rcc::AbortCause::count) + size_t(rcc::AbortCause::cascade)>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_abort_root_timeout", reinterpret_cast<char *>(&rcc_profile_status<67 + size_t(rcc::AbortCause::count) + size_t(rcc::AbortCause::timeout)>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_abort_root_engine_cascade", reinterpret_cast<char *>(&rcc_profile_status<67 + size_t(rcc::AbortCause::count) + size_t(rcc::AbortCause::engine_cascade)>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_abort_root_native_deadlock", reinterpret_cast<char *>(&rcc_profile_status<67 + size_t(rcc::AbortCause::count) + size_t(rcc::AbortCause::native_deadlock)>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_abort_root_engine_reupdate", reinterpret_cast<char *>(&rcc_profile_status<67 + size_t(rcc::AbortCause::count) + size_t(rcc::AbortCause::engine_reupdate)>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_abort_root_serialization_cycle", reinterpret_cast<char *>(&rcc_profile_status<67 + size_t(rcc::AbortCause::count) + size_t(rcc::AbortCause::serialization_cycle)>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_abort_no_desc_cascade", reinterpret_cast<char *>(&rcc_profile_status<33>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_abort_no_desc_native", reinterpret_cast<char *>(&rcc_profile_status<34>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_abort_no_desc_reupdate", reinterpret_cast<char *>(&rcc_profile_status<35>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_abort_no_desc_other", reinterpret_cast<char *>(&rcc_profile_status<36>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_write_retire_calls", reinterpret_cast<char *>(&rcc_profile_status<31>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"rcc_write_retire_ns", reinterpret_cast<char *>(&rcc_profile_status<32>), SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+#endif
+
     {"buffer_pool_dump_status",
      (char *)&export_vars.innodb_buffer_pool_dump_status, SHOW_CHAR,
      SHOW_SCOPE_GLOBAL},
@@ -1255,12 +1456,55 @@ static SHOW_VAR innodb_status_variables[] = {
      SHOW_SCOPE_GLOBAL},
     {"row_lock_time", (char *)&export_vars.innodb_row_lock_time, SHOW_LONGLONG,
      SHOW_SCOPE_GLOBAL},
+     
+    {"row_commit_time", (char *)&export_vars.innodb_row_commit_time, SHOW_LONGLONG,
+    SHOW_SCOPE_GLOBAL}, // [TPL] - time
+
     {"row_lock_time_avg", (char *)&export_vars.innodb_row_lock_time_avg,
      SHOW_LONG, SHOW_SCOPE_GLOBAL},
     {"row_lock_time_max", (char *)&export_vars.innodb_row_lock_time_max,
      SHOW_LONG, SHOW_SCOPE_GLOBAL},
     {"row_lock_waits", (char *)&export_vars.innodb_row_lock_waits, SHOW_LONG,
      SHOW_SCOPE_GLOBAL},
+
+     {"rcc_count", (char *)&export_vars.innodb_rcc_count, SHOW_LONG,
+      SHOW_SCOPE_GLOBAL}, // [TPL] - rcc count
+    {"rcc_max", (char *)&export_vars.innodb_rcc_max, SHOW_LONG,
+      SHOW_SCOPE_GLOBAL}, // [TPL] - rcc count
+    {"rcc_min", (char *)&export_vars.innodb_rcc_min, SHOW_LONG,
+      SHOW_SCOPE_GLOBAL}, // [TPL] - deadlock cycle length min
+
+    // [SR] - abort breakdown
+    {"rcc_victim", (char *)&export_vars.innodb_rcc_victim, SHOW_LONG,
+      SHOW_SCOPE_GLOBAL},
+    {"rcc_cas_abort", (char *)&export_vars.innodb_rcc_cas_abort, SHOW_LONG,
+      SHOW_SCOPE_GLOBAL},
+    {"rcc_cas_event", (char *)&export_vars.innodb_rcc_cas_event, SHOW_LONG,
+      SHOW_SCOPE_GLOBAL},
+    {"rcc_cas_max", (char *)&export_vars.innodb_rcc_cas_max, SHOW_LONG,
+      SHOW_SCOPE_GLOBAL},
+    {"rcc_cas_min", (char *)&export_vars.innodb_rcc_cas_min, SHOW_LONG,
+      SHOW_SCOPE_GLOBAL},
+
+    // [TPL] - rcc time
+    {"rcc_time1", (char *)&export_vars.innodb_rcc_time1, SHOW_LONGLONG,
+      SHOW_SCOPE_GLOBAL},
+    {"rcc_time2", (char *)&export_vars.innodb_rcc_time2, SHOW_LONGLONG,
+      SHOW_SCOPE_GLOBAL}, 
+    {"rcc_time3", (char *)&export_vars.innodb_rcc_time3, SHOW_LONGLONG,
+      SHOW_SCOPE_GLOBAL}, 
+    {"rcc_time4", (char *)&export_vars.innodb_rcc_time4, SHOW_LONGLONG,
+      SHOW_SCOPE_GLOBAL}, 
+    {"rcc_time5", (char *)&export_vars.innodb_rcc_time5, SHOW_LONGLONG,
+      SHOW_SCOPE_GLOBAL}, 
+    {"rcc_time6", (char *)&export_vars.innodb_rcc_time6, SHOW_LONGLONG,
+      SHOW_SCOPE_GLOBAL},
+    {"rcc_time7", (char *)&export_vars.innodb_rcc_time7, SHOW_LONGLONG,
+      SHOW_SCOPE_GLOBAL}, 
+    {"rcc_time8", (char *)&export_vars.innodb_rcc_time8, SHOW_LONGLONG,
+      SHOW_SCOPE_GLOBAL}, 
+    //
+
     {"rows_deleted", (char *)&export_vars.innodb_rows_deleted, SHOW_LONG,
      SHOW_SCOPE_GLOBAL},
     {"rows_inserted", (char *)&export_vars.innodb_rows_inserted, SHOW_LONG,
@@ -1995,8 +2239,6 @@ const char *thd_innodb_tmpdir(THD *thd) {
 @return reference to private handler */
 
 [[nodiscard]] innodb_session_t *&thd_to_innodb_session(THD *thd) {
-  // thd_ha_data(): THD는 각 스토리지 엔진(innodb, myisam 등) 별로 private session data slot을 가지고 있다(hton->slot)
-  // THD가 처음 innodb를 사용하는 순간, THD의 ha_data 슬롯에 innodb session 객체를 새로 생성해서 저장 -> 이걸 계속 사용한다.
   innodb_session_t *&innodb_session =
       *(innodb_session_t **)thd_ha_data(thd, innodb_hton_ptr);
 
@@ -5191,6 +5433,11 @@ static PSI_metric_info_v1 inno_metrics[] = {
      "Time spent in acquiring row locks, in milliseconds (innodb_row_lock_time)",
      MetricOTELType::ASYNC_COUNTER,
      export_vars.innodb_row_lock_time),
+    simple("row_commit_time",
+     METRIC_UNIT_MILLISECONDS,
+     "Time spent in acquiring row locks, in milliseconds (innodb_row_commit_time)",
+     MetricOTELType::ASYNC_COUNTER,
+     export_vars.innodb_row_commit_time), // [TPL] - time
     simple("row_lock_time_avg",
      METRIC_UNIT_MILLISECONDS,
      "The average time to acquire a row lock, in milliseconds (innodb_row_lock_time_avg)",
@@ -5206,6 +5453,30 @@ static PSI_metric_info_v1 inno_metrics[] = {
      "Number of times a row lock had to be waited for (innodb_row_lock_waits)",
      MetricOTELType::ASYNC_COUNTER,
      export_vars.innodb_row_lock_waits),
+    simple("rcc_count",
+    "",
+    "Number of times a row lock had to be waited for (innodb_row_lock_waits)",
+    MetricOTELType::ASYNC_COUNTER,
+    export_vars.innodb_rcc_count), // [TPL] - rcc count
+    simple("rcc_max",
+    "",
+    "Number of times a row lock had to be waited for (innodb_row_lock_waits)",
+    MetricOTELType::ASYNC_COUNTER,
+    export_vars.innodb_rcc_max), // [TPL] - rcc count
+
+     // [TPL] - rcc time
+    simple("rcc_time1", "", "", MetricOTELType::ASYNC_COUNTER, export_vars.innodb_rcc_time1), 
+    simple("rcc_time2", "", "", MetricOTELType::ASYNC_COUNTER, export_vars.innodb_rcc_time2), 
+    simple("rcc_time3", "", "", MetricOTELType::ASYNC_COUNTER, export_vars.innodb_rcc_time3), 
+    simple("rcc_time4", "", "", MetricOTELType::ASYNC_COUNTER, export_vars.innodb_rcc_time4), 
+    simple("rcc_time5", "", "", MetricOTELType::ASYNC_COUNTER, export_vars.innodb_rcc_time5), 
+    simple("rcc_time6", "", "", MetricOTELType::ASYNC_COUNTER, export_vars.innodb_rcc_time6), 
+    simple("rcc_time7", "", "", MetricOTELType::ASYNC_COUNTER, export_vars.innodb_rcc_time7), 
+    simple("rcc_time8", "", "", MetricOTELType::ASYNC_COUNTER, export_vars.innodb_rcc_time8), 
+    //
+
+
+
     simple("rows_deleted",
      "",
      "The number of rows deleted from InnoDB tables (innodb_rows_deleted)",
@@ -5931,19 +6202,18 @@ static bool innobase_flush_logs(handlerton *hton, bool binlog_group_flush) {
   return false;
 }
 
-/** Commits a transaction in an InnoDB database. */
-void innobase_commit_low(trx_t *trx) /*!< in: transaction handle */
+/** Commits a transaction in an InnoDB database.
+@return DB_SUCCESS or error code */
+dberr_t innobase_commit_low(trx_t *trx) /*!< in: transaction handle */
 {
+  dberr_t error = DB_SUCCESS;
+
   if (trx_is_started(trx)) {
-    const dberr_t error [[maybe_unused]] = trx_commit_for_mysql(trx);
-    // This is ut_ad not ut_a, because previously we did not have an assert
-    // and nobody has noticed for a long time, so probably there is no much
-    // harm in silencing this error. OTOH we believe it should no longer happen
-    // after adding `true` as a second argument to TrxInInnoDB constructor call,
-    // so we'd like to learn if the error can still happen.
-    ut_ad(DB_SUCCESS == error);
+    error = trx_commit_for_mysql(trx);
   }
   trx->will_lock = 0;
+
+  return error;
 }
 
 /** Creates an InnoDB transaction struct for the thd if it does not yet have
@@ -6007,6 +6277,8 @@ static int innobase_commit(handlerton *hton, /*!< in: InnoDB handlerton */
                                              false - the current SQL statement
                                              ended */
 {
+  dberr_t commit_err = DB_SUCCESS;
+
   DBUG_TRACE;
   assert(hton == innodb_hton_ptr);
   DBUG_PRINT("trans", ("ending transaction"));
@@ -6048,7 +6320,6 @@ static int innobase_commit(handlerton *hton, /*!< in: InnoDB handlerton */
     log_errlog(ERROR_LEVEL, ER_INNODB_UNREGISTERED_TRX_ACTIVE);
   }
 
-  // read only는 flush 할 게 없으니까 스킵으로 최적화
   bool read_only = trx->read_only || trx->id == 0;
 
   if (will_commit) {
@@ -6058,7 +6329,6 @@ static int innobase_commit(handlerton *hton, /*!< in: InnoDB handlerton */
     /* We need current binlog position for mysqlbackup to work. */
 
     if (!read_only) {
-      // 옛날 기능(너무 많은 커밋 안 들어오게)
       while (innobase_commit_concurrency > 0) {
         mysql_mutex_lock(&commit_cond_m);
 
@@ -6088,7 +6358,6 @@ static int innobase_commit(handlerton *hton, /*!< in: InnoDB handlerton */
       If the binary log is not enabled, or the transaction
       is not written to the binary log, the file name will
       be a NULL pointer. */
-      // binlog position을 trx에 기록
       ulonglong pos;
 
       thd_binlog_pos(thd, &trx->mysql_log_file_name, &pos);
@@ -6097,16 +6366,34 @@ static int innobase_commit(handlerton *hton, /*!< in: InnoDB handlerton */
 
       /* Don't do write + flush right now. For group commit
       to work we want to do the flush later. */
-      // 나중에 group commit으로 flush 해라
       trx->flush_log_later = true;
     }
+
+    // [TPL] - group_commit
+    // trx_t* owner = nullptr;
+    // for (auto* elem : trx->lock.conf_lock_pool) {
+    //   if (elem && (!elem->deleted)) {
+    //     trx_t* blocker = elem->blocker;
+    //     trx_mutex_enter(blocker);
+    //     if(blocker->pre_commit != TRX_COMMIT_GROUP) {
+    //       owner = blocker;
+    //     }
+    //     trx_mutex_exit(blocker);
+    //   }
+    // }
+
+    // if(!trx_conf_lock_empty(trx) && owner != nullptr) {
+    //   fprintf(stderr, "[DEBUG] (%d) async commit\n", trx->id);
+    //   trx->pre_commit = TRX_COMMIT_ASYNC;
+    //   return 0;
+    // } 
 
     /* If SE needs to persist GTID we must have a transaction. */
     if (thd->se_persists_gtid_explicit()) {
       trx_start_if_not_started(trx, true, UT_LOCATION_HERE);
     }
 
-    innobase_commit_low(trx);
+    commit_err = innobase_commit_low(trx);
 
     if (!read_only) {
       trx->flush_log_later = false;
@@ -6126,9 +6413,35 @@ static int innobase_commit(handlerton *hton, /*!< in: InnoDB handlerton */
     trx_deregister_from_2pc(trx);
 
     /* Now do a write + flush of logs. */
+    // redo log flush
     if (!read_only) {
       trx_commit_complete_for_mysql(trx);
     }
+
+    // [TPL] - group_commit
+    // fprintf(stderr, "[DEBUG] (%d) group commit (%d)\n", trx->id, trx->async_pending_list.size());
+    // if (trx->async_pending_list.size() > 0) {
+    //   trx->pre_commit = TRX_COMMIT_GROUP;
+    //   trx_list_t::iterator end = trx->async_pending_list.end();
+    //   for(trx_list_t::iterator it = trx->async_pending_list.begin(); it != end; ++it) {
+    //       trx_t* ptrx = *it;
+    //       fprintf(stderr, "[DEBUG] (%d) async_pending_list: %p %d\n", trx->id, ptrx, ptrx->id);
+
+    //       // innobase_commit_low(ptrx);
+
+    //       // ptrx->flush_log_later = false;
+    //       // trx_deregister_from_2pc(ptrx);
+    //       // trx_commit_complete_for_mysql(ptrx);
+    //       // ptrx->n_autoinc_rows = 0;
+    //       // ptrx->fts_next_doc_id = 0;
+    //       // ptrx->async_pending_list.clear();
+    //       // innobase_srv_conc_force_exit_innodb(ptrx);
+    //       // ptrx->async_pending_list.clear();
+    //     }
+    //   trx->async_pending_list.clear();
+
+    // }
+    
 
   } else {
     /* We just mark the SQL statement ended and do not do a
@@ -6155,6 +6468,17 @@ static int innobase_commit(handlerton *hton, /*!< in: InnoDB handlerton */
   trx->fts_next_doc_id = 0;
 
   innobase_srv_conc_force_exit_innodb(trx);
+
+  if (commit_err != DB_SUCCESS) {
+#ifdef ASYNC
+    if (will_commit && trx->state.load(std::memory_order_relaxed) ==
+                           TRX_STATE_FORCED_ROLLBACK) {
+      ut_ad(trx_can_be_handled_by_current_thread_or_is_hp_victim(trx));
+      trx->state.store(TRX_STATE_NOT_STARTED, std::memory_order_relaxed);
+    }
+#endif
+    return convert_error_code_to_mysql(commit_err, 0, thd);
+  }
 
   return 0;
 }
@@ -8621,8 +8945,40 @@ void ha_innobase::build_template(bool whole_row) {
   bool fetch_primary_key_cols = false;
   ulint i;
 
+  // [TPL]
+#ifdef RCC_C
+  if (!whole_row) {
+    if (m_prebuilt->hint_need_to_fetch_extra_cols == ROW_RETRIEVE_ALL_COLS) {
+      /* We know we must at least fetch all columns in the
+      key, or all columns in the table */
 
+      if (m_prebuilt->read_just_key) {
+        /* MySQL has instructed us that it is enough
+        to fetch the columns in the key; looks like
+        MySQL can set this flag also when there is
+        only a prefix of the column in the key: in
+        that case we retrieve the whole column from
+        the clustered index */
+
+        fetch_all_in_key = true;
+      } else {
+        whole_row = true;
+      }
+    } else if (m_prebuilt->hint_need_to_fetch_extra_cols ==
+               ROW_RETRIEVE_PRIMARY_KEY) {
+      /* We must at least fetch all primary key cols. Note
+      that if the clustered index was internally generated
+      by InnoDB on the row id (no primary key was
+      defined), then row_search_for_mysql() will always
+      retrieve the row id to a special buffer in the
+      m_prebuilt struct. */
+
+      fetch_primary_key_cols = true;
+    }
+  }
+#else
   if (m_prebuilt->select_lock_type == LOCK_X || m_prebuilt->select_lock_type == LOCK_XX) {
+  //
     /* We always retrieve the whole clustered index record if we
     use exclusive row level locks, for example, if the read is
     done in an UPDATE statement. */
@@ -8657,6 +9013,7 @@ void ha_innobase::build_template(bool whole_row) {
       fetch_primary_key_cols = true;
     }
   }
+#endif
 
   clust_index = m_prebuilt->table->first_index();
 

@@ -206,7 +206,6 @@ que_thr_t *que_thr_end_lock_wait(trx_t *trx) /*!< in: transaction with que_state
 
   ut_ad(trx->lock.que_state == TRX_QUE_LOCK_WAIT);
   /* In MySQL this is the only possible state here */
-  // [TPL] - 걍 lock.que_state 만 보자
   // ut_a(thr->state == QUE_THR_LOCK_WAIT);
   //
 

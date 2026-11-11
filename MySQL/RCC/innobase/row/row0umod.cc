@@ -1273,7 +1273,6 @@ dberr_t row_undo_mod(undo_node_t *node, /*!< in: row undo node */
                      que_thr_t *thr)    /*!< in: query thread */
 {
   // UNDO POINT
-  // fprintf(stderr, "[DEBUG] (%d) row_undo_mod\n", node->trx.id); // 진짜 undo
   dberr_t err;
   MDL_ticket *mdl = nullptr;
 

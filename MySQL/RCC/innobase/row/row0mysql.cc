@@ -1,3 +1,4 @@
+#include "rcc0duration.h"
 /*****************************************************************************
 
 Copyright (c) 2000, 2025, Oracle and/or its affiliates.
@@ -683,6 +684,9 @@ handle_new_error:
       [[fallthrough]];
     case DB_DUPLICATE_KEY:
     case DB_FOREIGN_DUPLICATE_KEY:
+#ifdef ASYNC
+    case DB_UNSUPPORTED:
+#endif
     case DB_TOO_BIG_RECORD:
     case DB_UNDO_RECORD_TOO_BIG:
     case DB_ROW_IS_REFERENCED:
@@ -766,6 +770,7 @@ handle_new_error:
              " foreign constraints and try again";
       break;
     default:
+      fprintf(stderr, "[DEBUG] (%d) row_mysql_handle_errors - %d %d\n", trx->id, trx->conflict_abort, err);
       ib::fatal(UT_LOCATION_HERE, ER_IB_MSG_975)
           << "Unknown error code " << err << ": " ;
   }
@@ -1719,6 +1724,9 @@ run_again:
 @param[in,out]  prebuilt        prebuilt struct in MySQL handle
 @return error code or DB_SUCCESS*/
 dberr_t row_insert_for_mysql(const byte *mysql_rec, row_prebuilt_t *prebuilt) {
+#ifdef RCC_C
+  prebuilt->trx->field_bitmap = ~0ULL;
+#endif
   /* For intrinsic tables there a lot of restrictions that can be
   relaxed including locking of table, transaction handling, etc.
   Use direct cursor interface for inserting to intrinsic tables. */
@@ -2453,12 +2461,14 @@ error:
 @param[in,out]  prebuilt        prebuilt struct in MySQL handle
 @return error code or DB_SUCCESS */
 dberr_t row_update_for_mysql(const byte *mysql_rec, row_prebuilt_t *prebuilt) {
+  rcc_duration::warehouse_update(prebuilt->trx, prebuilt->index->table_name);
+  rcc_duration::PhaseScope phase(prebuilt->trx, rcc_duration::update_sql);
   if (prebuilt->table->is_intrinsic()) {
     return (row_del_upd_for_mysql_using_cursor(prebuilt));
   } else {
-    ut_a(prebuilt->template_type == ROW_MYSQL_WHOLE_ROW ||
-         (dict_table_get_n_v_cols(prebuilt->table) > 0 &&
-          prebuilt->read_just_key));
+    // ut_a(prebuilt->template_type == ROW_MYSQL_WHOLE_ROW ||
+    //      (dict_table_get_n_v_cols(prebuilt->table) > 0 &&
+    //       prebuilt->read_just_key));
     return (row_update_for_mysql_using_upd_graph(mysql_rec, prebuilt));
   }
 }

@@ -1677,6 +1677,18 @@ void srv_export_innodb_status(void) {
       srv_stats.n_lock_wait_current_count;
 
   export_vars.innodb_row_lock_time = srv_stats.n_lock_wait_time / 1000;
+  export_vars.innodb_row_commit_time = srv_stats.n_lock_commit_time / 1000;  // [TPL] - time
+
+  // [TPL] - rcc time
+  export_vars.innodb_rcc_time1 = srv_stats.rcc_time1 / 1000;  
+  export_vars.innodb_rcc_time2 = srv_stats.rcc_time2 / 1000;  
+  export_vars.innodb_rcc_time3 = srv_stats.rcc_time3 / 1000;  
+  export_vars.innodb_rcc_time4 = srv_stats.rcc_time4 / 1000;  
+  export_vars.innodb_rcc_time5 = srv_stats.rcc_time5 / 1000;  
+  export_vars.innodb_rcc_time6 = srv_stats.rcc_time6 / 1000;  
+  export_vars.innodb_rcc_time7 = srv_stats.rcc_time7 / 1000;  
+  export_vars.innodb_rcc_time8 = srv_stats.rcc_time8 / 1000;  
+  //
 
   if (srv_stats.n_lock_wait_count > 0) {
     export_vars.innodb_row_lock_time_avg =
@@ -1687,6 +1699,19 @@ void srv_export_innodb_status(void) {
     export_vars.innodb_row_lock_time_avg = 0;
   }
 
+  // // [TPL] - time
+  // export_vars.innodb_row_lock_time = srv_stats.rollback_time / 1000;
+  export_vars.innodb_rcc_count = srv_stats.rcc_count;
+  export_vars.innodb_rcc_max = srv_stats.rcc_max;
+  export_vars.innodb_rcc_min = srv_stats.rcc_min;
+
+  // [SR] - abort breakdown
+  export_vars.innodb_rcc_victim = srv_stats.rcc_victim;
+  export_vars.innodb_rcc_cas_abort = srv_stats.rcc_cas_abort;
+  export_vars.innodb_rcc_cas_event = srv_stats.rcc_cas_event;
+  export_vars.innodb_rcc_cas_max = srv_stats.rcc_cas_max;
+  export_vars.innodb_rcc_cas_min = srv_stats.rcc_cas_min;
+  // //
 
   export_vars.innodb_row_lock_time_max =
       std::chrono::duration_cast<std::chrono::milliseconds>(

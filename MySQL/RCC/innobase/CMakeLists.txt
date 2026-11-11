@@ -36,6 +36,18 @@ ADD_DEFINITIONS(-DLOG_SUBSYSTEM_TAG="InnoDB")
 # Expand PSI_XXX_CALL into direct calls to the performance_schema.
 ADD_DEFINITIONS(-DPFS_DIRECT_CALL)
 
+# One source tree, two implementations:
+#   WITH_RCC_C=OFF: RCC
+#   WITH_RCC_C=ON:  RCC-C
+OPTION(WITH_RCC_C "Build RCC-C instead of RCC" OFF)
+IF(WITH_RCC_C)
+  ADD_DEFINITIONS(-DRCC_C)
+  MESSAGE(STATUS "InnoDB: RCC-C enabled (-DRCC_C)")
+ELSE()
+  ADD_DEFINITIONS(-DASYNC)
+  MESSAGE(STATUS "InnoDB: RCC asynchronous graph certification enabled (-DASYNC)")
+ENDIF()
+
 IF(MSVC AND NOT WIN32_CLANG)
   # Treat warnings as errors on MSVC for InnoDB
   ADD_COMPILE_OPTIONS("/WX")
@@ -79,6 +91,7 @@ SET(INNOBASE_ZIP_DECOMPRESS_SOURCES
   ut/ut0new.cc)
 
 SET(INNOBASE_SOURCES
+  tpl/rcc0async.cc
   tpl/tpl0log.cc
   api/api0api.cc
   api/api0misc.cc

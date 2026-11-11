@@ -57,7 +57,6 @@ struct FindTPL {
 			body_len = mach_read_from_2(apply_ptr); apply_ptr += 2;
 
 			if (t_space == space_id && t_page_no == page_no) {
-				// 찾으면 바로 중단
 				// fprintf(stderr, "[DEBUG] FindTPL: %p (%d %d) vs (%d %d)\n", start_ptr, t_space, t_page_no, space_id, page_no);
 				t_log_start = log_start;
 				return(false);
@@ -79,8 +78,6 @@ struct FindTPL {
 };
 
 
-//추후 mini transaction log 객체를 활용해서 최적화 가능성 있음
-//현재는 mtr내 log에 작성하고 copy를 진행하지만, 충돌난 transaction의 경우 TPL log space에 로그를 저장하게 구현할 것.
 void capture_redo_log_to_tpl(unsigned char *log, page_id_t page_id, mlog_id_t type, ulint len, in_memory_ppl_buf_t * in_memory_ppl_buf, trx_t* m_trx){
 	byte * write_pointer = in_memory_ppl_buf->open(len);
 	// fprintf(stderr, "[DEBUG] (%d) capture_redo_log_to_tpl: %p\n", m_trx->id, write_pointer);
@@ -88,19 +85,16 @@ void capture_redo_log_to_tpl(unsigned char *log, page_id_t page_id, mlog_id_t ty
 	unsigned char store_type = type;
 	unsigned short log_body_size = len - APPLY_LOG_HDR_SIZE;
 
-	//Step1. Page ID 작성
 	mach_write_to_4(write_pointer, page_id.space()); // Table Number
 	write_pointer += 4;
 	mach_write_to_4(write_pointer, page_id.page_no()); //Page Number
 	write_pointer += 4;
 
-	//Step2. Apply log header 작성
 	mach_write_to_1(write_pointer, store_type); // mtr_log type
 	write_pointer += 1;
 	mach_write_to_2(write_pointer, log_body_size); //mtr_log body
 	write_pointer += 2;
 
-	//Step2. Apply log body 작성
 	memcpy(write_pointer, log, log_body_size);
 	write_pointer += log_body_size;
 	in_memory_ppl_buf->close(write_pointer);
@@ -175,7 +169,6 @@ buf_block_t * tpl_get_block(byte * start_ptr){
 // 			tpl_apply_mtr.start();
 // 			tpl_apply_mtr.set_m_trx(trx);
 
-// 			// Step 1. Log type 읽어오기
 // 			space_id = mach_read_from_4(apply_ptr);
 // 			apply_ptr += 4;
 // 			page_no = mach_read_from_4(apply_ptr);
@@ -217,7 +210,7 @@ buf_block_t * tpl_get_block(byte * start_ptr){
 // 	}
 // }
 
-void tpl_apply(byte * start_ptr, byte * end_ptr, trx_t * trx){
+dberr_t tpl_apply(byte * start_ptr, byte * end_ptr, trx_t * trx){
 	byte * apply_ptr = start_ptr;
 
 	byte*		log_start;
@@ -232,8 +225,8 @@ void tpl_apply(byte * start_ptr, byte * end_ptr, trx_t * trx){
 	int cnt = 0;
 
 	while (apply_ptr < end_ptr) {
+    if (end_ptr - apply_ptr < APPLY_LOG_HDR_SIZE) return DB_CORRUPTION;
 		// fprintf(stderr, "[DEBUG] (%d) tpl_apply: %p\n", trx->id, apply_ptr);
-		// Step 1. Log type 읽어오기
 		space_id = mach_read_from_4(apply_ptr);
 		apply_ptr += 4;
 		page_no = mach_read_from_4(apply_ptr);
@@ -242,6 +235,8 @@ void tpl_apply(byte * start_ptr, byte * end_ptr, trx_t * trx){
 		apply_ptr += 1;
 		body_len = mach_read_from_2(apply_ptr);
 		apply_ptr += 2;
+
+    if (body_len > static_cast<ulint>(end_ptr - apply_ptr)) return DB_CORRUPTION;
 		
 		log_start = apply_ptr;
 
@@ -258,28 +253,27 @@ void tpl_apply(byte * start_ptr, byte * end_ptr, trx_t * trx){
 
 		// fprintf(stderr, "[DEBUG] (%d) Apply in (%u, %u), log_type: %d, body_len: %u\n", trx->id, space_id, page_no, log_type, body_len);
 		
+    dberr_t apply_error = DB_SUCCESS;
 		const byte* temp_ptr = tpl_recv_parse_or_apply_log_rec_body(
 									log_type, apply_ptr
-									, apply_ptr + body_len, space_id, page_no, &tpl_apply_mtr);
+									, apply_ptr + body_len, space_id, page_no, &tpl_apply_mtr, &apply_error);
 		apply_ptr += body_len;
 		tpl_apply_mtr.commit();
+    if (apply_error != DB_SUCCESS) return apply_error;
 		if (temp_ptr){
 			cnt++;
 		} else {
-			break;
+      return DB_CORRUPTION;
 		}
 		
 
 	} // end-of-while
+  return DB_SUCCESS;
 		// fprintf(stderr, "[DEBUG] (%d) Apply END\n", trx->id);
 	// if (cnt > 0) fprintf(stderr, "%d\n", cnt);
 }
 
 // // [TPL] - async commit
-// // 1. 나의 log buf를 순회하면서
-// // 2. 해당 log의 page id, space no을 가지는 락이 있는지 본다 (trx_conf_lock_conf)
-// // 3. 그럼 그 blocker에게 push back
-// // 4. conf lock 없으면 apply 하면 됨
 // void tpl_apply_or_move(byte * start_ptr, byte * end_ptr, trx_t * trx){
 // 	byte * apply_ptr = start_ptr;
 
@@ -301,7 +295,6 @@ void tpl_apply(byte * start_ptr, byte * end_ptr, trx_t * trx){
 // 		// fprintf(stderr, "[DEBUG] (%d) tpl_apply: %p\n", trx->id, apply_ptr);
 // 		log_start = apply_ptr;
 
-// 		// Step 1. Log type 읽어오기
 // 		space_id = mach_read_from_4(apply_ptr);
 // 		apply_ptr += 4;
 // 		page_no = mach_read_from_4(apply_ptr);
@@ -318,7 +311,6 @@ void tpl_apply(byte * start_ptr, byte * end_ptr, trx_t * trx){
 // 			continue;
 // 		}
 
-// 		// 이 space_id, page_no을 가지는 락이 있는가?
 
 // 		// COPY to blocker
 // 		{
@@ -330,19 +322,14 @@ void tpl_apply(byte * start_ptr, byte * end_ptr, trx_t * trx){
 
 // 				// fprintf(stderr, "[DEBUG] (%d) tpl_apply_or_move - blocker: %d\n",trx->id, blocker->id);
 // 				if (blocker->pre_commit == TRX_COMMIT) {
-// 					// T3: T2가 이미 커밋해버림(log 날려버림) -> T1에게 줘야 함
-// 					// T2가 아직 pre-commit 중이면(move 중) 그냥 T2에게 append?
 // 					blocker = trx_page_lock_conf(blocker, page_id);
 // 					// fprintf(stderr, "[DEBUG] (%d) tpl_apply_or_move - NEW blocker\n",trx->id);
 // 				} else {
 // 					fprintf(stderr, "[DEBUG] (%d) tpl_apply_or_move - %p %d %p\n",trx->id, apply_ptr, body_len + APPLY_LOG_HDR_SIZE, &blocker->in_memory_ppl_buf);
-// 					// T1에게 T2의 log 복사
 // 					page_id_t	page_id(space_id, page_no);
 // 					capture_redo_log_to_tpl(apply_ptr, page_id, log_type, body_len + APPLY_LOG_HDR_SIZE, &blocker->in_memory_ppl_buf, blocker);
 // 					apply_ptr += body_len;
 
-// 					// T1에게 T2의 future vers 복사
-// 					trx_conf_overwrite_future_vers(blocker, trx, page_id);
 // 					stop = true;
 // 					// trx_mutex_exit(blocker);
 // 					break;
@@ -366,7 +353,6 @@ void tpl_apply(byte * start_ptr, byte * end_ptr, trx_t * trx){
 // 			apply_ptr += body_len;
 
 // 			// Copy to redo buffer
-// 			// TODO: mtr로 카피하지 말고 바로 global redo buffer로
 // 			mlog_open(&tpl_apply_mtr, 11 + body_len, mlog_start);
 // 			tpl_apply_mtr.added_rec();
 // 			memcpy(mlog_start, log_start, 11 + body_len);
@@ -383,9 +369,10 @@ void tpl_apply(byte * start_ptr, byte * end_ptr, trx_t * trx){
 // 	// if (cnt > 0) fprintf(stderr, "%d\n", cnt);
 // } // end async
 
-void 
+dberr_t
 tpl_apply_trx(trx_t* trx) 
 {
+	// const auto start_time = std::chrono::steady_clock::now();
 	if(trx->in_memory_ppl_buf.size() != 0) {
 		// tpl_install(trx); // [TPL] - group commit
 		// fprintf(stderr, "[DEBUG] (%d) Log Apply\n", trx->id);
@@ -396,13 +383,17 @@ tpl_apply_trx(trx_t* trx)
 		tpl_apply_t apply_t;
 		apply_t.init(trx);
 		
-		trx->in_memory_ppl_buf.for_each_block(apply_t); // 각 블록에 대해 tpl_apply 실행
+		trx->in_memory_ppl_buf.for_each_block(apply_t);
+    if (apply_t.error != DB_SUCCESS) return apply_t.error;
 
 		//Step 3. TPL Erase and commit the MTR
 		trx->in_memory_ppl_buf.erase();
 
 		// fprintf(stderr, "[DEBUG] (%d) Log Apply END\n", trx->id);
 	}
+  return DB_SUCCESS;
+	// const auto diff_time = std::chrono::steady_clock::now() - start_time;
+	// srv_stats.rcc_time7.add(std::chrono::duration_cast<std::chrono::microseconds>(diff_time).count());
 
 }
 

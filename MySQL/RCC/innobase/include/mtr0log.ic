@@ -57,6 +57,9 @@ static inline bool mlog_open_metadata(mtr_t *mtr, ulint size, byte *&buffer) {
 	buffer = mtr_ipl_start_pointer;
   return (buffer != nullptr);
 
+  // buffer = mtr->get_log()->open(size);
+  // return (buffer != nullptr);
+  //
 }
 
 /** Closes a buffer opened to mlog. */
@@ -222,7 +225,6 @@ static inline byte *mlog_write_initial_log_record_fast(
   page_no_t offset;
 
   ut_ad(log_ptr);
-  // ut_d(mtr->memo_modify_page(ptr)); //log만 쓰면 dirty로 써져있지X -> apply할 때 필요
 
   page = (const byte *)ut_align_down(ptr, UNIV_PAGE_SIZE);
   space = mach_read_from_4(page + FIL_PAGE_ARCH_LOG_NO_OR_SPACE_ID);

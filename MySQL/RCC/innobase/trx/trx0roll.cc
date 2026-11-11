@@ -31,6 +31,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
  Created 3/26/1996 Heikki Tuuri
  *******************************************************/
 
+#include "rcc0duration.h"
 #include <sys/types.h>
 
 #include "clone0clone.h"
@@ -53,6 +54,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "trx0rseg.h"
 #include "trx0sys.h"
 #include "trx0trx.h"
+#include "rcc0async.h"
 #include "trx0undo.h"
 #include "usr0sess.h"
 
@@ -87,11 +89,20 @@ static void trx_rollback_to_savepoint_low(
                           partial rollback requested, or NULL for
                           complete rollback */
 {
-  // fprintf(stderr, "[DEBUG] (%d) ROLLBACK (%d)\n", trx->id,trx->conflict_abort);
+  // fprintf(stderr, "[DEBUG] (%d) ROLLBACK (%d) (trx: %p)\n", trx->id,trx->conflict_abort, trx);
   // [TPL]
   // trx->abort = false;
+  rcc_duration::PhaseScope phase(trx, rcc_duration::rollback);
+  rcc_duration::mark_abort(trx);
   trx->conflict_abort = TRX_ABORTING;
-	lock_cascade_abort(trx);
+  {
+    rcc_duration::PhaseScope prefix_phase(trx, rcc_duration::rollback_prefix);
+    rcc_duration::Scope duration(rcc_duration::rollback_preamble);
+#ifdef ASYNC
+    rcc_abort(trx);
+#endif
+    lock_cascade_abort(trx);
+  }
   //
 
   que_thr_t *thr;
@@ -112,6 +123,7 @@ static void trx_rollback_to_savepoint_low(
 
   trx->error_state = DB_SUCCESS;
 
+  // const auto start_time = std::chrono::steady_clock::now(); // [TPL] - time
   if (trx_is_rseg_updated(trx)) {
     ut_ad(trx->rsegs.m_redo.rseg != nullptr ||
           trx->rsegs.m_noredo.rseg != nullptr);
@@ -129,6 +141,11 @@ static void trx_rollback_to_savepoint_low(
     /* Free the memory reserved by the undo graph. */
     que_graph_free(static_cast<que_t *>(roll_node->undo_thr->common.parent));
   }
+  // // [TPL] - time
+  // const auto diff_time = std::chrono::steady_clock::now() - start_time; 
+  // srv_stats.rollback_time.add(std::chrono::duration_cast<std::chrono::microseconds>(diff_time).count());
+  // srv_stats.rollback_count.inc();
+  // //
 
   if (savept == nullptr) {
     trx_rollback_finish(trx);
@@ -283,8 +300,6 @@ dberr_t trx_rollback_for_mysql(trx_t *trx) /*!< in/out: transaction */
 {
   /* Avoid the tracking of async rollback killer
   thread to enter into InnoDB. */
-  // Async rollback: 다른 스레드가 나를 victim으로 마킹하고 대신 롤백 수행해줌
-  // 즉시 롤백할 수 없는 상황일 수도 있을 때
   if (TrxInInnoDB::is_async_rollback(trx)) {
     return (trx_rollback_low(trx));
 
@@ -1122,18 +1137,31 @@ static que_thr_t *trx_rollback_start(trx_t &trx, ib_id_t roll_limit,
 /** Finishes a transaction rollback. */
 static void trx_rollback_finish(trx_t *trx) /*!< in: transaction */
 {
+#ifdef ASYNC
+  {
+    rcc_duration::Scope duration(rcc_duration::abort_cleanup, trx->rcc_trx != nullptr);
+    rcc_finish(trx, false);
+  }
+#endif
   // [TPL]
 	// erase future log -> tpl_apply_trx -> do nothing
 	trx->in_memory_ppl_buf.erase();
+
+  trx_mutex_enter(trx);
+  lock_conf_clear(trx);
   if (trx->conflict_heap) {
+    // const auto start_time = std::chrono::steady_clock::now();
     mem_heap_empty(trx->conflict_heap);
+    // const auto diff_time = std::chrono::steady_clock::now() - start_time;
+    // srv_stats.rcc_time6.add(std::chrono::duration_cast<std::chrono::microseconds>(diff_time).count());
   }
-  trx->lock.conf_lock_pool.clear();
   // trx->lock.conf_lock_pool_async.clear(); // [TPL] - async commit
 
-  trx->lock.wait_lock.store(nullptr); //commit wait에서 깨어나는 경우 wait lock reset 안 되는 경우도 있음 
-  
+  lock_wait_dependents_detach(trx, false);
+  trx->lock.wait_lock.store(nullptr);
+
   trx->conflict_abort = TRX_ABORTED;
+  trx_mutex_exit(trx);
 
   // fprintf(stderr, "[DEBUG] (%d) ROLLBACK END: %s\n", trx->id, trx_get_que_state_str(trx));
 	//

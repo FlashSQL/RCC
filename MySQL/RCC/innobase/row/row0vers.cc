@@ -1280,8 +1280,6 @@ dberr_t row_vers_build_for_consistent_read(
 
   version = rec;
 
-  // 내 ReadView에서 볼 수 있는 가장 최신 버전”을 찾기
-  // undo log를 따라가면서 이전 버전을 재구성 -> 이떄마다 trx id를 확인하고 visible 확인
   for (;;) {
     // fprintf(stderr, "[DEBUG] row_sel_build_prev_vers_for_mysql 2 - %p, read of %d\n", rec, trx_id);
     // view->print_limits(stderr);
@@ -1308,8 +1306,6 @@ dberr_t row_vers_build_for_consistent_read(
 
     if (prev_version == nullptr) {
       /* It was a freshly inserted version */
-      // undo log 체인의 끝에 도달
-      // 즉, 이 레코드는 insert된 거고 이전에는 존재X -> DB_MISSING_HISTORY 반환
       *old_vers = nullptr;
       // fprintf(stderr, "[DEBUG] row_sel_build_prev_vers_for_mysql 22 - %p, read of --> %d: nullptr\n", rec, trx_id);
       ut_ad(!vrow || !(*vrow));
@@ -1329,7 +1325,6 @@ dberr_t row_vers_build_for_consistent_read(
       // fprintf(stderr, "[DEBUG] row_sel_build_prev_vers_for_mysql 22 - %p, read of --> %d: visible\n", rec, trx_id);
       /* The view already sees this version: we can copy
       it to in_heap and return */
-      // Visible! 이걸로 버전 복사해서 탈출
 
       buf =
           static_cast<byte *>(mem_heap_alloc(in_heap, rec_offs_size(*offsets)));

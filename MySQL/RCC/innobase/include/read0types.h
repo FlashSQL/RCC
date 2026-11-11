@@ -163,14 +163,12 @@ class ReadView {
   [[nodiscard]] bool changes_visible(trx_id_t id,
                                      const table_name_t &name) const {
     ut_ad(id > 0);
-    // m_up_limit_id: 커밋된 최대 id, 이 이하는 커밋돼서 보여도 됨
     if (id < m_up_limit_id || id == m_creator_trx_id) {
       return (true);
     }
 
     check_trx_id_sanity(id, name);
 
-    // m_low_limit_id: 커밋된 최대 id, 이 이상은 커밋되지 않아서 보이면X
     if (id >= m_low_limit_id) {
       return (false);
 
@@ -178,10 +176,8 @@ class ReadView {
       return (true);
     }
 
-    // m_ids: 아직 커밋되지 않은 트랜잭션들의 ID 리스트
     const ids_t::value_type *p = m_ids.data();
 
-    // m_ids에 id 있으면 == 커밋되지 않은 == 보면 안 됨
     return (!std::binary_search(p, p + m_ids.size(), id));
   }
 

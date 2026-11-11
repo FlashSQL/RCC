@@ -1584,7 +1584,6 @@ specified.
 @param[in]      parsed_bytes    Number of bytes parsed so far
 @param[in]      start_lsn       lsn for REDO record
 @return log record end, nullptr if not a complete record */
-// [TPL] - non-static으로 변경
 const byte *recv_parse_or_apply_log_rec_body(
     mlog_id_t type, const byte *ptr, const byte *end_ptr, space_id_t space_id,
     page_no_t page_no, buf_block_t *block, mtr_t *mtr, ulint parsed_bytes,
@@ -2405,8 +2404,10 @@ const byte *tpl_recv_parse_or_apply_log_rec_body(
   const byte *end_ptr, 
   space_id_t space_id,
   page_no_t page_no, 
-  mtr_t *mtr) 
+  mtr_t *mtr, dberr_t *apply_error)
 {
+
+  *apply_error = DB_SUCCESS;
 
   page_t *page = nullptr;
   page_zip_des_t *page_zip = nullptr;
@@ -2480,7 +2481,7 @@ const byte *tpl_recv_parse_or_apply_log_rec_body(
         ut_a(!page || page_is_comp(page) == dict_table_is_comp(index->table));
 
         // ptr = btr_cur_parse_update_in_place(ptr, end_ptr, page, page_zip, index);
-        ptr = tpl_btr_cur_parse_update_in_place(ptr, end_ptr, page, page_zip, index, mtr->get_m_trx(), mtr);
+        ptr = tpl_btr_cur_parse_update_in_place(ptr, end_ptr, page, page_zip, index, mtr->get_m_trx(), mtr, apply_error);
       }
 
       break;

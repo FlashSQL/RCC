@@ -33,6 +33,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 
 #define LOCK_MODULE_IMPLEMENTATION
 
+#include "rcc0duration.h"
 #include <mysql/service_thd_wait.h>
 #include <sys/types.h>
 
@@ -43,9 +44,31 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "que0que.h"
 #include "row0mysql.h"
 #include "srv0mon.h"
+#include "srv0srv.h" // [SR] - srv_stats counters
 #include "srv0start.h"
+#ifdef ASYNC
+#include "rcc0async.h"
+#include "rcc0srd_event.h"
+#ifdef __linux__
+#include <pthread.h>
+#endif
+#endif
 
 #include "my_dbug.h"
+// [TPL] - eager detection
+#include <unordered_map>
+#include <unordered_set>
+//
+
+/* Diagnostic-only wake timestamps, indexed by the stable wait-slot array.
+Initialized on first profiled reservation; reset under wait/trx mutexes before
+publication. The waiter copies the timestamp before releasing/reusing its slot.
+No timestamps affect lock, wakeup or transaction decisions. */
+static std::atomic<uint64_t> &rcc_wait_wake_stamp(const srv_slot_t *slot) {
+  static const auto stamps =
+      std::make_unique<std::atomic<uint64_t>[]>(srv_max_n_threads);
+  return stamps[slot - lock_sys->waiting_threads];
+}
 
 /** Print the contents of the lock_sys_t::waiting_threads array. */
 static void lock_wait_table_print(void) {
@@ -160,12 +183,14 @@ static srv_slot_t *lock_wait_table_reserve_slot(
         ut_a(slot->event);
       }
 
+      if (rcc_duration::enabled)
+        rcc_wait_wake_stamp(slot).store(0, std::memory_order_relaxed);
       os_event_reset(slot->event);
       slot->suspended = true;
       slot->suspend_time = std::chrono::steady_clock::now();
       slot->wait_timeout = wait_timeout;
       if (thr->lock_state == QUE_THR_LOCK_ROW) {
-        srv_stats.n_lock_wait_count.inc();
+        // srv_stats.n_lock_wait_count.inc();
         srv_stats.n_lock_wait_current_count.inc();
       }
 
@@ -208,6 +233,8 @@ void lock_wait_suspend_thread(que_thr_t *thr) {
   trx_t *trx;
 
   trx = thr_get_trx(thr);
+  rcc_duration::PhaseScope phase(trx, trx->pre_commit == TRX_COMMIT_PRE ?
+      rcc_duration::commit_wait : rcc_duration::native_wait);
   // fprintf(stderr, "[DEBUG] (%d) lock_wait_suspend_thread\n", trx->id);
 
   if (trx->mysql_thd != nullptr) {
@@ -246,7 +273,6 @@ void lock_wait_suspend_thread(que_thr_t *thr) {
 
   ut_ad(!thr->is_active);
 
-  // 여기서 데드락 검사
   slot = lock_wait_table_reserve_slot(thr, lock_wait_timeout);
 
   lock_wait_mutex_exit();
@@ -256,6 +282,23 @@ void lock_wait_suspend_thread(que_thr_t *thr) {
   trx->lock.wait_lock_type which we are about to read comes from the latest
   call to lock_set_lock_and_trx_wait before we obtained the trx->mutex, which is
   precisely what we want for our stats */
+  // The trx mutex keeps wait_lock and its index alive while classifying.
+  // Copy only a small enum; never retain the lock/index pointer across sleep.
+  auto diag_table = rcc_duration::row_remaining;
+  if (rcc_duration::enabled) {
+    const auto *waiting = trx->lock.wait_lock.load();
+    if (waiting && waiting->is_record_lock()) {
+      const char *table = waiting->index->table_name;
+      if (rcc_duration::is_table(table, "tpcc/warehouse")) diag_table = rcc_duration::row_warehouse;
+      else if (rcc_duration::is_table(table, "tpcc/district")) diag_table = rcc_duration::row_district;
+      else if (rcc_duration::is_table(table, "tpcc/customer")) diag_table = rcc_duration::row_customer;
+      else if (rcc_duration::is_table(table, "tpcc/stock")) diag_table = rcc_duration::row_stock;
+      else if (rcc_duration::is_table(table, "tpcc/item")) diag_table = rcc_duration::row_item;
+    }
+  }
+  if (diag_table == rcc_duration::row_warehouse && trx->pre_commit != TRX_COMMIT_PRE)
+    phase.set(rcc_duration::warehouse_wait);
+  const unsigned diag_reason = trx->rcc_diag_wait_reason.load(std::memory_order_relaxed);
   auto lock_type = trx->lock.wait_lock_type;
   trx_mutex_exit(trx);
 
@@ -298,6 +341,9 @@ void lock_wait_suspend_thread(que_thr_t *thr) {
 
   // fprintf(stderr, "[DEBUG] (%d) WAIT (%p, blocker: %p)\n", trx->id, trx, trx->lock.blocking_trx.load());
   os_event_wait(slot->event);
+  const uint64_t diag_resumed = rcc_duration::enabled ? rcc_duration::now() : 0;
+  const uint64_t diag_woken = rcc_duration::enabled ?
+      rcc_wait_wake_stamp(slot).load(std::memory_order_relaxed) : 0;
   // fprintf(stderr, "[DEBUG] (%d) WAIT END (%p)\n", trx->id, trx);
 
   DEBUG_SYNC_C("lock_wait_has_finished_waiting");
@@ -323,10 +369,51 @@ void lock_wait_suspend_thread(que_thr_t *thr) {
   const auto start_time = slot->suspend_time;
   lock_wait_table_release_slot(slot);
 
-  if (thr->lock_state == QUE_THR_LOCK_ROW) {
+  // // [TPL] - time
+  if (trx->pre_commit == TRX_COMMIT_PRE) {
+    const auto diff_time = std::chrono::steady_clock::now() - start_time;
+    trx->lock_commit_time += std::chrono::duration_cast<std::chrono::microseconds>(diff_time).count();
 
+    if (diff_time > lock_sys->n_lock_max_wait_time) {
+      lock_sys->n_lock_max_wait_time = diff_time;
+    }
+
+    /* Record the lock wait time for this thread */
+    thd_set_lock_wait_time(trx->mysql_thd, diff_time);
+
+    DBUG_EXECUTE_IF("lock_instrument_slow_query_log",
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1)););
+
+  }
+  if (trx->pre_commit != TRX_COMMIT_PRE && thr->lock_state == QUE_THR_LOCK_ROW) {
+  // end time
+  // if (thr->lock_state == QUE_THR_LOCK_ROW) {
     const auto diff_time = std::chrono::steady_clock::now() - start_time;
     trx->lock_wait_time += std::chrono::duration_cast<std::chrono::microseconds>(diff_time).count();
+    if (rcc_duration::enabled) {
+      const auto begin_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+          start_time.time_since_epoch()).count();
+      const uint64_t end_ns = begin_ns +
+          std::chrono::duration_cast<std::chrono::nanoseconds>(diff_time).count();
+      if (diag_woken >= uint64_t(begin_ns) && diag_resumed >= diag_woken &&
+          end_ns >= diag_resumed) {
+        rcc_duration::add(rcc_duration::row_before_wake, diag_woken - begin_ns);
+        rcc_duration::add(rcc_duration::row_wake_resume, diag_resumed - diag_woken);
+        rcc_duration::add(rcc_duration::row_resume_cleanup, end_ns - diag_resumed);
+      } else {
+        rcc_duration::add(rcc_duration::row_wake_unclassified,
+                         end_ns - begin_ns);
+      }
+      rcc_duration::add(diag_table,
+          std::chrono::duration_cast<std::chrono::nanoseconds>(diff_time).count());
+      ++trx->rcc_diag_wait_count;
+      const unsigned cause = diag_reason >> 2;
+      rcc_duration::add(static_cast<rcc_duration::Metric>(
+          rcc_duration::cause_unknown + (cause < 8 ? cause : 0)),
+          std::chrono::duration_cast<std::chrono::nanoseconds>(diff_time).count());
+      rcc_duration::add(static_cast<rcc_duration::Metric>(diag_reason & 3),
+          std::chrono::duration_cast<std::chrono::nanoseconds>(diff_time).count());
+    }
 
     // srv_stats.n_lock_wait_time.add(
     //     std::chrono::duration_cast<std::chrono::microseconds>(diff_time)
@@ -412,7 +499,6 @@ static void lock_wait_release_thread_if_suspended(que_thr_t *thr) {
   ut_ad(trx->lock.wait_lock == nullptr);
 
   if (thr->slot != nullptr && thr->slot->in_use && thr->slot->thr == thr) {
-    // victim을 깨우다
     // [TPL] - conlfict_abort
     if (trx->lock.was_chosen_as_deadlock_victim || trx->conflict_abort) {
       trx->error_state = DB_DEADLOCK;
@@ -421,6 +507,11 @@ static void lock_wait_release_thread_if_suspended(que_thr_t *thr) {
       ut_d(trx->lock.in_rollback = true);
     }
 
+    if (rcc_duration::enabled) {
+      uint64_t expected = 0;
+      rcc_wait_wake_stamp(thr->slot).compare_exchange_strong(
+          expected, rcc_duration::now(), std::memory_order_relaxed);
+    }
     os_event_set(thr->slot->event);
   }
 }
@@ -428,7 +519,6 @@ static void lock_wait_release_thread_if_suspended(que_thr_t *thr) {
 void lock_reset_wait_and_release_thread_if_suspended(lock_t *lock) {
   ut_ad(locksys::owns_lock_shard(lock));
   ut_ad(trx_mutex_own(lock->trx));
-  // ut_ad(lock->trx->lock.wait_lock == lock); // conf lock일 수도
 
   /* We clear blocking_trx here and not in lock_reset_lock_and_trx_wait(), as
   lock_reset_lock_and_trx_wait() is called also when the wait_lock is being
@@ -447,7 +537,11 @@ void lock_reset_wait_and_release_thread_if_suspended(lock_t *lock) {
   Also, lock_wait_check_and_cancel() looks if block_trx become nullptr to figure
   out if wait_lock become nullptr only temporarily (for B-tree reorg) or
   permanently (due to lock_reset_wait_and_release_thread_if_suspended()) */
-  lock->trx->lock.blocking_trx.store(nullptr);
+  // fprintf(stderr, "[DEBUG] (lock_reset_wait_and_release_thread_if_suspended: %p\n", lock);
+  if (lock == nullptr) {
+    return;
+  }
+  lock_set_blocking_trx(lock->trx, nullptr);
 
   /* We only release locks for which someone is waiting, and we posses a latch
   on the shard in which the lock is stored, and the trx which decided to wait
@@ -476,14 +570,19 @@ void lock_reset_wait_and_release_thread_if_suspended(lock_t *lock) {
 // cc. lock_reset_wait_and_release_thread_if_suspended
 // add wait_lock condition
 void tpl_lock_reset_wait_and_release_thread_if_suspended(lock_t *lock) {
+  if (rcc_duration::enabled && lock->is_record_lock() && lock->index->is_clustered() &&
+      lock_get_mode(lock) == LOCK_X && !lock->is_gap() &&
+      lock->trx->lock.que_state == TRX_QUE_LOCK_WAIT &&
+      !lock->trx->rcc_diag_abort_ns.load(std::memory_order_relaxed))
+    rcc_duration::grant_x(lock->trx);
+
 
   // [TPL]
-  // 여기서 blocking_trx는 reset 안 하는 이유: 다른 곳에도 이 함수가 쓰이기 때문에 -> 진짜 트랜잭션 깨울 때까지 유지하는 게 나음!
   lock_reset_lock_and_trx_wait(lock);
 
   if(lock->trx->lock.que_state == TRX_QUE_LOCK_WAIT && lock->trx->lock.wait_lock.load() == nullptr) {
     // fprintf(stderr, "[DEBUG] (%d) tpl_lock_reset_wait_and_release_thread_if_suspended - WAKE UP\n", lock->trx->id);
-    lock->trx->lock.blocking_trx.store(nullptr);
+    lock_set_blocking_trx(lock->trx, nullptr);
 
     que_thr_t *thr = que_thr_end_lock_wait(lock->trx);
     if (thr != nullptr) {
@@ -496,6 +595,12 @@ void tpl_lock_reset_wait_and_release_thread_if_suspended(lock_t *lock) {
 // [TPL]
 // Don't reset wait state. Just Wake-up (x->xx)
 void tpl_lock_wait_release_thread_if_suspended(lock_t *lock) {
+  if (rcc_duration::enabled && lock->is_record_lock() && lock->index->is_clustered() &&
+      lock_get_mode(lock) == LOCK_X && !lock->is_gap() &&
+      lock->trx->lock.que_state == TRX_QUE_LOCK_WAIT &&
+      !lock->trx->rcc_diag_abort_ns.load(std::memory_order_relaxed))
+    rcc_duration::grant_x(lock->trx);
+
   que_thr_t *thr = que_thr_end_lock_wait(lock->trx);
   if (thr != nullptr) {
     lock_wait_release_thread_if_suspended(thr);
@@ -579,6 +684,11 @@ bool operator<(const waiting_trx_info_t &a, const waiting_trx_info_t &b) {
   return std::less<trx_t *>{}(a.trx, b.trx);
 }
 
+// bool operator<(const waiting_trx_info_t &a, const waiting_trx_info_t &b) {
+//   if (a.trx != b.trx) return std::less<trx_t *>{}(a.trx, b.trx);
+//   return std::less<trx_t *>{}(a.waits_for, b.waits_for);  // tiebreak
+// }
+
 static void print_cycle(const ut::vector<uint> &cycle_ids,
                          const ut::vector<waiting_trx_info_t> &infos) {
   std::string msg;
@@ -593,6 +703,15 @@ static void print_cycle(const ut::vector<uint> &cycle_ids,
     char buf[32];
     snprintf(buf, sizeof(buf), "%p", info.trx);
     msg.append(buf);
+    msg.append(",");
+    const auto wait_lock = info.trx->lock.wait_lock.load();
+    if (wait_lock != nullptr && wait_lock->index != nullptr) {
+      msg.append(wait_lock->index->table_name);
+      msg.append(",");
+      msg.append(lock_mode_string(lock_get_mode(wait_lock)));
+    } else {
+      msg.append("?");
+    }
     msg.append(")->");
   }
   const auto &first = infos[cycle_ids[0]];
@@ -647,7 +766,7 @@ static uint64_t lock_wait_snapshot_waiting_threads(
   every X iterations and modify the lock_wait_build_wait_for_graph() to handle
   duplicates in a smart way.
   */
-  const auto table_reservations = lock_wait_table_reservations; // 스냅샷 캡쳐
+  const auto table_reservations = lock_wait_table_reservations;
   for (auto slot = lock_sys->waiting_threads; slot < lock_sys->last_slot;
        ++slot) {
     if (slot->in_use) {
@@ -655,7 +774,7 @@ static uint64_t lock_wait_snapshot_waiting_threads(
       auto to = from->lock.blocking_trx.load();
       // if (to != nullptr && (to->conflict_abort == TRX_NOT_ABORTED) && (from->conflict_abort == TRX_NOT_ABORTED)) {
       if (to != nullptr) {
-        infos.push_back({from, to, slot, slot->reservation_no}); // 포인터만 복사하는 거라 복사 cost 적음
+        infos.push_back({from, to, slot, slot->reservation_no});
       }
       // if (to != nullptr && (to->conflict_abort != TRX_NOT_ABORTED)) {
       //   fprintf(stderr, "[DEBUG] %d <- %d\n", to->id, from->id);
@@ -724,13 +843,13 @@ static void lock_wait_build_wait_for_graph(
   const auto n = static_cast<uint>(infos.size());
   ut_ad(n < static_cast<uint>(std::numeric_limits<int>::max()));
   outgoing.clear();
-  outgoing.resize(n, -1); // -1로 초기화 (-1이면 스냅샷 내부에 blocker가 없다는 뜻)
+  outgoing.resize(n, -1);
   /* This particular implementation sorts infos by ::trx, and then uses
   lower_bound to find index in infos corresponding to ::wait_for, which has
   O(nlgn) complexity and modifies infos, but has a nice property of avoiding any
   allocations.
   An alternative O(n) approach would be to use a hash table to map infos[i].trx
-  to i. ** hash table로 매핑하자는 대안도 있었으나 linked list라 오버헤드 커서 패스했다 **
+  to i.
   Using unordered_map<trx_t*,int> however causes too much (de)allocations as
   its bucket chains are implemented as a linked lists - overall it works much
   slower than sort.
@@ -738,7 +857,7 @@ static void lock_wait_build_wait_for_graph(
   with open addressing and double hashing with a statically allocated
   2 * srv_max_n_threads buckets. This however did not increase transactions per
   second, so introducing a custom implementation seems unjustified here. */
-  sort(infos.begin(), infos.end()); // trx 포인터로 정렬
+  sort(infos.begin(), infos.end());
   waiting_trx_info_t needle{};
   for (uint from = 0; from < n; ++from) {
     /* Assert that the order used by sort and lower_bound depends only on the
@@ -746,10 +865,9 @@ static void lock_wait_build_wait_for_graph(
     ut_ad(from == 0 ||
           std::less<trx_t *>{}(infos[from - 1].trx, infos[from].trx));
     needle.trx = infos[from].waits_for;
-    auto it = std::lower_bound(infos.begin(), infos.end(), needle); // trx 기준으로 binary search
+    auto it = std::lower_bound(infos.begin(), infos.end(), needle);
 
-    if (it == infos.end() || it->trx != needle.trx) { // 스냅샷 내부에 blocker 없으므로
-      // infos[from].waits_for가 infos 안에 없으면 -1 유지
+    if (it == infos.end() || it->trx != needle.trx) {
       continue;
     }
     auto to = it - infos.begin();
@@ -772,9 +890,11 @@ static void lock_wait_rollback_deadlock_victim(trx_t *chosen_victim) {
   ut_a(chosen_victim->lock.que_state == TRX_QUE_LOCK_WAIT);
 
   // [TPL]
+#ifdef ASYNC
+  rcc_note_engine_abort(chosen_victim, rcc::AbortCause::native_deadlock);
+#endif
+  rcc_duration::mark_abort(chosen_victim);
   chosen_victim->conflict_abort = TRX_ABORT_MARKED;
-  // - cascading rollback을 하고 dequeue를 해야 하는데, 먼저 dequeue를 하게 되면 안 됨
-  // - 그럼 데드락-락을 늦게 release하게 되는 건데 여기에 대한 느려짐은 없을까?
   // lock_cancel_waiting_and_release(chosen_victim);
   const auto lock = chosen_victim->lock.wait_lock.load();
   lock_reset_wait_and_release_thread_if_suspended(lock);
@@ -1026,6 +1146,19 @@ static trx_t *lock_wait_choose_victim(
       }
     }
 
+    // [TPL] - reader victim
+    /* Prefer the reader on this cycle's wait edge. The validated wait locks
+    are stable under the exclusive lock_sys latch. Keep priority arbitration
+    above, and use the original weight/tie rule within the same role. */
+    const bool chosen_reader =
+        lock_get_mode(chosen_victim->lock.wait_lock.load()) == LOCK_S;
+    const bool joining_reader =
+        lock_get_mode(trx->lock.wait_lock.load()) == LOCK_S;
+    if (chosen_reader != joining_reader) {
+      if (joining_reader) chosen_victim = trx;
+      continue;
+    }
+    // [TPL] - reader victim END
     if (trx_weight_ge(chosen_victim, trx)) {
       /* The joining transaction is 'smaller',
       choose it as the victim and roll it back. */
@@ -1304,10 +1437,29 @@ static bool lock_wait_check_candidate_cycle(
 
   trx_t *const chosen_victim = lock_wait_choose_victim(cycle_ids, infos);
   ut_a(chosen_victim);
-  // fprintf(stderr, "[DEBUG] DEADLOCK - %d\n", chosen_victim->id);
-  // print_cycle(chosen_victim);
-  // ut_error;
 
+  srv_stats.rcc_victim.inc();
+
+  const ulint cycle_size = cycle_ids.size();
+  srv_stats.rcc_count.add(cycle_size);
+  if (cycle_size > srv_stats.rcc_max) {
+    srv_stats.rcc_max = cycle_size;
+  }
+  if (srv_stats.rcc_min == 0 || cycle_size < srv_stats.rcc_min) {
+    srv_stats.rcc_min = cycle_size;
+  }
+
+  // fprintf(stderr, "[DEBUG] DEADLOCK - %d\n", chosen_victim->id);
+  // if (cycle_ids.size() > 5 && cycle_ids.size() < 10) {
+    // print_cycle(cycle_ids, infos);
+  //   ut_error;
+  // }
+
+  // if (!(trx_search_conflict_cycle(chosen_victim))) {
+  //   fprintf(stderr, "[DEBUG] DEADLOCK fail - %d\n", chosen_victim->id);
+  //   print_cycle(cycle_ids, infos);
+  //   ut_error;
+  // }
   lock_wait_handle_deadlock(chosen_victim, cycle_ids, infos, new_weights);
 
   return true;
@@ -1345,10 +1497,12 @@ in the wait-for graph
                               transactions involved in this cycle (as it will
                               unfold to a path, and schedule weight can be thus
                               computed) */
-static void lock_wait_find_and_handle_deadlocks(
+// [TPL] - eager detection
+static bool lock_wait_find_and_handle_deadlocks(
     const ut::vector<waiting_trx_info_t> &infos,
     const ut::vector<int> &outgoing,
     ut::vector<trx_schedule_weight_t> &new_weights) {
+  bool found_deadlock = false;
   ut_ad(infos.size() == new_weights.size());
   ut_ad(infos.size() == outgoing.size());
   /** We are going to use int and uint to store positions within infos */
@@ -1385,10 +1539,12 @@ static void lock_wait_find_and_handle_deadlocks(
       // DEADLOCK !!
       if (colors[id] == current_color) {
         /* found a candidate cycle! */
-        // fprintf(stderr, "[DEBUG] DEADLOCK\n");
+        // fprintf(stderr, "[DEBUG] DEADLOCK find\n");
+        srv_stats.n_lock_wait_count.inc();
         lock_wait_extract_cycle_ids(cycle_ids, id, outgoing);
         if (lock_wait_check_candidate_cycle(cycle_ids, infos, new_weights)) {
           MONITOR_INC(MONITOR_DEADLOCK);
+          found_deadlock = true;
         } else {
           MONITOR_INC(MONITOR_DEADLOCK_FALSE_POSITIVES);
         }
@@ -1398,7 +1554,9 @@ static void lock_wait_find_and_handle_deadlocks(
   }
   MONITOR_INC(MONITOR_DEADLOCK_ROUNDS);
   MONITOR_SET(MONITOR_LOCK_THREADS_WAITING, n);
+  return found_deadlock;
 }
+//
 
 /** Computes the number of incoming edges for each node of a given graph, in
 which each node has zero or one outgoing edge.
@@ -1457,6 +1615,9 @@ static void lock_wait_compute_and_publish_weights_except_cycles(
   MONITOR_INC(MONITOR_SCHEDULE_REFRESHES);
 }
 
+
+//
+
 /** Takes a snapshot of transactions in waiting currently in slots, updates
 their schedule weights, searches for deadlocks among them and resolves them. */
 static void lock_wait_update_schedule_and_check_for_deadlocks() {
@@ -1493,9 +1654,6 @@ static void lock_wait_update_schedule_and_check_for_deadlocks() {
   Anyway, in case some tests will indicate that taking a snapshot is a
   bottleneck, one can check if declaring this vectors as static solves the
   issue.
-  - infos를 static으로 선언해서 메모리 재할당을 줄이면 빨라질 것으로 예상했지만, 실험해보니 아니었음
-  - : 요즘 malloc이 thread contention을 줄이도록 잘 설계되어 있어서, static은 deallocator 동작 문제도 있음
-  - ㅇ
   */
   ut::vector<waiting_trx_info_t> infos;
   ut::vector<int> outgoing;
@@ -1507,17 +1665,218 @@ static void lock_wait_update_schedule_and_check_for_deadlocks() {
   /* We don't update trx->lock.schedule_weight for trxs on cycles. */
   lock_wait_compute_and_publish_weights_except_cycles(infos, table_reservations,
                                                       outgoing, new_weights);
-
+  // [TPL] - eager detection
   if (innobase_deadlock_detect) {
     /* This will also update trx->lock.schedule_weight for trxs on cycles. */
     lock_wait_find_and_handle_deadlocks(infos, outgoing, new_weights);
   }
 }
 
+#ifdef ASYNC
+static thread_local std::vector<rcc::WaitKey> rcc_abort_wakes;
+
+void rcc_mark_engine_abort(rcc::WaitKey key) {
+  if (!key.first) return;
+  auto *trx = reinterpret_cast<trx_t *>(key.first);
+  if (!trx_is_pooled_ptr(trx)) return;
+  trx_mutex_enter(trx);
+  const auto state = trx->state.load();
+  if (trx->version == key.second &&
+      (state == TRX_STATE_ACTIVE || state == TRX_STATE_PREPARED) &&
+      trx->conflict_abort == TRX_NOT_ABORTED) {
+    rcc_duration::mark_abort(trx);
+    trx->conflict_abort = TRX_ABORT_MARKED;
+    trx->abort = true;
+  }
+  if (trx->version == key.second &&
+      (state == TRX_STATE_ACTIVE || state == TRX_STATE_PREPARED) &&
+      trx->conflict_abort == TRX_ABORT_MARKED) {
+    rcc_abort_wakes.push_back(key);
+  }
+  trx_mutex_exit(trx);
+}
+#endif
+
+
+#ifdef ASYNC
+namespace {
+rcc::SrdEvent &rcc_srd_event() {
+  static rcc::SrdEvent event;
+  return event;
+}
+void rcc_srd_thread() {
+#ifdef __linux__
+  pthread_setname_np(pthread_self(), "rcc_srd");
+#endif
+  ib::info() << "rcc_srd (serialization detector) started";
+  bool retry = false;
+  while (rcc_srd_event().wait(retry)) {
+    rcc_srd_detect();
+    for (const auto &key : rcc_take_aborts()) {
+      rcc_mark_engine_abort(key);
+    }
+    std::vector<rcc::WaitKey> wake;
+    wake.swap(rcc_abort_wakes);
+    std::sort(wake.begin(), wake.end());
+    wake.erase(std::unique(wake.begin(), wake.end()), wake.end());
+    for (const auto &key : wake) {
+      auto *trx = reinterpret_cast<trx_t *>(key.first);
+      if (!trx_is_pooled_ptr(trx)) continue;
+      locksys::tpl_run_if_waiting_bounded(
+          trx, key.second,
+          [&]() {
+            if (trx->conflict_abort != TRX_ABORT_MARKED) return;
+            trx->error_state = DB_DEADLOCK;
+            lock_reset_wait_and_release_thread_if_suspended(
+                trx->lock.wait_lock.load());
+          },
+          /*max_attempts=*/1);
+      rcc_mark_engine_abort(key);
+    }
+
+    retry = !rcc_abort_wakes.empty();
+  }
+  rcc_abort_wakes.clear();
+  ib::info() << "rcc_srd (serialization detector) stopped";
+}
+class RccSrdOwner {
+ public:
+  RccSrdOwner() {
+    rcc_srd_event().start();
+    thread = os_thread_create(0, 0, rcc_srd_thread);
+    thread.start();
+  }
+  ~RccSrdOwner() {
+    rcc_srd_event().stop();
+    thread.join();
+  }
+ private:
+  IB_thread thread;
+};
+}  // namespace
+void rcc_srd_notify() { rcc_srd_event().notify(); }
+#endif
+
 /** A thread which wakes up threads whose lock wait may have lasted too long,
 analyzes wait-for-graph changes, checks for deadlocks and resolves them, and
 updates schedule weights. */
+class RccRootSampler {
+  struct Node { trx_t *from; trx_t *to; uint64_t version; unsigned phase; };
+  struct Record {
+    uint64_t at, wait_ns, hold_ns, age_sum;
+    uint32_t count, depth_sum, roots;
+    unsigned kind, phase;
+  };
+  std::atomic<bool> stop{false};
+  std::thread worker;
+  std::vector<Record> records;
+  void run() {
+    std::vector<Node> nodes;
+    nodes.reserve(2048);
+    records.reserve(250000);
+    uint32_t random = 917;
+    while (!stop.load(std::memory_order_relaxed)) {
+      nodes.clear();
+      const auto start = rcc_duration::now();
+      lock_wait_mutex_enter();
+      const auto locked = rcc_duration::now();
+      for (auto *slot = lock_sys->waiting_threads; slot < lock_sys->last_slot; ++slot) {
+        if (!slot->in_use) continue;
+        auto *t = thr_get_trx(slot->thr);
+        nodes.push_back({t, t->lock.blocking_trx.load(std::memory_order_relaxed),
+          t->version.load(std::memory_order_relaxed),
+          t->rcc_diag_phase.load(std::memory_order_relaxed)});
+      }
+      const auto copied = rcc_duration::now();
+      lock_wait_mutex_exit();
+      nodes.erase(std::remove_if(nodes.begin(), nodes.end(), [](const Node &n) {
+        return !trx_is_pooled_ptr(n.from);
+      }), nodes.end());
+      std::array<std::array<Record, rcc_duration::phase_count>, 6> totals{};
+      std::vector<trx_t *> unique_roots;
+      unique_roots.reserve(nodes.size());
+      for (const auto &first : nodes) {
+        if (first.phase != rcc_duration::warehouse_wait) continue;
+        trx_t *root = first.to;
+        unsigned depth = 1, kind = 2, phase = 0;
+        bool race = first.from->version.load(std::memory_order_relaxed) != first.version ||
+          first.from->lock.blocking_trx.load(std::memory_order_relaxed) != first.to;
+        std::array<trx_t *, 256> seen{};
+        size_t nseen = 0;
+        uint64_t age = 0;
+        if (!root) { kind = 5; depth = 0; }
+        while (root && !race) {
+          bool cycle = false;
+          for (size_t i = 0; i < nseen; ++i) cycle |= seen[i] == root;
+          if (cycle || nseen == seen.size()) { kind = 3; root = nullptr; break; }
+          seen[nseen++] = root;
+          auto it = std::find_if(nodes.begin(), nodes.end(),
+                                [&](const Node &n) { return n.from == root; });
+          if (it == nodes.end() || !it->to) break;
+          if (it->from->version.load(std::memory_order_relaxed) != it->version ||
+              it->from->lock.blocking_trx.load(std::memory_order_relaxed) != it->to) {
+            race = true; break;
+          }
+          root = it->to;
+          ++depth;
+        }
+        if (root && !race) {
+          if (!trx_is_pooled_ptr(root)) { race = true; }
+          else {
+            const auto v = root->version.load(std::memory_order_relaxed);
+            const auto aborted = root->rcc_diag_abort_ns.load(std::memory_order_relaxed);
+            const auto x = root->rcc_diag_x_ns.load(std::memory_order_relaxed);
+            phase = root->rcc_diag_phase.load(std::memory_order_relaxed);
+            if (phase >= rcc_duration::phase_count) phase = 0;
+            kind = aborted ? 0 : x ? 1 : 2;
+            const auto began = aborted ? aborted : x;
+            if (began && copied >= began) age = copied - began;
+            race = root->version.load(std::memory_order_relaxed) != v;
+          }
+        }
+        if (race) { kind = 4; phase = 0; age = 0; }
+        auto &bucket = totals[kind][phase];
+        ++bucket.count; bucket.depth_sum += depth; bucket.age_sum += age;
+        if (root && !race && std::find(unique_roots.begin(), unique_roots.end(), root) == unique_roots.end()) {
+          unique_roots.push_back(root); ++bucket.roots;
+        }
+      }
+      records.push_back({copied, locked-start, copied-locked, 0, 0, 0, 0, 6, 0});
+      for (unsigned k = 0; k < totals.size(); ++k)
+        for (unsigned p = 0; p < rcc_duration::phase_count; ++p) {
+          auto &v = totals[k][p];
+          if (v.count) records.push_back({copied, 0, 0, v.age_sum,
+                                         v.count, v.depth_sum, v.roots, k, p});
+        }
+      random = random * 1664525u + 1013904223u;
+      std::this_thread::sleep_for(std::chrono::microseconds(750 + random % 501));
+    }
+  }
+ public:
+  RccRootSampler() {
+    if (rcc_duration::root_enabled) worker = std::thread([this] { run(); });
+  }
+  ~RccRootSampler() {
+    if (!worker.joinable()) return;
+    stop.store(true, std::memory_order_relaxed);
+    worker.join();
+    FILE *f = std::fopen(rcc_duration::root_profile_path, "wx");
+    if (!f) { std::fprintf(stderr, "RCC root profile: output creation failed\n"); return; }
+    std::fprintf(f, "at_ns,mutex_wait_ns,mutex_hold_ns,age_sum_ns,count,depth_sum,roots,kind,phase\n");
+    for (const auto &r : records)
+      std::fprintf(f, "%llu,%llu,%llu,%llu,%u,%u,%u,%u,%u\n",
+          (unsigned long long)r.at, (unsigned long long)r.wait_ns,
+          (unsigned long long)r.hold_ns, (unsigned long long)r.age_sum,
+          r.count, r.depth_sum, r.roots, r.kind, r.phase);
+    std::fclose(f);
+  }
+};
+
 void lock_wait_timeout_thread() {
+  RccRootSampler root_sampler;
+#ifdef ASYNC
+  RccSrdOwner rcc_srd;
+#endif
   int64_t sig_count = 0;
   os_event_t event = lock_sys->timeout_event;
 
@@ -1535,8 +1894,14 @@ void lock_wait_timeout_thread() {
       last_checked_for_timeouts_at = current_time;
       lock_wait_check_slots_for_timeouts();
     }
-
+    // const auto start_time = std::chrono::steady_clock::now();
     lock_wait_update_schedule_and_check_for_deadlocks();
+
+    // const auto diff_time = std::chrono::steady_clock::now() - start_time;
+    // srv_stats.rcc_time8.add(
+    //     std::chrono::duration_cast<std::chrono::microseconds>(diff_time)
+    //         .count());
+    // srv_stats.rcc_count.inc();
 
     /* When someone is waiting for a lock, we wake up every second (at worst)
     and check if a timeout has passed for a lock wait */

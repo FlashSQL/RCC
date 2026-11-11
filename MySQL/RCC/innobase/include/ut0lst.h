@@ -395,7 +395,6 @@ void ut_list_insert(List &list, typename List::elem_type *elem1,
 */
 template <typename List>
 void ut_list_remove(List &list, typename List::elem_type *elem) {
-  // 5.7에서 에러난 부분
   ut_a(list.get_length() > 0);
   //
   

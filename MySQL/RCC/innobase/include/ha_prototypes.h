@@ -462,8 +462,9 @@ lacks one.
 trx_t *check_trx_exists(THD *thd);
 
 /** Commits a transaction in an InnoDB database.
-@param[in]      trx     Transaction handle. */
-void innobase_commit_low(trx_t *trx);
+@param[in]      trx     Transaction handle.
+@return DB_SUCCESS or error code */
+dberr_t innobase_commit_low(trx_t *trx);
 
 /** Return the number of read threads for this session.
 @param[in]      thd       Session instance, or nullptr to query the global

@@ -13,6 +13,9 @@
 #include "spt_proc.h"
 #include "tpc.h"
 
+#include <unistd.h>
+#include <stdlib.h>
+
 #define pick_dist_info(ol_dist_info,ol_supply_w_id) \
 switch(ol_supply_w_id) { \
 case 1: strncpy(ol_dist_info, s_dist_01, 25); break; \
@@ -31,6 +34,8 @@ extern MYSQL **ctx;
 extern MYSQL_STMT ***stmt;
 
 extern FILE *ftrx_file;
+
+extern int abort_prob; /* random abort probability in % (0 = disabled) */
 
 #define NNULL ((void *)0)
 
@@ -92,7 +97,8 @@ int neword( int t_num,
 	float           total = 0.0;
 
 	int            min_num;
-	int            i,j,tmp,swp;
+	int            i,j,swp;
+	long long      tmp;
 	int            ol_num_seq[MAX_NUM_ITEMS];
 
 	int             proceed = 0;
@@ -103,6 +109,14 @@ int neword( int t_num,
 	MYSQL_STMT*   mysql_stmt;
         MYSQL_BIND    param[9];
 	MYSQL_BIND    column[12];
+
+	// [TPL]
+	/* --- RNG seed: thread-local, 1회 초기화 --- */
+	static __thread unsigned int _seed;
+	if (_seed == 0) {
+		_seed = (unsigned)time(NULL) ^ (unsigned)getpid() ^ (unsigned)(t_num * 2654435761u);
+	}
+	//
 
 	/* EXEC SQL WHENEVER NOT FOUND GOTO sqlerr;*/
 	/* EXEC SQL WHENEVER SQLERROR GOTO sqlerr;*/
@@ -246,6 +260,14 @@ int neword( int t_num,
 	param[6].buffer = &o_all_local;
 	if( mysql_stmt_bind_param(mysql_stmt, param) ) goto sqlerr;
 	if( mysql_stmt_execute(mysql_stmt) ) goto sqlerr;
+	// if( mysql_stmt_execute(mysql_stmt) ) {
+	// 	if (mysql_errno(ctx[t_num]) == 1062) {
+	// 		// fprintf(stderr,"(%d) DUPLICATED: %d\n", t_num, mysql_errno(ctx[t_num]));
+	// 		// error(ctx[t_num],mysql_stmt);
+	// 		goto forced_commit;
+	// 	}
+	// 	goto sqlerr;
+	// }
 
 
 #ifdef DEBUG
@@ -272,11 +294,11 @@ int neword( int t_num,
 		ol_num_seq[i]=i;
 	}
 	for (i = 0; i < (o_ol_cnt - 1); i++) {
-		tmp = (MAXITEMS + 1) * supware[ol_num_seq[i]] + itemid[ol_num_seq[i]];
+		tmp = ((long long)max_items + 1) * supware[ol_num_seq[i]] + itemid[ol_num_seq[i]];
 		min_num = i;
 		for ( j = i+1; j < o_ol_cnt; j++) {
-		  if ( (MAXITEMS + 1) * supware[ol_num_seq[j]] + itemid[ol_num_seq[j]] < tmp ){
-		    tmp = (MAXITEMS + 1) * supware[ol_num_seq[j]] + itemid[ol_num_seq[j]];
+		  if ( ((long long)max_items + 1) * supware[ol_num_seq[j]] + itemid[ol_num_seq[j]] < tmp ){
+		    tmp = ((long long)max_items + 1) * supware[ol_num_seq[j]] + itemid[ol_num_seq[j]];
 		    min_num = j;
 		  }
 		}
@@ -500,6 +522,15 @@ int neword( int t_num,
 	printf("insert 3\n");
 	fflush(stdout);
 #endif
+// [TPL]
+	/* --- abort_prob% 확률로 강제 abort ---
+	 * 입력은 확률(%)이며, 100/abort_prob 마다 1회 abort 한다.
+	 * 예) 20 -> (% 5)==0 -> 20%, 10 -> 10%, 5 -> 5%, 100 -> 100% */
+	if (abort_prob > 0 && (rand_r(&_seed) % (100 / abort_prob)) == 0) {
+		mysql_rollback(ctx[t_num]);
+		return (2); /* injected (random) abort */
+	}
+//
 
 	/*EXEC_SQL COMMIT WORK;*/
 	if( mysql_commit(ctx[t_num]) ) goto sqlerr;
@@ -519,7 +550,11 @@ invaliditem:
 	return (1); /* OK? */
 
 sqlerr:
+	// fprintf(stderr,"neword %d:%d\n",t_num,proceed);
+    //   	error(ctx[t_num],mysql_stmt);
+	// /*EXEC SQL WHENEVER SQLERROR GOTO sqlerrerr;*/
+	// /*EXEC_SQL ROLLBACK WORK;*/
+	mysql_rollback(ctx[t_num]);
 sqlerrerr:
 	return (0);
 }
-

@@ -130,6 +130,7 @@ main(argc, argv)
             break;
         case '?':
     	    printf("Usage: tpcc_load -h server_host -P port -d database_name -u mysql_user -p mysql_password -w warehouses -l part -m min_wh -n max_wh\n");
+            printf("* Item count is fixed at %d in src/tpc.h.\n", MAXITEMS);
     	    printf("* [part]: 1=ITEMS 2=WAREHOUSE 3=CUSTOMER 4=ORDERS\n");
             exit(0);
         default:
@@ -162,6 +163,7 @@ main(argc, argv)
 	printf("       [pass]: %s\n", db_password);
 
 	printf("  [warehouse]: %d\n", count_ware);
+	printf("      [items]: %d (fixed)\n", MAXITEMS);
 
 	if(particle_flg==1){
 	    printf("  [part(1-4)]: %d\n", part_no);
@@ -315,22 +317,25 @@ LoadItems()
 	char            i_data[51];
 
 	int             idatasiz;
-	int             orig[MAXITEMS+1];
+	unsigned char  *orig = calloc((size_t)MAXITEMS + 1, sizeof(*orig));
 	int             pos;
 	int             i;
     int             retried = 0;
 
 	MYSQL_BIND    param[5];
 
+	if (!orig) {
+		perror("allocating item ORIGINAL flags");
+		exit(EXIT_FAILURE);
+	}
+
 	/* EXEC SQL WHENEVER SQLERROR GOTO sqlerr; */
 
 	printf("Loading Item \n");
 
-	for (i = 0; i < MAXITEMS / 10; i++)
-		orig[i] = 0;
 	for (i = 0; i < MAXITEMS / 10; i++) {
 		do {
-			pos = RandomNumber(0L, MAXITEMS);
+			pos = RandomNumber(1, MAXITEMS);
 		} while (orig[pos]);
 		orig[pos] = 1;
 	}
@@ -408,8 +413,10 @@ retry:
 	if( mysql_commit(mysql) ) goto sqlerr;
 
 	printf("Item Done. \n");
+	free(orig);
 	return;
 sqlerr:
+	free(orig);
 	Error(stmt[0]);
 }
 
@@ -593,22 +600,25 @@ Stock(w_id)
 	char            s_data[51];
 
 	int             sdatasiz;
-	int             orig[MAXITEMS+1];
+	unsigned char  *orig = calloc((size_t)MAXITEMS + 1, sizeof(*orig));
 	int             pos;
 	int             i;
     int             error;
 
 	MYSQL_BIND    param[14];
 
+	if (!orig) {
+		perror("allocating stock ORIGINAL flags");
+		exit(EXIT_FAILURE);
+	}
+
 	/* EXEC SQL WHENEVER SQLERROR GOTO sqlerr;*/
 	printf("Loading Stock Wid=%ld\n", w_id);
 	s_w_id = w_id;
 
-	for (i = 0; i < MAXITEMS / 10; i++)
-		orig[i] = 0;
 	for (i = 0; i < MAXITEMS / 10; i++) {
 		do {
-			pos = RandomNumber(0L, MAXITEMS);
+			pos = RandomNumber(1, MAXITEMS);
 		} while (orig[pos]);
 		orig[pos] = 1;
 	}
@@ -709,8 +719,10 @@ retry:
 
 	printf(" Stock Done.\n");
 out:
+	free(orig);
 	return error;
 sqlerr:
+    free(orig);
     Error(0);
 }
 
@@ -1125,7 +1137,7 @@ retry:
 
 		for (ol = 1; ol <= o_ol_cnt; ol++) {
 			/* Generate Order Line Data */
-			ol_i_id = RandomNumber(1L, MAXITEMS);
+			ol_i_id = RandomNumber(1, MAXITEMS);
 			ol_supply_w_id = o_w_id;
 			ol_quantity = 5;
 			ol_amount = 0.0;

@@ -279,11 +279,31 @@ bool trx_search_conflict_cycle(trx_t* trx);
 
 void lock_cascade_abort(trx_t* trx);
 void lock_make_trx_abort_list(trx_t *in_trx, abort_list_t &abort_list);
-void collect_cascade_rollback(abort_list_t &abort_list, lock_t* in_lock);
+void collect_cascade_rollback(abort_list_t &abort_list, lock_t* in_lock, ulint heap_no);
 bool trx_conf_lock_empty(trx_t* trx);
 bool trx_set_latest_conf_to_wait(trx_t* trx);
-bool lock_conflicter(lock_t* lock1, lock_t* lock2);
+bool lock_conflicter(lock_t* lock1, lock_t* lock2, ulint heap_no);
 conflict_t* lock_get_conf(trx_t* trx, page_id_t page_id, ulint heap_no);
+bool lock_conf_set_blocker(lock_t* in_lock, trx_t* in_trx, trx_t* new_blocker, ulint heap_no);
+/** Remove a live conflict from its blocker's reverse index. Caller protects
+the owning conflict pool; acquire no engine latch while holding the index latch. */
+void lock_conf_remove_dependent(conflict_t *conf);
+/** Detach outgoing conflicts before clearing their heap. */
+void lock_conf_clear(trx_t *trx);
+/** Clear incoming index when the transaction returns to its reusable state. */
+void lock_conf_reset_dependents(trx_t *trx);
+/* [WAIT-INDEX] clears trx->lock.blocking_trx (unregistering from its blocker)
+and, with clear_index, drops the waiters registered on trx. The index must
+survive until the trx's locks are released (rollback finish runs before that),
+so rollback passes false and only trx_init clears it. */
+void lock_wait_dependents_detach(trx_t *trx, bool clear_index = true);
+// future_apply_t trx_last_future_vers(lock_t* in_lock); // [TPL] - group commit
+// // [TPL] - async commit
+// trx_t* trx_conf_lock_conf(trx_t* trx, lock_t* lock);
+// trx_t* trx_conf_lock_set_blocker(trx_t* trx, lock_t* lock, trx_t* new_blocker);
+// trx_t* trx_page_lock_conf(trx_t* trx, page_id_t page_id);
+// // end async
+
 /** Allocates memory suitable for holding a lock_t from specified heap.
 The allocated memory has additional bitmap_bytes right after the returned
 lock_t instance for holding the bitmap used by LOCK_REC type.
@@ -1072,6 +1092,13 @@ struct Locks_hashtable {
   lock_t *find_on_block(const buf_block_t *block, F &&f);
   template <typename F>
   lock_t *find_on_record(const struct RecID &rec_id, F &&f);
+
+#ifdef RCC_C
+  template <typename F>
+  lock_t *find_on_record_columnar(const struct RecID &rec_id,
+                                   uint64_t req_field_bitmap, F &&f);
+#endif
+  
 #ifdef UNIV_DEBUG
   /* Don't use it in Release - it's too slow, as it requires the global latch.
   Instead use All_locks_iterator, or something like that - which will not
@@ -1100,6 +1127,7 @@ struct Locks_hashtable {
   ut::unique_ptr<hash_table_t> ht;
   Cells_in_use cells_in_use;
 };
+
 
 /** The lock system struct */
 struct lock_sys_t {
@@ -1149,6 +1177,7 @@ struct lock_sys_t {
   /** Set to the event that is created in the lock wait monitor thread. A value
   of 0 means the thread is not active */
   os_event_t timeout_event;
+
 
 #ifdef UNIV_DEBUG
   /** Lock timestamp counter, used to assign lock->m_seq on creation. */

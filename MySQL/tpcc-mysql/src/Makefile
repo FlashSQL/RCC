@@ -1,33 +1,27 @@
-#
-# "make all" to build necessary executables.
-#
+# Override MYSQL_CONFIG when using a different MySQL 8.4 client installation.
+MYSQL_CONFIG ?= ../../Vanilla/mysql-8.4.5-install/bin/mysql_config
+CFLAGS = -w -O3 -g -I. $(shell $(MYSQL_CONFIG) --include)
+LDFLAGS = $(shell $(MYSQL_CONFIG) --libs) -lpthread -lz -lm -ldl -lrt
 
-
-
-LIBS=		`mysql_config --libs_r` -lrt
-
-INC=		-I. `mysql_config --include`
-
-#DEFS=		-DDEBUG
-
-CFLAGS=		-w -O3 -g
-
-TRANSACTIONS=	neword.o payment.o ordstat.o delivery.o slev.o
-OBJS=		main.o spt_proc.o driver.o support.o sequence.o rthist.o sb_percentile.o $(TRANSACTIONS)
+TRANSACTIONS = neword.o payment.o ordstat.o delivery.o slev.o
+OBJS = main.o spt_proc.o driver.o support.o sequence.o rthist.o sb_percentile.o $(TRANSACTIONS)
 
 .SUFFIXES:
 .SUFFIXES: .o .c
 
 .c.o:
-	$(CC) $(CFLAGS) $(INC) $(DEFS) -c $*.c
+	$(CC) $(CFLAGS) -c $*.c
 
 all: ../tpcc_load ../tpcc_start
 
-../tpcc_load : load.o support.o
-	$(CC) load.o support.o $(LIBS) -o ../tpcc_load
+# Rebuild both programs when the shared scale parameters change.
+$(OBJS) load.o: tpc.h
 
-../tpcc_start : $(OBJS)
-	$(CC) $(OBJS) $(LIBS) -o ../tpcc_start
+../tpcc_load: load.o support.o
+	$(CC) load.o support.o $(LDFLAGS) -o ../tpcc_load
 
-clean :
-	rm -f *.o
+../tpcc_start: $(OBJS)
+	$(CC) $(OBJS) $(LDFLAGS) -o ../tpcc_start
+
+clean:
+	rm -f *.o ../tpcc_load ../tpcc_start

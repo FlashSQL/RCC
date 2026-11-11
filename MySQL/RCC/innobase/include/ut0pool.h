@@ -133,6 +133,28 @@ struct Pool {
     elem->m_pool->put(elem);
   }
 
+  // [TPL] - eager detection
+  /** Check whether ptr is the address of an object that belongs to this
+  pool (i.e. it was handed out by get() at some point). Used to validate
+  raw pointers before dereferencing them.
+  @param ptr pointer to check
+  @return true if ptr is a properly aligned element of this pool */
+  bool contains(const value_type *ptr) {
+    const byte *p = reinterpret_cast<const byte *>(ptr);
+
+    m_lock_strategy.enter();
+    const byte *start = reinterpret_cast<const byte *>(m_start);
+    const byte *last = reinterpret_cast<const byte *>(m_last);
+    m_lock_strategy.exit();
+
+    if (p < start || p >= last) {
+      return false;
+    }
+    /* Element = { Pool *m_pool; value_type m_type; } */
+    return ((p - start) % sizeof(Element)) == offsetof(Element, m_type);
+  }
+  //
+
  protected:
   // Disable copying
   Pool(const Pool &);
@@ -253,6 +275,22 @@ struct PoolManager {
   }
 
   static void mem_free(value_type *ptr) { PoolType::mem_free(ptr); }
+
+  // [TPL] - eager detection
+  /** @return true if ptr belongs to one of the managed pools */
+  bool contains(const value_type *ptr) {
+    m_lock_strategy.enter();
+    Pools pools_copy(m_pools);
+    m_lock_strategy.exit();
+
+    for (PoolType *pool : pools_copy) {
+      if (pool->contains(ptr)) {
+        return true;
+      }
+    }
+    return false;
+  }
+  //
 
  private:
   /** Add a new pool

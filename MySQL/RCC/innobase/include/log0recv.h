@@ -167,8 +167,16 @@ const byte *tpl_recv_parse_or_apply_log_rec_body(
   const byte *end_ptr, 
   space_id_t space_id,
   page_no_t page_no, 
-  mtr_t *mtr);
-
+  mtr_t *mtr, dberr_t *apply_error);
+// const byte *recv_install_log_rec_body(
+//   mlog_id_t type, 
+//   const byte *ptr, 
+//   const byte *end_ptr, 
+//   space_id_t space_id,
+//   page_no_t page_no, 
+//   mtr_t *mtr,
+//   rec_t* apply_vers);
+//
 
 /** Applies the hashed log records to the page, if the page lsn is less than the
 lsn of a log record. This can be called when a buffer page has just been

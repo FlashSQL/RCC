@@ -21,7 +21,7 @@ On top of this, RCC introduces two techniques:
 
 Each system's README covers its setup, build, experiments and results.
 
-> **Correctness:** All TPC-C runs on MySQL and PostgreSQL passed the BenchmarkSQL consistency checks (`scripts/consistency_check.sql`). DBx1000 runs the same checks when built with `TPCC_CONSISTENCY true` ([details](DBx1000/README.md#tpc-c-consistency-check)).
+> **Correctness:** The MySQL TPC-C runner checks seven data consistency conditions after loading and after each measured run. Post-run checks use Vanilla MySQL on the measured engine's cleanly shut-down data, outside the timing window. Failed checks stop the experiment. DBx1000 runs its checks when built with `TPCC_CONSISTENCY true` ([details](DBx1000/README.md#tpc-c-consistency-check)).
 
 ## Hardware Configuration
 
@@ -34,13 +34,27 @@ Each system's README covers its setup, build, experiments and results.
 
 | Figure | Benchmark | System |
 |--------|-----------|--------|
-| Fig. 4 | YCSB, varying client threads: (a) throughput, (b) time breakdown | [MySQL](MySQL/README.md) |
+| Fig. 4 | sysbench YCSB, 10M rows, varying client threads: (a) throughput, (b) time breakdown | [MySQL](MySQL/README.md) |
 | Fig. 5 | TPC-C, varying client threads: (a) throughput, (b) time breakdown | [MySQL](MySQL/README.md) |
-| Fig. 6 | YCSB, varying deadlock probability (64 threads): (a) throughput, (b) abort rate | [MySQL](MySQL/README.md) |
+| Fig. 6 | sysbench YCSB, varying access range in a 10M-row table (64 threads): (a) throughput, (b) abort rate | [MySQL](MySQL/README.md) |
 | Fig. 7 | (a) YCSB, (b) TPC-C, varying client threads: throughput | [DBx1000](DBx1000/README.md) |
 | Fig. 8 | YCSB, ablation of RCC: (a) throughput, (b) time breakdown | [DBx1000](DBx1000/README.md) |
 
 PostgreSQL has separate YCSB and TPC-C experiments; see [`PostgreSQL/README.md`](PostgreSQL/README.md).
+
+MySQL Fig. 4–6 use SERIALIZABLE isolation, 30s warmup and 30s measurement.
+After building the engine/client binaries, create reusable data and run:
+
+```bash
+cd MySQL
+bash scripts/load_sysbench_data.sh
+bash scripts/load_tpcc_data.sh
+bash scripts/fig4_sysbench_threads.sh
+bash scripts/fig5_tpcc_threads.sh
+bash scripts/fig6_sysbench_rows.sh
+```
+
+Each figure supports `--dry-run` to inspect its plan. See [MySQL setup and options](MySQL/README.md#paper-experiments-fig-4-5-and-6).
 
 ## Plotting
 

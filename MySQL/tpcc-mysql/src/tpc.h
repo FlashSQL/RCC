@@ -8,9 +8,16 @@ extern "C" {
 #endif
 
 /*
- * correct values
+ * Loaded dataset size and fixed warehouse/district scale.
  */
-#define MAXITEMS      100000 
+ // 1k: 1000
+ // 10: 10000
+ // 100k (default): 100000
+ // 1m: 1000000
+#define MAXITEMS 100000
+#define MAX_ITEM_COUNT 1000000
+/* New-Order's active item range; set by tpcc_start -I before workers start. */
+extern int max_items;
 #define CUST_PER_DIST 3000 
 #define DIST_PER_WARE 10 
 #define ORD_PER_DIST  3000
@@ -20,7 +27,6 @@ extern "C" {
 /* 
  * small values
 
-#define MAXITEMS 	1000
 #define CUST_PER_DIST 	30
 #define DIST_PER_WARE	3
 #define ORD_PER_DIST	30
@@ -84,6 +90,7 @@ void         MakeAddress();
 void         Error();
 
 #ifdef __STDC__
+int ParseItemCount (const char *value);
 void SetSeed (int seed);
 int RandomNumber (int min, int max);
 int NURand (unsigned A, unsigned x, unsigned y);

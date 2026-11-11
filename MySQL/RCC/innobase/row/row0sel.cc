@@ -1,3 +1,4 @@
+#include "rcc0duration.h"
 /*****************************************************************************
 
 Copyright (c) 1997, 2025, Oracle and/or its affiliates.
@@ -70,6 +71,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "row0vers.h"
 #include "srv0mon.h"
 #include "trx0trx.h"
+#include "rcc0async.h"
 #include "trx0undo.h"
 #include "ut0new.h"
 
@@ -694,6 +696,31 @@ static inline void sel_enqueue_prefetched_row(
     sel_buf->val_buf_size = val_buf_size;
   }
 }
+
+#ifdef ASYNC
+/** Read our own out-of-place UPDATE without registering a consistent read.
+Other transactions' versions, including snapshots borrowed by a locking read,
+must still go through the native read view/undo path. The caller holds the
+clustered page latch, and the returned buffer belongs to this transaction's
+conflict heap until its foreground commit/rollback. */
+static const rec_t *row_sel_rcc_own_version(trx_t *trx,
+                                          const buf_block_t *block,
+                                          dict_index_t *index,
+                                          const rec_t *rec) {
+  if (trx->isolation_level != TRX_ISO_REPEATABLE_READ || !trx->rcc_trx ||
+      !rcc_table(index)) {
+    return nullptr;
+  }
+
+  trx_mutex_enter(trx);
+  const conflict_t *conf =
+      lock_get_conf(trx, block->get_page_id(), page_rec_get_heap_no(rec));
+  const rec_t *own =
+      conf != nullptr && conf->updated ? conf->future_vers : nullptr;
+  trx_mutex_exit(trx);
+  return own;
+}
+#endif
 
 /** Builds a previous version of a clustered index record for a consistent read
  @return DB_SUCCESS or error code */
@@ -3285,8 +3312,27 @@ non-clustered index. Does the necessary locking.
         thr);
 
     switch (err) {
+#ifdef ASYNC
+      case DB_CONFLICT_LOCKED_REC:
+#endif
       case DB_SUCCESS:
       case DB_SUCCESS_LOCKED_REC:
+#ifdef ASYNC
+      {
+        auto *snapshot = lock_apply_log(prebuilt->clust_pcur->get_block(), nullptr,
+                                       clust_index, *offsets, trx, clust_rec);
+        if (trx->conflict_abort != TRX_NOT_ABORTED) {
+          err = DB_DEADLOCK;
+          goto err_exit;
+        }
+        if (snapshot != nullptr) {
+          clust_rec = snapshot;
+          *offsets = rec_get_offsets(clust_rec, clust_index, *offsets,
+                                    ULINT_UNDEFINED, UT_LOCATION_HERE, offset_heap);
+        }
+        err = DB_SUCCESS;
+      }
+#endif
         break;
       default:
         goto err_exit;
@@ -3300,6 +3346,15 @@ non-clustered index. Does the necessary locking.
     /* If the isolation level allows reading of uncommitted data,
     then we never look for an earlier version */
 
+#ifdef ASYNC
+    const rec_t *own = row_sel_rcc_own_version(
+        trx, prebuilt->clust_pcur->get_block(), clust_index, clust_rec);
+    if (own != nullptr) {
+      clust_rec = own;
+      *offsets = rec_get_offsets(clust_rec, clust_index, *offsets,
+                                ULINT_UNDEFINED, UT_LOCATION_HERE, offset_heap);
+    } else
+#endif
     if (trx->isolation_level > TRX_ISO_READ_UNCOMMITTED &&
         !lock_clust_rec_cons_read_sees(clust_rec, clust_index, *offsets,
                                        trx_get_read_view(trx))) {
@@ -3734,6 +3789,14 @@ static ulint row_sel_try_search_shortcut_for_mysql(
 
   ut_ad(index->is_clustered());
   ut_ad(!prebuilt->templ_contains_blob);
+
+#ifdef ASYNC
+  /* The normal path overlays our speculative UPDATE before read-view lookup.
+  Keep the AHI shortcut for plain MVCC readers with no RCCS descriptor. */
+  if (trx->isolation_level == TRX_ISO_REPEATABLE_READ && trx->rcc_trx) {
+    return SEL_RETRY;
+  }
+#endif
 
   pcur->open_no_init(index, search_tuple, PAGE_CUR_GE, BTR_SEARCH_LEAF,
                      (trx->has_search_latch) ? RW_S_LATCH : 0, mtr,
@@ -4435,6 +4498,18 @@ dberr_t row_search_mvcc(byte *buf, page_cur_mode_t mode,
   const dtuple_t *search_tuple = prebuilt->search_tuple;
   btr_pcur_t *pcur = prebuilt->pcur;
   trx_t *trx = prebuilt->trx;
+  rcc_duration::PhaseScope phase(trx, rcc_duration::select_sql);
+#ifdef ASYNC
+  /* RR consistent reads use native MVCC without RCCS read dependencies.
+  Locking reads/UPDATE retain the speculative path. Other isolation levels
+  and SERIALIZABLE nonlocking reads keep their existing rejection. */
+  if (rcc_table(index->table->first_index()) &&
+      trx->isolation_level != TRX_ISO_REPEATABLE_READ &&
+      (prebuilt->select_lock_type == LOCK_NONE ||
+       trx->isolation_level != TRX_ISO_SERIALIZABLE)) {
+    return DB_UNSUPPORTED;
+  }
+#endif
   dict_index_t *clust_index;
   /* True if we are scanning a secondary index, but the template is based
   on the primary index. */
@@ -4920,6 +4995,19 @@ dberr_t row_search_mvcc(byte *buf, page_cur_mode_t mode,
 
       offsets = rec_get_offsets(next_rec, index, offsets, ULINT_UNDEFINED,
                                 UT_LOCATION_HERE, &heap);
+#ifdef RCC_C
+      ulint n_pk_cols = clust_index->n_uniq;
+      uint64_t field_bitmap = 0;
+      for (ulint i = 0; i < prebuilt->n_template; i++) {
+        mysql_row_templ_t *templ = &prebuilt->mysql_template[i];
+        ulint col_no = templ->clust_rec_field_no;
+        if (col_no >= n_pk_cols && col_no < 64) {
+          field_bitmap |= (1ULL << col_no);
+        }
+        // fprintf(stderr, "[DEBUG] (%d) row_search_mvc - sel_set_rec_lock - %p, %s, %d vs %d (PK: %d)\n", trx->id,rec, index->table_name, templ->clust_rec_field_no, templ->rec_field_no, n_pk_cols);
+      }  
+      trx->field_bitmap = field_bitmap ? field_bitmap : ~0ULL;
+#endif
       err = sel_set_rec_lock(pcur, next_rec, index, offsets,
                              prebuilt->select_mode, prebuilt->select_lock_type,
                              LOCK_GAP, thr, &mtr);
@@ -4939,11 +5027,16 @@ dberr_t row_search_mvcc(byte *buf, page_cur_mode_t mode,
 
           rec_t *old_vers2;
           byte*		buf2;
-          old_vers2 = lock_apply_log(pcur->get_block(), old_vers2, index, offsets, trx, rec);
+          old_vers2 = lock_apply_log(pcur->get_block(), nullptr, index, offsets, trx, rec);
+#ifdef ASYNC
+          if (trx->conflict_abort != TRX_NOT_ABORTED) {
+            err = DB_DEADLOCK;
+            goto lock_wait_or_error;
+          }
+#endif
           if (old_vers2 == nullptr)
           {
             // Nothing to read, read buffer
-            // Ex. lock 획득 -> conf -> grant -> read 시도
             err = DB_SUCCESS;
             break;
           }
@@ -5059,6 +5152,20 @@ rec_loop:
 
       offsets = rec_get_offsets(rec, index, offsets, ULINT_UNDEFINED,
                                 UT_LOCATION_HERE, &heap);
+
+#ifdef RCC_C
+      ulint n_pk_cols = clust_index->n_uniq;
+      uint64_t field_bitmap = 0;
+      for (ulint i = 0; i < prebuilt->n_template; i++) {
+        mysql_row_templ_t *templ = &prebuilt->mysql_template[i];
+        ulint col_no = templ->clust_rec_field_no;
+        if (col_no >= n_pk_cols && col_no < 64) {
+          field_bitmap |= (1ULL << col_no);
+        }
+        // fprintf(stderr, "[DEBUG] (%d) row_search_mvc - sel_set_rec_lock - %p, %s, %d vs %d (PK: %d)\n", trx->id,rec, index->table_name, templ->clust_rec_field_no, templ->rec_field_no, n_pk_cols);
+      }  
+      trx->field_bitmap = field_bitmap ? field_bitmap : ~0ULL;
+#endif
       err = sel_set_rec_lock(pcur, rec, index, offsets, prebuilt->select_mode,
                              prebuilt->select_lock_type, LOCK_ORDINARY, thr,
                              &mtr);
@@ -5077,11 +5184,16 @@ rec_loop:
 
           rec_t *old_vers2;
           byte*		buf2;
-          old_vers2 = lock_apply_log(pcur->get_block(), old_vers2, index, offsets, trx, rec);
+          old_vers2 = lock_apply_log(pcur->get_block(), nullptr, index, offsets, trx, rec);
+#ifdef ASYNC
+          if (trx->conflict_abort != TRX_NOT_ABORTED) {
+            err = DB_DEADLOCK;
+            goto lock_wait_or_error;
+          }
+#endif
           if (old_vers2 == nullptr)
           {
             // Nothing to read, read buffer
-            // Ex. lock 획득 -> conf -> grant -> read 시도
             err = DB_SUCCESS;
             break;
           }
@@ -5205,6 +5317,20 @@ rec_loop:
       if (set_also_gap_locks && !trx->skip_gap_locks() &&
           prebuilt->select_lock_type != LOCK_NONE &&
           !dict_index_is_spatial(index)) {
+
+#ifdef RCC_C
+        ulint n_pk_cols = clust_index->n_uniq;
+        uint64_t field_bitmap = 0;
+        for (ulint i = 0; i < prebuilt->n_template; i++) {
+          mysql_row_templ_t *templ = &prebuilt->mysql_template[i];
+          ulint col_no = templ->clust_rec_field_no;
+          if (col_no >= n_pk_cols && col_no < 64) {
+            field_bitmap |= (1ULL << col_no);
+          }
+          // fprintf(stderr, "[DEBUG] (%d) row_search_mvc - sel_set_rec_lock - %p, %s, %d vs %d (PK: %d)\n", trx->id,rec, index->table_name, templ->clust_rec_field_no, templ->rec_field_no, n_pk_cols);
+        }  
+        trx->field_bitmap = field_bitmap ? field_bitmap : ~0ULL;
+#endif
         err = sel_set_rec_lock(pcur, rec, index, offsets, prebuilt->select_mode,
                                prebuilt->select_lock_type, LOCK_GAP, thr, &mtr);
         // fprintf(stderr, "[DEBUG] (%d) row_search_mvc2 - sel_set_rec_lock (rec: %p): %d, %s\n", trx->id,rec, err, index->table_name);
@@ -5221,11 +5347,16 @@ rec_loop:
 
             rec_t *old_vers2;
             byte*		buf2;
-            old_vers2 = lock_apply_log(pcur->get_block(), old_vers2, index, offsets, trx, rec);
+            old_vers2 = lock_apply_log(pcur->get_block(), nullptr, index, offsets, trx, rec);
+#ifdef ASYNC
+            if (trx->conflict_abort != TRX_NOT_ABORTED) {
+              err = DB_DEADLOCK;
+              goto lock_wait_or_error;
+            }
+#endif
             if (old_vers2 == nullptr)
             {
               // Nothing to read, read buffer
-              // Ex. lock 획득 -> conf -> grant -> read 시도
               err = DB_SUCCESS;
               break;
             }
@@ -5265,6 +5396,21 @@ rec_loop:
       if (set_also_gap_locks && !trx->skip_gap_locks() &&
           prebuilt->select_lock_type != LOCK_NONE &&
           !dict_index_is_spatial(index)) {
+
+#ifdef RCC_C
+            ulint n_pk_cols = clust_index->n_uniq;
+            uint64_t field_bitmap = 0;
+            for (ulint i = 0; i < prebuilt->n_template; i++) {
+              mysql_row_templ_t *templ = &prebuilt->mysql_template[i];
+              ulint col_no = templ->clust_rec_field_no;
+              if (col_no >= n_pk_cols && col_no < 64) {
+                field_bitmap |= (1ULL << col_no);
+              }
+              // fprintf(stderr, "[DEBUG] (%d) row_search_mvc - sel_set_rec_lock - %p, %s, %d vs %d (PK: %d)\n", trx->id,rec, index->table_name, templ->clust_rec_field_no, templ->rec_field_no, n_pk_cols);
+            }  
+            trx->field_bitmap = field_bitmap ? field_bitmap : ~0ULL;
+#endif
+
         err = sel_set_rec_lock(pcur, rec, index, offsets, prebuilt->select_mode,
                                prebuilt->select_lock_type, LOCK_GAP, thr, &mtr);
         // fprintf(stderr, "[DEBUG] (%d) row_search_mvc1 - sel_set_rec_lock (rec: %p): %d, %s\n", trx->id,rec, err, index->table_name);
@@ -5281,11 +5427,16 @@ rec_loop:
 
             rec_t *old_vers2;
             byte*		buf2;
-            old_vers2 = lock_apply_log(pcur->get_block(), old_vers2, index, offsets, trx, rec);
+            old_vers2 = lock_apply_log(pcur->get_block(), nullptr, index, offsets, trx, rec);
+#ifdef ASYNC
+            if (trx->conflict_abort != TRX_NOT_ABORTED) {
+              err = DB_DEADLOCK;
+              goto lock_wait_or_error;
+            }
+#endif
             if (old_vers2 == nullptr)
             {
               // Nothing to read, read buffer
-              // Ex. lock 획득 -> conf -> grant -> read 시도
               err = DB_SUCCESS;
               break;
             }
@@ -5349,6 +5500,21 @@ rec_loop:
     const bool use_semi_consistent =
         prebuilt->row_read_type == ROW_READ_TRY_SEMI_CONSISTENT &&
         !unique_search && index == clust_index && !trx_is_high_priority(trx);
+
+#ifdef RCC_C
+    ulint n_pk_cols = clust_index->n_uniq;
+    uint64_t field_bitmap = 0;
+    for (ulint i = 0; i < prebuilt->n_template; i++) {
+      mysql_row_templ_t *templ = &prebuilt->mysql_template[i];
+      ulint col_no = templ->clust_rec_field_no;
+      if (col_no >= n_pk_cols && col_no < 64) {
+        field_bitmap |= (1ULL << col_no);
+      }
+      // fprintf(stderr, "[DEBUG] (%d) row_search_mvc - sel_set_rec_lock - %p, %s, %d vs %d (PK: %d)\n", trx->id,rec, index->table_name, templ->clust_rec_field_no, templ->rec_field_no, n_pk_cols);
+    }  
+    trx->field_bitmap = field_bitmap ? field_bitmap : ~0ULL;
+#endif
+
     err = sel_set_rec_lock(
         pcur, rec, index, offsets,
         use_semi_consistent ? SELECT_SKIP_LOCKED : prebuilt->select_mode,
@@ -5378,12 +5544,17 @@ rec_loop:
         }
       {
 
-        old_vers2 = lock_apply_log(pcur->get_block(), old_vers2, index, offsets, trx, rec);
+        old_vers2 = lock_apply_log(pcur->get_block(), nullptr, index, offsets, trx, rec);
+#ifdef ASYNC
+        if (trx->conflict_abort != TRX_NOT_ABORTED) {
+          err = DB_DEADLOCK;
+          goto lock_wait_or_error;
+        }
+#endif
 
         if (old_vers2 == nullptr)
 				{
 					// Nothing to read, read buffer
-					// Ex. lock 획득 -> conf -> grant -> read 시도
 					err = DB_SUCCESS;
 					break;
 				}
@@ -5463,6 +5634,19 @@ rec_loop:
       high force recovery level set, we try to avoid crashes
       by skipping this lookup */
 
+#ifdef ASYNC
+      const rec_t *own =
+          row_sel_rcc_own_version(trx, pcur->get_block(), clust_index, rec);
+      if (own != nullptr) {
+        rec = own;
+        offsets = rec_get_offsets(rec, index, offsets, ULINT_UNDEFINED,
+                                  UT_LOCATION_HERE, &heap);
+        prev_rec = rec;
+        ut_d(prev_rec_debug = row_search_debug_copy_rec_order_prefix(
+                 pcur, index, prev_rec, &prev_rec_debug_n_fields,
+                 &prev_rec_debug_buf, &prev_rec_debug_buf_size));
+      } else
+#endif
       if (srv_force_recovery < 5 &&
           !lock_clust_rec_cons_read_sees(rec, index, offsets,
                                          trx_get_read_view(trx))) {
@@ -5499,21 +5683,16 @@ rec_loop:
 
       ut_ad(!index->is_clustered());
 
-      // !lock_sec_rec_cons_read_sees: 현재 readview로 해당 sec idx rec을 볼 수 없다는 의미
-      // - 즉, 이 rec은 delete marked or snapshot 상으로 안 보임
       if (!srv_read_only_mode &&
           !lock_sec_rec_cons_read_sees(rec, index, trx->read_view)) {
         
-        // 하지만 이 sec idx는 covering idx가 아니기 때문에 최종 where 조건을 만족하는지는 clustered idx를 직접 읽어봐야 판단 가능
-        // 5.6부터는 ICP(idx condition pushdown) 최적화를 통해 sec idx rec만 보고도 where 조건 일부 판단 가능
         /* We should look at the clustered index.
         However, as this is a non-locking read,
         we can skip the clustered index lookup if
         the condition does not match the secondary
         index entry. */
-        // MVCC에 의해 보이지 않는 secondary index rec에 대한 불필요한 clustered index 접근을 피하기 위한 shortcut
         switch (row_search_idx_cond_check(buf, prebuilt, rec, offsets)) {
-          case ICP_NO_MATCH: // sec idx만 봐도 where 조건 명백히 불일치 -> 바로 skip
+          case ICP_NO_MATCH:
             goto next_rec;
           case ICP_OUT_OF_RANGE:
             err = DB_RECORD_NOT_FOUND;
@@ -5543,8 +5722,7 @@ rec_loop:
   page_rec_is_comp() cannot be used! */
 
   // [TPL] - page_rec_is_comp in 5.7
-  if (rec_get_deleted_flag(rec, comp)
-      || rec_get_deleted_flag(rec, page_rec_is_comp(rec))) {
+  if (rec_get_deleted_flag(rec, comp)) {
     /* The record is delete-marked: we can skip it */
 
     /* No need to keep a lock on a delete-marked record in lower isolation
@@ -5613,6 +5791,10 @@ rec_loop:
         prebuilt, index, rec, thr, &clust_rec, &offsets, &heap,
         need_vrow ? &vrow : nullptr, &mtr, prebuilt->get_lob_undo());
     switch (err) {
+      // [TPL]
+      case DB_CONFLICT_LOCKED_REC:
+       err = DB_SUCCESS;
+       // break;
       case DB_SUCCESS:
         if (clust_rec == nullptr) {
           /* The record did not exist in the read view */

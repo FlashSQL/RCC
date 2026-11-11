@@ -170,6 +170,12 @@ struct alignas(8 /* For efficient Bitmap::find_set */) lock_t {
   LOCK_GAP or LOCK_REC_NOT_GAP, LOCK_INSERT_INTENTION, wait flag, ORed */
   uint32_t type_mode;
 
+  bool has_vers;
+
+#ifdef RCC_C
+  uint64_t field_bitmap;
+#endif
+
 #if defined(UNIV_DEBUG)
   /** Timestamp when it was created. */
   uint64_t m_seq;
@@ -590,7 +596,6 @@ locks on the inserted record. */
  statement-level MySQL binlog.
  See also lock_mode_compatible().
  */
-// [TPL] - XX lock 추가
 static const byte lock_compatibility_matrix[6][6] = {
     /**         IS     IX       S     X       AI  XX */
     /* IS */ {true, true, true, false, true, false},
@@ -777,8 +782,11 @@ class RecLock {
   Create a lock for a transaction and initialise it.
   @param[in, out] trx           Transaction requesting the new lock
   @param[in] prdt                       Predicate lock (optional)
+  @param[in] register_wait      Set the transaction's actual wait pointer;
+                               false when relocating a speculative request
   @return new lock instance */
-  lock_t *create(trx_t *trx, const lock_prdt_t *prdt = nullptr);
+  lock_t *create(trx_t *trx, const lock_prdt_t *prdt = nullptr,
+                 bool register_wait = true);
 
   /**
   Create the lock instance
@@ -808,8 +816,9 @@ class RecLock {
   /**
   Add the lock to the record lock hash and the transaction's lock list
   @param[in,out] lock   Newly created record lock to add to the
-                          rec hash and the transaction lock list */
-  void lock_add(lock_t *lock);
+                          rec hash and the transaction lock list
+  @param[in] register_wait  Whether this request is an actual transaction wait */
+  void lock_add(lock_t *lock, bool register_wait);
 
   /**
   Setup the context from the requirements */
@@ -924,6 +933,8 @@ static inline uint32_t lock_get_type_low(const lock_t *lock); /*!< in: lock */
 waiting behind it.
 @param[in,out]  trx    The transaction waiting for a lock */
 void lock_cancel_waiting_and_release(trx_t *trx);
+
+void lock_set_blocking_trx(trx_t *waiter, trx_t *blocker);
 
 /** This function is a wrapper around several functions which need to be called
 in particular order to wake up a transaction waiting for a lock.
@@ -1146,8 +1157,7 @@ void tpl_run_if_waiting(trx_t *trx, F &&f) {
       const bool retry = latch_peeked_shard_and_do(peeked_wait_lock, [&]() {
 
         if (peeked_wait_lock != trx->lock.wait_lock.load()) {
-          // wait_lock이 여전히 일치하는지 한 번만 확인
-          return peeked_wait_lock->is_record_lock(); // record 락이면 retry
+          return peeked_wait_lock->is_record_lock();
         }
         std::forward<F>(f)();
         return false;
@@ -1159,6 +1169,40 @@ void tpl_run_if_waiting(trx_t *trx, F &&f) {
     /* wait_lock appears to be null. If blocking_trx isn't nullptr, then
     probably the wait_lock will soon be restored, otherwise we can give up */
   } while (trx->lock.blocking_trx.load() && ut_delay(10));
+}
+
+// [TPL] - eager detection
+template <typename F>
+void tpl_run_if_waiting_bounded(trx_t *trx, uint64_t version, F &&f,
+                                size_t max_attempts) {
+  do {
+    if (!trx->lock.wait_lock.load()) {
+      continue;
+    }
+    locksys::Global_shared_latch_guard shared_latch_guard{UT_LOCATION_HERE};
+
+    trx_mutex_enter(trx);
+    auto guard = create_scope_guard([trx]() { trx_mutex_exit(trx); });
+    if (trx->version != version) {
+      return;
+    }
+    if (const lock_t *peeked_wait_lock = trx->lock.wait_lock.load()) {
+      const bool retry = latch_peeked_shard_and_do(peeked_wait_lock, [&]() {
+        if (trx->version != version) {
+          return false;
+        }
+        if (peeked_wait_lock != trx->lock.wait_lock.load()) {
+          return peeked_wait_lock->is_record_lock();
+        }
+        std::forward<F>(f)();
+        return false;
+      });
+      if (!retry) {
+        return;
+      }
+    }
+  } while (0 < --max_attempts && trx->lock.blocking_trx.load() &&
+           ut_delay(10));
 }
 //
 }  // namespace locksys
@@ -1195,12 +1239,28 @@ lock_t *Locks_hashtable::find_on_block(const buf_block_t *block, F &&f) {
 
 template <typename F>
 lock_t *Locks_hashtable::find_on_record(const struct RecID &rec_id, F &&f) {
-  // rec_id의 해시값으로 버킷cell을 찾고 해당 cell 안의 모든 lock 탐색하면서 f(lock)을 만족하는 첫 락을 반환
   return find_in_cell(hash_calc_cell_id(rec_id.hash_value(), ht.get()),
                       [&](lock_t *lock) {
                         return rec_id.matches(lock) && std::forward<F>(f)(lock);
                       });
 }
+
+#ifdef RCC_C
+template <typename F>
+lock_t *Locks_hashtable::find_on_record_columnar(const struct RecID &rec_id,
+                                                  uint64_t req_field_bitmap,
+                                                  F &&f) {
+  return find_in_cell(hash_calc_cell_id(rec_id.hash_value(), ht.get()),
+                      [&](lock_t *lock) {
+                        uint64_t lock_bitmap = lock->field_bitmap;
+                        bool columns_conflict = (req_field_bitmap & lock_bitmap) != 0;
+                        return rec_id.matches(lock) &&
+                               columns_conflict &&
+                               std::forward<F>(f)(lock);
+                      });
+}
+#endif
+
 #ifdef UNIV_DEBUG
 template <typename F>
 lock_t *Locks_hashtable::find(F &&f) {

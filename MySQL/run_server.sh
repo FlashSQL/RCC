@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 
 # MySQL Server Start Script
 # Usage: export rcc_data_dir=/path/to/data rcc_log_dir=/path/to/log && ./run_server.sh
@@ -13,6 +14,7 @@ BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # ==========================================
 PAGE_SIZE=4
 BUILD_MODE="RCC"
+source "$BASE_DIR/scripts/build_config.sh"
 
 # ==========================================
 # HELPER FUNCTIONS
@@ -36,18 +38,19 @@ usage() {
     echo "Usage: export rcc_data_dir=/path/to/data rcc_log_dir=/path/to/log && $0 [options]"
     echo ""
     echo "Required environment variables:"
-    echo "  rcc_data_dir          PostgreSQL data directory"
-    echo "  rcc_log_dir           PostgreSQL log directory"
+    echo "  rcc_data_dir          MySQL data directory"
+    echo "  rcc_log_dir           MySQL log directory"
     echo ""
     echo "Options:"
     echo "  --vanilla             Build vanilla MySQL (without RCC)"
     echo "  --rcc                 Build RCC on MySQL"
-    echo "  --rcc-w               Build RCC-W on MySQL"
-    echo "  --rcc-d               Build RCC-D on MySQL"
     echo "  --rcc-c               Build RCC-C on MySQL"
+    echo "  --bamboo              Build Bamboo (WITH_REBIRTH=OFF)"
+    echo "  --rebirth             Build Rebirth (WITH_REBIRTH=ON)"
+    echo "  --build-only          Build and install without starting a server (no data/log env needed)"
     echo "  --skip-build          Skip build step (use existing binaries)"
     echo "  -h, --help            Show this help"
-    exit 0
+    exit "${1:-0}"
 }
 
 # ==========================================
@@ -56,7 +59,7 @@ usage() {
 DATA_DIR="${rcc_data_dir:-}"
 LOG_DIR="${rcc_log_dir:-}"
 SKIP_BUILD=false
-pkill -9 -ef mysql
+BUILD_ONLY=false
 while [[ $# -gt 0 ]]; do
     case $1 in
         --vanilla)
@@ -67,16 +70,20 @@ while [[ $# -gt 0 ]]; do
             BUILD_MODE="RCC"
             shift
             ;;
-        --rcc-w)
-            BUILD_MODE="RCC-W"
-            shift
-            ;;
-        --rcc-d)
-            BUILD_MODE="RCC-D"
-            shift
-            ;;
         --rcc-c)
             BUILD_MODE="RCC-C"
+            shift
+            ;;
+        --bamboo)
+            BUILD_MODE="Bamboo"
+            shift
+            ;;
+        --rebirth)
+            BUILD_MODE="Rebirth"
+            shift
+            ;;
+        --build-only)
+            BUILD_ONLY=true
             shift
             ;;
         --skip-build)
@@ -88,26 +95,22 @@ while [[ $# -gt 0 ]]; do
             ;;
         *)
             print_error "Unknown option: $1"
-            usage
+            usage 1
             ;;
     esac
 done
 
-# Validate required env vars
-if [[ -z "$DATA_DIR" ]]; then
-    print_error "rcc_data_dir is required"
-    usage
+if [[ "$BUILD_ONLY" == true && "$SKIP_BUILD" == true ]]; then
+    print_error "--build-only and --skip-build cannot be combined"
+    exit 1
 fi
 
-if [[ -z "$LOG_DIR" ]]; then
-    print_error "rcc_log_dir is required"
-    usage
-fi
-
-# Get sudo password (from env or prompt)
-if [[ -z "$PASSWD" ]]; then
-    read -s -p "Enter sudo password: " PASSWD
-    echo ""
+# Building alone does not require or touch a database.
+if [[ "$BUILD_ONLY" == false ]]; then
+    if [[ -z "$DATA_DIR" || -z "$LOG_DIR" ]]; then
+        print_error "rcc_data_dir and rcc_log_dir are required"
+        usage 1
+    fi
 fi
 
 # ==========================================
@@ -116,63 +119,55 @@ fi
 print_header "MySQL Build and Start"
 
 
-MYSQL_HOME="${BASE_DIR}/${BUILD_MODE}/mysql-8.4.5"
-BLD_PATH="$MYSQL_HOME-build"
-INSTALL_PATH="$MYSQL_HOME-install"
-MYSQL_BIN="${BLD_PATH}/bin/mysqld"
+mysql_build_config "$BUILD_MODE"
+MYSQL_BIN="${INSTALL_PATH}/bin/mysqld"
 
-# Build MySQL
 if [[ "$SKIP_BUILD" == false ]]; then
     print_info "Building MySQL ($BUILD_MODE mode)..."
 
-    # Download MySQL source if not already present
     if [[ ! -d "$MYSQL_HOME" ]]; then
-        mkdir -p "$BASE_DIR/$BUILD_MODE"
-        cd "$BASE_DIR/$BUILD_MODE"
-
-        wget https://dev.mysql.com/get/Downloads/MySQL-5.7/mysql-8.4.5.tar.gz
-        tar -zxvf mysql-8.4.5.tar.gz
-        rm -f mysql-8.4.5.tar.gz
-
-        # Replace innobase for RCC variants
-        if [[ "$BUILD_MODE" != "Vanilla" ]]; then
-            rm -rf "$MYSQL_HOME/storage/innobase/"
-            cp -r "$BASE_DIR/$BUILD_MODE/innobase/" "$MYSQL_HOME/storage/innobase/"
-        fi
+        SOURCE_PARENT="$(dirname "$MYSQL_HOME")"
+        mkdir -p "$SOURCE_PARENT"
+        ARCHIVE="$SOURCE_PARENT/mysql-8.4.5.tar.gz"
+        wget -O "$ARCHIVE" https://downloads.mysql.com/archives/get/p/23/file/mysql-8.4.5.tar.gz
+        tar -xzf "$ARCHIVE" -C "$SOURCE_PARENT"
+        rm -f "$ARCHIVE"
     fi
 
-    mkdir -p $BLD_PATH
-    cd $BLD_PATH
-    echo $PASSWD | sudo -S rm -rf $BLD_PATH/*
-
-    cmake $MYSQL_HOME \
-        -DCMAKE_C_COMPILER=/usr/bin/gcc \
-        -DCMAKE_CXX_COMPILER=/usr/bin/g++ \
-        -DDOWNLOAD_BOOST=ON -DWITH_BOOST=$MYSQL_HOME/boost \
-        -DWITH_AUTHENTICATION_PLUGIN=mysql_native_password \
-        -DWITH_PLUGIN_AUTH_NATIVE=DYNAMIC \
-        -DCMAKE_INSTALL_PREFIX=$INSTALL_PATH
-
-    if [ $? -ne 0 ]; then
-        print_error "Build failed."
-        exit 1
+    # Refresh the overlay on every build, including an existing downloaded tree.
+    # RCC-C shares RCC's source; Rebirth shares Bamboo's source.
+    # Each variant has its own CMake flag and output paths.
+    if [[ "$BUILD_MODE" != "Vanilla" ]]; then
+        rm -rf "$MYSQL_HOME/storage/innobase"
+        cp -a "$INNOBASE_SOURCE" "$MYSQL_HOME/storage/innobase"
     fi
 
-    make -j$(nproc) install
-    if [ $? -eq 0 ];
-    then
-        print_info "MAKE SUCCESS"
-    else
-        print_info "MAKE FAIL"
-        exit 1
-    fi
+    cmake -S "$MYSQL_HOME" -B "$BLD_PATH" \
+        -DCMAKE_C_COMPILER="${CC:-gcc-10}" \
+        -DCMAKE_CXX_COMPILER="${CXX:-g++-10}" \
+        -DCMAKE_INSTALL_PREFIX="$INSTALL_PATH" \
+        "${MYSQL_CMAKE_OPTIONS[@]}"
+    cmake --build "$BLD_PATH" --parallel "${BUILD_JOBS:-$(nproc)}"
+    cmake --install "$BLD_PATH"
 else
     print_info "Skipping build (using existing binaries)..."
 fi
 
-# Initialize database (only if DATA_DIR is empty)
-rm -rf $DATA_DIR/*
-rm -rf $LOG_DIR/*
+if [[ "$BUILD_ONLY" == true ]]; then
+    print_info "Build complete: $MYSQL_BIN"
+    exit 0
+fi
+
+if [[ ! -x "$MYSQL_BIN" ]]; then
+    print_error "mysqld not found at $MYSQL_BIN"
+    exit 1
+fi
+
+# Preserve the experiment launcher's fresh-database behavior only on startup.
+pkill -9 -ef mysql || true
+mkdir -p "$DATA_DIR" "$LOG_DIR"
+rm -rf "$DATA_DIR"/*
+rm -rf "$LOG_DIR"/*
 
 if [ -z "$(ls -A $DATA_DIR 2>/dev/null)" ]; then
     print_info "Initializing database..."
@@ -203,11 +198,11 @@ $MYSQL_BIN --defaults-file=$BASE_DIR/my.cnf --datadir=$DATA_DIR --disable-log-bi
 sleep 20
 
 
-print_header "PostgreSQL Ready"
+print_header "MySQL Ready"
 echo "  Build Mode:  $BUILD_MODE"
 echo "  Data Dir:    $DATA_DIR"
 echo "  Log Dir:     $LOG_DIR"
 echo "  Page Size:   ${PAGE_SIZE}KB"
 echo ""
 echo "To stop: bash shutdown.sh --$(echo $BUILD_MODE | tr '[:upper:]' '[:lower:]')"
-echo "To connect: $BLD_PATH/bin/mysql -uroot"
+echo "To connect: $INSTALL_PATH/bin/mysql -uroot"

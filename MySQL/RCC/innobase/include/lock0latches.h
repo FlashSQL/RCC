@@ -141,7 +141,6 @@ class Latches {
     void x_lock(ut::Location location) { rw_lock.x_lock(location); }
     void x_unlock() { rw_lock.x_unlock(); }
     void s_lock(ut::Location location) {
-      // ut_ad(m_shard_id == NOT_IN_USE); // ㅜㅜ 자꾸 걸림
       m_shard_id = rw_lock.s_lock(location);
     }
     void s_unlock() {
@@ -149,6 +148,10 @@ class Latches {
       rw_lock.s_unlock(m_shard_id);
       m_shard_id = NOT_IN_USE;
     }
+#ifdef ASYNC
+    /* The shard slot is maintained in release builds by s_lock/s_unlock. */
+    bool shared_slot_in_use() const { return m_shard_id != NOT_IN_USE; }
+#endif
 #ifdef UNIV_DEBUG
     bool x_own() const { return rw_lock.x_own(); }
     bool s_own() const {
@@ -299,6 +302,11 @@ class Latches {
   ~Latches() = default;
 #endif
 
+#ifdef ASYNC
+  bool shared_global_latch_held_by_current_thread() const {
+    return global_latch.shared_slot_in_use();
+  }
+#endif
 #ifdef UNIV_DEBUG
   /**
   Tests if lock_sys latch is exclusively owned by the current thread.

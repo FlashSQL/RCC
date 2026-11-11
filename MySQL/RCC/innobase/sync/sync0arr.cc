@@ -278,7 +278,6 @@ void sync_array_free_cell(
 
   cell = nullptr;
 }
-// recrod lock 말고, mutex 쪽 데드락 탐색
 void sync_array_detect_deadlock() {
   for (ulint i = 0; i < sync_array_size; ++i) {
     auto arr = sync_wait_array[i];

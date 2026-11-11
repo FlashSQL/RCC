@@ -8,7 +8,7 @@ BUILD_MODE=$1
 
 if [[ -z "$BUILD_MODE" ]]; then
     echo "[ERROR] BUILD_MODE required" >&2
-    echo "  Usage: $0 <Vanilla|RCC|RCC-W|RCC-D|RCC-C>" >&2
+    echo "  Usage: $0 <Vanilla|RCC|RCC-C|Bamboo|Rebirth>" >&2
     exit 1
 fi
 
@@ -20,9 +20,9 @@ if [[ -z "$DATA_DIR" ]] || [[ -z "$LOG_DIR" ]]; then
     exit 1
 fi
 
-MYSQL_HOME="${BASE_DIR}/${BUILD_MODE}/mysql-8.4.5"
-BLD_PATH="$MYSQL_HOME-build"
-MYSQLD="${BLD_PATH}/bin/mysqld"
+source "$BASE_DIR/scripts/build_config.sh"
+mysql_build_config "$BUILD_MODE" || exit 1
+MYSQLD="${INSTALL_PATH}/bin/mysqld"
 
 if [[ ! -x "$MYSQLD" ]]; then
     echo "[ERROR] mysqld not found at $MYSQLD" >&2
@@ -36,4 +36,4 @@ $MYSQLD --defaults-file="$BASE_DIR/my.cnf" \
         --initialize-insecure \
         --user=mysql \
         --datadir="$DATA_DIR" \
-        --basedir="$MYSQL_HOME"
+        --basedir="$INSTALL_PATH"

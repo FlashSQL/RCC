@@ -90,11 +90,11 @@ static inline trx_undo_rec_t *trx_undo_rec_copy(const page_t *undo_page,
   and subtract it from current undo log record offset to get the length
   of undo record */
   uint32_t next_undo_offset = mach_read_from_2(undo_rec);
-
+  // [TPL]
   if (next_undo_offset <= undo_offset) {
     return nullptr;
   }
-
+  //
   ut_a(next_undo_offset > undo_offset);
 
   uint32_t len = next_undo_offset - undo_offset;

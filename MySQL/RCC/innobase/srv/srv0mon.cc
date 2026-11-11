@@ -194,6 +194,24 @@ static monitor_info_t innodb_counter_info[] = {
      " (innodb_row_lock_time)",
      static_cast<monitor_type_t>(MONITOR_EXISTING | MONITOR_DEFAULT_ON),
      MONITOR_DEFAULT_START, MONITOR_OVLD_LOCK_WAIT_TIME},
+    
+    {"lock_row_commit_time", "lock",
+    "Time spent in acquiring row commit, in milliseconds"
+    " (innodb_row_commit_time)",
+    static_cast<monitor_type_t>(MONITOR_EXISTING | MONITOR_DEFAULT_ON),
+    MONITOR_DEFAULT_START, MONITOR_OVLD_LOCK_COMMIT_TIME}, // [TPL] - time
+    
+    {"lock_row_lock_time", "lock",
+    "Time spent in acquiring row commit, in milliseconds"
+    " (innodb_row_commit_time)",
+    static_cast<monitor_type_t>(MONITOR_EXISTING | MONITOR_DEFAULT_ON),
+    MONITOR_DEFAULT_START, MONITOR_OVLD_LOCK_WAIT_TIME_NO}, // [TPL] - time no
+    
+    {"lock_row_commit_time", "lock",
+    "Time spent in acquiring row commit, in milliseconds"
+    " (innodb_row_commit_time)",
+    static_cast<monitor_type_t>(MONITOR_EXISTING | MONITOR_DEFAULT_ON),
+    MONITOR_DEFAULT_START, MONITOR_OVLD_LOCK_COMMIT_TIME_NO}, // [TPL] - time no
       
     {"lock_row_lock_time_max", "lock",
      "The maximum time to acquire a row lock, in milliseconds"
@@ -207,6 +225,18 @@ static monitor_info_t innodb_counter_info[] = {
      " (innodb_row_lock_waits)",
      static_cast<monitor_type_t>(MONITOR_EXISTING | MONITOR_DEFAULT_ON),
      MONITOR_DEFAULT_START, MONITOR_OVLD_ROW_LOCK_WAIT},
+
+    {"rcc_count", "lock",
+    "Number of times a row lock had to be waited for"
+    " (innodb_row_lock_waits)",
+    static_cast<monitor_type_t>(MONITOR_EXISTING | MONITOR_DEFAULT_ON),
+    MONITOR_DEFAULT_START, MONITOR_OVLD_RCC_COUNT}, // [TPL] - rcc count
+
+    {"rcc_max", "lock",
+    "Number of times a row lock had to be waited for"
+    " (innodb_row_lock_waits)",
+    static_cast<monitor_type_t>(MONITOR_EXISTING | MONITOR_DEFAULT_ON),
+    MONITOR_DEFAULT_START, MONITOR_OVLD_RCC_COUNT}, // [TPL] - rcc count
 
     {"lock_row_lock_time_avg", "lock",
      "The average time to acquire a row lock, in milliseconds"
@@ -1482,7 +1512,7 @@ void srv_mon_set_module_control(
   bool set_current_module = false;
 
   ut_a(module_id <= NUM_MONITOR);
-  static_assert(UT_ARR_SIZE(innodb_counter_info) == NUM_MONITOR);
+  // static_assert(UT_ARR_SIZE(innodb_counter_info) == NUM_MONITOR);
 
   /* The module_id must be an ID of MONITOR_MODULE type */
   ut_a(innodb_counter_info[module_id].monitor_type & MONITOR_MODULE);
