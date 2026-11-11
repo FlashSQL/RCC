@@ -144,7 +144,7 @@ ExecutorStart(QueryDesc *queryDesc, int eflags)
 	 */
 #ifdef RCC
     if(CheckAbortedDependencies()){
-		 /* 의존 트랜잭션이 abort 되었으므로 직렬화 실패 */
+		 /* Serialization failure: a transaction we depend on aborted */
             ereport(ERROR,
                     (errcode(ERRCODE_T_R_SERIALIZATION_FAILURE),
                      errmsg("cannot proceed because dependent transaction aborted 12, current TX_ID: %u", GetTopTransactionIdIfAny())));
@@ -1781,7 +1781,7 @@ ExecutePlan(EState *estate,
 #ifdef RCC
 	if(estate->es_processed == 0 && !IsParallelWorker()){
 		if(CheckAbortedDependencies()){
-			/* 의존 트랜잭션이 abort 되었으므로 직렬화 실패 */
+			/* Serialization failure: a transaction we depend on aborted */
 			ereport(ERROR,
 					(errcode(ERRCODE_T_R_SERIALIZATION_FAILURE),
 						errmsg("cannot proceed because dependent transaction aborted 13, current TX_ID: %u", GetTopTransactionIdIfAny())));

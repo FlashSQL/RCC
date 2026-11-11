@@ -616,14 +616,14 @@ HeapTupleSatisfiesUpdate(HeapTuple htup, CommandId curcid,
 				return TM_Invisible;	/* updated before scan started */
 		}
 		else if (TransactionIdIsInProgress(HeapTupleHeaderGetRawXmin(tuple))){
-			// 만약 1. Xmin, Xmax가 같고, 2.
+			// If 1. xmin and xmax are equal, and 2.
 			if(tuple->t_infomask & HEAP_XMAX_INVALID){
 				tuple->t_infomask2 |= HEAP_RCC_READ;
 				return TM_Ok;
 			}
 			if(TransactionIdIsCurrentTransactionId(HeapTupleHeaderGetRawXmax(tuple))){
 				if( !ItemPointerEquals(&htup->t_self, &tuple->t_ctid)){
-					return TM_Updated; // 내가 락을 걸어서 업데이트한 튜플이라면 Updated됐다고하여 최신 튜플로 가게 변경.
+					return TM_Updated; // We locked and updated this tuple: report Updated so the caller follows to the newest version.
 				}
 				tuple->t_infomask2 |= HEAP_RCC_READ;
 				return TM_Ok;
@@ -642,7 +642,7 @@ HeapTupleSatisfiesUpdate(HeapTuple htup, CommandId curcid,
 			}
 			if(ItemPointerGetBlockNumber(&htup->t_self) != ItemPointerGetBlockNumber(&htup->t_data->t_ctid) &&
 				!TransactionIdDidAbort(HeapTupleHeaderGetRawXmax(tuple))){
-				// 이게 Index 업데이트전 튜플을 Enable하는 경우 생기는, PK 중복 문제를 해결하기 위함.
+				// Avoids duplicate PK rows caused by exposing a version that predates the index update.
 				return TM_Updated;
 			}
 			if( !ItemPointerEquals(&htup->t_self, &tuple->t_ctid) && 
@@ -758,7 +758,7 @@ HeapTupleSatisfiesUpdate(HeapTuple htup, CommandId curcid,
 		else{
 			if(ItemPointerGetBlockNumber(&htup->t_self) != ItemPointerGetBlockNumber(&htup->t_data->t_ctid) &&
 				!TransactionIdDidAbort(HeapTupleHeaderGetRawXmax(tuple))){
-				// 이게 Index 업데이트전 튜플을 Enable하는 경우 생기는, PK 중복 문제를 해결하기 위함.
+				// Avoids duplicate PK rows caused by exposing a version that predates the index update.
 				return TM_Updated;
 			}
 			if(!ItemPointerEquals(&htup->t_self, &tuple->t_ctid)){
@@ -773,7 +773,7 @@ HeapTupleSatisfiesUpdate(HeapTuple htup, CommandId curcid,
 			if(TransactionIdDidAbort(HeapTupleHeaderGetRawXmax(tuple))){
 				SetHintBits(tuple, buffer, HEAP_XMAX_INVALID,
 					InvalidTransactionId);
-				return TM_Ok; // Update or Lock을 건 TRX가 Abort되었으므로, Invalid tuple임. Tuple Lock을 걸어도 된다고 처리
+				return TM_Ok; // The updater/locker aborted, so xmax is invalid; the tuple may be locked
 			}
 			else{
 				/* Committed base, in-progress newer version: caller follows the
@@ -781,13 +781,13 @@ HeapTupleSatisfiesUpdate(HeapTuple htup, CommandId curcid,
 				 * vanishes -> flag it so a 0-row UPDATE retries (like Dirty:1297
 				 * for SELECT), rather than being mistaken for a legit empty. */
 				RccReadLatestDeferredCommitted = true;
-				return TM_Updated; // 하지만 그 트랜잭션이 Abort하지 않았다면 아직 Valid한 튜플임 최신 버전 Follow
+				return TM_Updated; // The updater has not aborted, so the newer version is valid; follow it
 			}
 		}
 		if(TransactionIdDidAbort(HeapTupleHeaderGetRawXmax(tuple))){
 			SetHintBits(tuple, buffer, HEAP_XMAX_INVALID,
 				InvalidTransactionId);
-			return TM_Ok; // Update or Lock을 건 TRX가 Abort되었으므로, Invalid tuple임. Tuple Lock을 걸어도 된다고 처리
+			return TM_Ok; // The updater/locker aborted, so xmax is invalid; the tuple may be locked
 		}
 		return TM_BeingModified;
 	}

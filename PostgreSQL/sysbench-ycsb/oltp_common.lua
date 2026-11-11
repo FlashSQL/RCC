@@ -73,8 +73,8 @@ sysbench.cmdline.options = {
        0},
    mysql_storage_engine =
       {"Storage engine, if MySQL is used", "innodb"},
-   -- [PG] MySQL 판은 적재 뒤 ALTER TABLE ... PARTITION BY HASH(id) 로 바꾸지만 PostgreSQL 은
-   -- 기존 테이블을 파티션 테이블로 바꿀 수 없다. sysbench-tpcc 의 --partition 처럼 만들 때부터 나눈다.
+   -- [PG] The MySQL version converts the table with ALTER TABLE ... PARTITION BY HASH(id) after loading, but PostgreSQL
+   -- cannot turn an existing table into a partitioned one, so tables are partitioned at creation, like sysbench-tpcc --partition.
    hash_partitions =
       {"Number of HASH(id) partitions per table, if PostgreSQL is used " ..
           "(0 = not partitioned)", 0},
@@ -490,7 +490,7 @@ end
 function execute_non_index_updates()
    local tnum = get_table_num()
 
-   -- [MySQL_RCC] 트랜잭션 안에서 서로 다른 id 만 사용 (Zipf 로 뽑되 중복이면 다시 뽑음; DBx1000 YCSB 와 동일한 비복원 방식)
+   -- Use only distinct ids within a transaction (drawn from Zipf, redrawn on duplicates; sampling without replacement as in DBx1000 YCSB)
    local seen = {}
    for i = 1, sysbench.opt.non_index_updates do
       local id = get_id()

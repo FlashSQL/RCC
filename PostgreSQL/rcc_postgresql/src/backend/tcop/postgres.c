@@ -3204,7 +3204,7 @@ ProcessInterrupts(void)
 		return;
 	InterruptPending = false;
 
-	// 자기 자신 TRX이 abort 되었는지 체크
+	// Check whether our own transaction has been aborted
 #ifdef RCC
 	/*
 	 * Below the holdoff/critical-section gate, and never while idle waiting
@@ -3213,7 +3213,7 @@ ProcessInterrupts(void)
 	 * transaction is caught at its next statement's ExecutorStart instead.
 	 */
 	if (!DoingCommandRead && IsTransactionState() && CheckAbortedDependencies()){
-		 /* 의존 트랜잭션이 abort 되었으므로 직렬화 실패 */
+		 /* Serialization failure: a transaction we depend on aborted */
 			LockErrorCleanup();
             ereport(ERROR,
                     (errcode(ERRCODE_T_R_SERIALIZATION_FAILURE),

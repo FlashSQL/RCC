@@ -530,7 +530,7 @@ tuple_lock_retry:
 				{
 #ifdef RCC
 					if(CheckAbortedDependencies()){
-						/* 의존 트랜잭션이 abort 되었으므로 직렬화 실패 */
+						/* Serialization failure: a transaction we depend on aborted */
 						ReleaseBuffer(buffer);
 						ereport(ERROR,
 								(errcode(ERRCODE_T_R_SERIALIZATION_FAILURE),
@@ -622,9 +622,9 @@ tuple_lock_retry:
 									while (TransactionIdIsInProgress(priorXmax) &&
 										ItemPointerEquals(&tuple->t_self, &tuple->t_data->t_ctid))
 									{
-										/* 스핀 중에도 시그널(백그라운드 detector의 victim kill 등) 처리 */
+										/* Service interrupts while spinning (e.g. a victim kill from the background detector) */
 										CHECK_FOR_INTERRUPTS();
-										// pg_usleep(10L); // 1ms 대기
+										// pg_usleep(10L); // back-off sleep
 										if(mode == LockTupleKeyShare){
 											if(GetTopTransactionIdIfAny() == HeapTupleHeaderGetRawXmin(tuple->t_data)){
 												break;
@@ -695,7 +695,7 @@ tuple_lock_retry:
 										cid,
 										GetTopTransactionIdIfAny())));
 						}
-						// 단, LockTupleKeyShare 모드인 경우 (FK Check), 내가 만든 튜플에 대해서 Lock을 걸수 있게 허용.
+						// Exception: in LockTupleKeyShare mode (FK check), allow locking a tuple we created.
 						if(mode == LockTupleKeyShare){
 							if(TransactionIdIsCurrentTransactionId(HeapTupleHeaderGetRawXmax(tuple->t_data))){
 								goto live_tuple_try;
@@ -734,7 +734,7 @@ live_tuple_try:
 					ReleaseBuffer(buffer);
 #ifdef RCC
 					if(CheckAbortedDependencies()){
-						/* 의존 트랜잭션이 abort 되었으므로 직렬화 실패 */
+						/* Serialization failure: a transaction we depend on aborted */
 						ereport(ERROR,
 								(errcode(ERRCODE_T_R_SERIALIZATION_FAILURE),
 									errmsg("cannot proceed because dependent transaction aborted 2, current TX_ID: %u", GetTopTransactionIdIfAny())));

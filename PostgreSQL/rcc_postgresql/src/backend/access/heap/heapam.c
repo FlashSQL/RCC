@@ -3347,12 +3347,12 @@ l2:
 	}
 #endif	
 	if(!ItemIdIsNormal(lp)){
-		// 수정필요, 이 부분을 추가한 이유는, Vacuum? 진행중인 튜플이 읽히는 경우임.
+		// TODO: handles reading a tuple whose line pointer is no longer normal (e.g. being vacuumed).
 		result = TM_Deleted;
 		goto skip_visibility_check;
 	}
     if(CheckAbortedDependencies()){
-		 /* 의존 트랜잭션이 abort 되었으므로 직렬화 실패 */
+		 /* Serialization failure: a transaction we depend on aborted */
 		if( TransactionIdIsValid(GetTopTransactionIdIfAny()) &&
 			HeapTupleHeaderGetRawXmax(oldtup.t_data) == GetTopTransactionIdIfAny() && 
 			(oldtup.t_data->t_infomask2 & HEAP_RCC_READ)){
@@ -3369,7 +3369,7 @@ l2:
 	// 	result == TM_Ok &&
 	// 	HeapTupleHeaderGetRawXmax(oldtup.t_data) != 0 &&
 	// 	HeapTupleHeaderGetRawXmax(oldtup.t_data) != xid){
-	// 	// 이 케이스는, Delete된 튜플에 Lock을 걸고 넘어온 경우임.
+	// 	// Case: we arrive here after locking a deleted tuple.
 	// 	result = TM_Deleted;
 	// }
 skip_visibility_check:
@@ -3402,11 +3402,11 @@ skip_visibility_check:
 			ItemIdGetFlags(lp));
 	}
 #endif
-	// 수정필요, 사용한 메모리 전부 초기화를 해야해서 heap_lock_tuple 참고해서 수정필요함 아래 CheckAborted 전부 마찬가지임.
+	// TODO: free everything allocated so far before erroring out (see heap_lock_tuple); the same applies to every CheckAborted check below.
 	if(CheckAbortedDependencies()){
-		/* 의존 트랜잭션이 abort 되었으므로 직렬화 실패 */
+		/* Serialization failure: a transaction we depend on aborted */
 		if(relation->rd_id == 16385){
-			// 나중에 이 비트에 대한 로그는 어떻게 남길지 상의 필요
+			// TODO: decide how to log this bit
 			elog(LOG, "Fail_1: result: %u lp: (%u, %u), t_xmin: %u, t_xmax: %u, t_infomask: %X, t_infomask2: %X, TX_ID: %u, t_self: (%u, %u), t_ctid: (%u, %u), lp_flags: %u",
 					result,
 					ItemPointerGetBlockNumber(&oldtup.t_self), ItemPointerGetOffsetNumber(&oldtup.t_self),
@@ -3601,10 +3601,10 @@ skip_visibility_check:
 				while (TransactionIdIsInProgress(xwait) &&
 						ItemPointerEquals(&oldtup.t_self, &oldtup.t_data->t_ctid))
 			{
-				/* 스핀 중에도 시그널(백그라운드 detector의 victim kill 등) 처리 */
+				/* Service interrupts while spinning (e.g. a victim kill from the background detector) */
 				CHECK_FOR_INTERRUPTS();
 				if(TransactionIdDidAbort(HeapTupleHeaderGetRawXmin(oldtup.t_data))){
-					/* Breakdown Code - goto 전에 측정 */
+					/* Breakdown Code - measure before ereport */
 					INSTR_TIME_SET_CURRENT(txwait_end);
 					INSTR_TIME_SUBTRACT(txwait_end, txwait_start);
 					xact_count_tuple_update_wait_time(INSTR_TIME_GET_MICROSEC(txwait_end));
@@ -3625,12 +3625,12 @@ skip_visibility_check:
 									HeapTupleHeaderGetRawXmin(oldtup.t_data), xwait, GetTopTransactionIdIfAny())));
 				}
 				if(CheckAbortedDependencies()){
-					/* Breakdown Code - ereport 전에 측정 */
+					/* Breakdown Code - measure before ereport */
 					INSTR_TIME_SET_CURRENT(txwait_end);
 					INSTR_TIME_SUBTRACT(txwait_end, txwait_start);
 					xact_count_tuple_update_wait_time(INSTR_TIME_GET_MICROSEC(txwait_end));
 					/* Breakdown Code End */
-					/* 의존 트랜잭션이 abort 되었으므로 직렬화 실패 */
+					/* Serialization failure: a transaction we depend on aborted */
 					if (have_tuple_lock)
 						UnlockTupleTuplock(relation, &(oldtup.t_self), *lockmode);
 					if (vmbuffer != InvalidBuffer)
@@ -3645,7 +3645,7 @@ skip_visibility_check:
 							(errcode(ERRCODE_T_R_SERIALIZATION_FAILURE),
 								errmsg("cannot proceed because dependent transaction aborted 5, current TX_ID: %u", GetTopTransactionIdIfAny())));
 				}
-				// pg_usleep(10L); // 1ms 대기
+				// pg_usleep(10L); // back-off sleep
 			}
 			/* Breakdown Code */
 				INSTR_TIME_SET_CURRENT(txwait_end);
@@ -3679,7 +3679,7 @@ skip_visibility_check:
 			if( TransactionIdIsValid(xid) &&
 				relation->rd_id > 16000 &&
 				HeapTupleHeaderGetRawXmax(oldtup.t_data) != xid){
-				// 이 케이스는, Delete된 튜플에 Lock을 걸고 넘어온 경우임.
+				// Case: we arrive here after locking a deleted tuple.
 				if(!(oldtup.t_data->t_infomask2 & HEAP_RCC_READ))
 					oldtup.t_data->t_infomask2 |= HEAP_RCC_READ;
 				result = TM_Ok;
@@ -3742,9 +3742,9 @@ skip_visibility_check:
 
 	if (result != TM_Ok)
 	{
-		// 만약 여기서 Deleted tuple을 접근하면, tmfd에 이상한 값이 들어가서 문제생김.
-		// 따라서, Deleted된 튜플은 바로 그냥 Invalid되게 처리.
-		// Abort시키지 않는 이유는, 다른 인덱스를 통해서 접근할 수 있는 가능성이 있기 때문임.
+		// Accessing a deleted tuple here would fill tmfd with bogus values,
+		// so a deleted tuple is treated as invalid right away.
+		// We do not abort, since the row may still be reachable through another index.
 		// if( (oldtup.t_data->t_infomask & HEAP_XMIN_INVALID) && (ItemIdGetFlags(lp) == LP_NORMAL)){
 		// 	UnlockReleaseBuffer(buffer);
 		// 	if (have_tuple_lock)
@@ -3757,7 +3757,7 @@ skip_visibility_check:
 		// 	bms_free(id_attrs);
 		// 	bms_free(modified_attrs);
 		// 	bms_free(interesting_attrs);
-		// 	// xmin이 abort되었다는 것은, 제일 최신 튜플을 따라왔는데 끊긴것이므로 이 경우는 Abort 처리.
+		// 	// An aborted xmin means the chain to the newest version is broken, so abort.
 		// 	ereport(ERROR,
 		// 		(errcode(ERRCODE_T_R_SERIALIZATION_FAILURE),
 		// 		errmsg("Follow chain is broken 4,result: %u, TX_ID: %u", result, GetTopTransactionIdIfAny())));
@@ -3937,10 +3937,10 @@ skip_visibility_check:
 								  &infomask2_lock_old_tuple);
 
 		Assert(HEAP_XMAX_IS_LOCKED_ONLY(infomask_lock_old_tuple));
-		//수정필요, 이거를 추가한 이유는, 튜플을 수정하는 동안에도 다른 트랜잭션이 abort시킬 수 있음. Abort된 TRX가 튜플을 수정하는 상황 방지.
+		//TODO: another transaction may abort us while we modify the tuple; keep an aborted transaction from modifying it.
 		if(CheckAbortedDependencies()){
-			/* 의존 트랜잭션이 abort 되었으므로 직렬화 실패 */
-			// 나중에 이 비트에 대한 로그는 어떻게 남길지 상의 필요
+			/* Serialization failure: a transaction we depend on aborted */
+			// TODO: decide how to log this bit
 			oldtup.t_data->t_infomask2 &= ~HEAP_RCC_READ;
 			if(relation->rd_id == 16385){
 				elog(LOG, "Fail_3: result: %u lp: (%u, %u), t_xmin: %u, t_xmax: %u, t_infomask: %X, t_infomask2: %X, TX_ID: %u, t_self: (%u, %u), t_ctid: (%u, %u), lp_flags: %u",
@@ -4163,10 +4163,10 @@ skip_visibility_check:
 										   bms_overlap(modified_attrs, id_attrs) ||
 										   id_has_external,
 										   &old_key_copied);
-	//수정필요, 이거를 추가한 이유는, 튜플을 수정하는 동안에도 다른 트랜잭션이 abort시킬 수 있음. Abort된 TRX가 튜플을 수정하는 상황 방지.									   
+	//TODO: another transaction may abort us while we modify the tuple; keep an aborted transaction from modifying it.									   
 	if(CheckAbortedDependencies()){
-		/* 의존 트랜잭션이 abort 되었으므로 직렬화 실패 */
-		// 나중에 이 비트에 대한 로그는 어떻게 남길지 상의 필요
+		/* Serialization failure: a transaction we depend on aborted */
+		// TODO: decide how to log this bit
 		oldtup.t_data->t_infomask2 &= ~HEAP_RCC_READ;
 		if(relation->rd_id == 16385){
 			elog(LOG, "Fail_2: result: %u lp: (%u, %u), t_xmin: %u, t_xmax: %u, t_infomask: %X, t_infomask2: %X, TX_ID: %u, t_self: (%u, %u), t_ctid: (%u, %u), lp_flags: %u",
@@ -4300,7 +4300,7 @@ skip_visibility_check:
         RecordReadDependency(xmin, xid);
 	}
 	else if(TransactionIdDidAbort(xmin)){
-		// 만약에 xmin이 aborted된 트랜잭션이라면, tmin_is_aborted를 true로 설정
+		// If xmin aborted, set tmin_is_aborted
 		tmin_is_aborted = true;
 	}
 	/*
@@ -4312,7 +4312,7 @@ skip_visibility_check:
 	/* remember our new version's cmin: a foreign chainer may clobber t_cid */
 	RccNoteMyVersion(RelationGetRelid(relation), &heaptup->t_self, cid);
 	if(CheckAbortedDependencies()){
-		/* 의존 트랜잭션이 abort 되었으므로 직렬화 실패 */
+		/* Serialization failure: a transaction we depend on aborted */
 		if(relation->rd_id == 16385){
 			elog(LOG, "Fail_4: result: %u lp: (%u, %u), t_xmin: %u, t_xmax: %u, t_infomask: %X, t_infomask2: %X, TX_ID: %u, t_self: (%u, %u), t_ctid: (%u, %u), lp_flags: %u",
 					result,
@@ -5651,32 +5651,32 @@ l3:
 	}
 #endif
 	if(!ItemIdIsNormal(lp)){
-		// 수정필요, 이 부분을 추가한 이유는, Vacuum? 진행중인 튜플이 읽히는 경우임.
-		// 첫번째 문제원인, 여기서 어보트된 트랜잭션이 튜플에 락을 걸어서 페이지가 초기화 된것처럼 보임.
-		// 하지만, 2번째로 문제발생함. 
+		// TODO: handles reading a tuple whose line pointer is no longer normal (e.g. being vacuumed).
+		// First cause: an aborted transaction locks the tuple here, so the page looks initialized.
+		// However, a second problem remains. 
 		result = TM_Deleted;
 		goto skip_visibility_check_in_lock;
 	}
     if(CheckAbortedDependencies()){
-		 /* 의존 트랜잭션이 abort 되었으므로 직렬화 실패 */
+		 /* Serialization failure: a transaction we depend on aborted */
 		dependent_aborted = true;
 		goto out_locked;
 	}
 	// if( TransactionIdIsValid(GetTopTransactionIdIfAny()) &&
 	// 	TransactionIdPrecedes(GetTopTransactionIdIfAny(), HeapTupleHeaderGetRawXmin(tuple->t_data))){
-	// 	// 이 경우는 Abort된 트랜잭션이 다시 Chain을 탐색해서 잘못된 튜플을 Lock을 거는 경우임
-	// 	// 이 트랜잭션인 Abort될 예정이므로 Abort 처리.
+	// 	// Case: an aborted transaction re-walks the chain and locks the wrong tuple.
+	// 	// This transaction is doomed anyway, so abort it.
 	// 	dependent_aborted = true;
 	// 	goto out_locked;
 	// }
 	result = HeapTupleSatisfiesUpdate(tuple, cid, *buffer);
-		//이거는 District Tuple Update -> History Tuple Insert -> District Fkey check -> District S-lock
+		//Path: District Tuple Update -> History Tuple Insert -> District Fkey check -> District S-lock
 skip_visibility_check_in_lock:		
 	if (mode != LockTupleKeyShare &&
 		TransactionIdIsCurrentTransactionId(HeapTupleHeaderGetRawXmin(tuple->t_data)) && 
 		!ItemPointerEquals(&tuple->t_self, &tuple->t_data->t_ctid) &&
 		!TransactionIdIsCurrentTransactionId(HeapTupleHeaderGetRawXmax(tuple->t_data))){
-		// Update하려고하는 튜플이 내 Tuple인데 다른 TRX가 이미 봐버렸으면 Final하지 않으므로 바로 Abort 처리.
+		// The tuple to update is our own version, but another transaction has already seen it: not a final write, so abort.
 		result = TM_Ok;
 		cid_for_update = HeapTupleHeaderGetCmin(tuple->t_data);
 		not_final_update = true;
@@ -6082,15 +6082,15 @@ skip_visibility_check_in_lock:
 
 			if (result == TM_BeingModified)
 			{
-				/* Breakdown Code - 업데이트가 완료될 때까지 polling */
+				/* Breakdown Code - poll until the update completes */
 				INSTR_TIME_SET_CURRENT(txwait_start);
 				while (TransactionIdIsInProgress(xwait) &&
 					ItemPointerEquals(&tuple->t_self, &tuple->t_data->t_ctid))
 				{
-					/* 스핀 중에도 시그널(백그라운드 detector의 victim kill 등) 처리 */
+					/* Service interrupts while spinning (e.g. a victim kill from the background detector) */
 					CHECK_FOR_INTERRUPTS();
 					if(TransactionIdDidAbort(xmin)){
-						/* Breakdown Code - goto 전에 측정 */
+						/* Breakdown Code - measure before goto */
 						INSTR_TIME_SET_CURRENT(txwait_end);
 						INSTR_TIME_SUBTRACT(txwait_end, txwait_start);
 						xact_count_tuple_update_wait_time(INSTR_TIME_GET_MICROSEC(txwait_end));
@@ -6105,12 +6105,12 @@ skip_visibility_check_in_lock:
 						goto failed;
 					}
 					if(CheckAbortedDependencies()){
-						/* Breakdown Code - ereport 전에 측정 */
+						/* Breakdown Code - measure before ereport */
 						INSTR_TIME_SET_CURRENT(txwait_end);
 						INSTR_TIME_SUBTRACT(txwait_end, txwait_start);
 						xact_count_tuple_update_wait_time(INSTR_TIME_GET_MICROSEC(txwait_end));
 						/* Breakdown Code End */
-						/* 의존 트랜잭션이 abort 되었으므로 직렬화 실패 (heap_update 스핀과 동일) */
+						/* Serialization failure: a transaction we depend on aborted (same as the heap_update spin) */
 						if (have_tuple_lock)
 							UnlockTupleTuplock(relation, tid, mode);
 						if (BufferIsValid(vmbuffer))
@@ -6121,7 +6121,7 @@ skip_visibility_check_in_lock:
 					}
 					// if(mode == LockTupleKeyShare){
 					// 	if(GetTopTransactionIdIfAny() == xmin){
-					// 		/* Breakdown Code - goto 전에 측정 */
+					// 		/* Breakdown Code - measure before goto */
 					// 		INSTR_TIME_SET_CURRENT(txwait_end);
 					// 		INSTR_TIME_SUBTRACT(txwait_end, txwait_start);
 					// 		xact_count_tuple_update_wait_time(INSTR_TIME_GET_MICROSEC(txwait_end));
@@ -6130,19 +6130,19 @@ skip_visibility_check_in_lock:
 					// 		goto l3;
 					// 	}
 					// }
-					// pg_usleep(10L); // 1ms 대기
+					// pg_usleep(10L); // back-off sleep
 				}
 				INSTR_TIME_SET_CURRENT(txwait_end);
 				INSTR_TIME_SUBTRACT(txwait_end, txwait_start);
 				xact_count_tuple_update_wait_time(INSTR_TIME_GET_MICROSEC(txwait_end));
 				/* Breakdown Code End */
-				// 만약 xmin이 Abort되었다면, 해당 트랜잭션은 이 튜플을 업데이트하지 못했으니까 락 다시 잡고 업데이트하러가기.
+				// If xwait aborted, it never updated this tuple: re-lock the buffer and retry.
 				if(TransactionIdDidAbort(xwait)){
 					LockBuffer(*buffer, BUFFER_LOCK_EXCLUSIVE);
 					goto l3;
 				}
 				goto jump_wait;
-				/* 그래도 못넘어가면 원래 로직대로 대기 수행 */
+				/* Otherwise fall back to the regular wait logic */
 			}
 
 			if (infomask & HEAP_XMAX_IS_MULTI)
@@ -6469,7 +6469,7 @@ failed:
 	}
 #endif
 	TransactionId xmin = HeapTupleHeaderGetRawXmin(tuple->t_data);
-		// Update한 튜플이 만약에 uncommitted trx에 의해서 update된 것이라면
+		// If this version was written by an uncommitted transaction
 	if (xmin != InvalidTransactionId &&
 		TransactionIdIsInProgress(xmin))
     {
@@ -6477,7 +6477,7 @@ failed:
 		// fprintf(stderr, "LockTuple RecordReadDependency called in heap_lock_tuple, Relation: %u, Depending: %u , TX_ID: %u\n",relation->rd_id, xmin, GetTopTransactionIdIfAny());
 	}
 	else if(TransactionIdDidAbort(xmin)){
-		// 만약에 xmin이 aborted된 트랜잭션이라면, tmin_is_aborted를 true로 설정
+		// If xmin aborted, set tmin_is_aborted
 		tmin_is_aborted = true;
 	}
 

@@ -2970,7 +2970,7 @@ AbortTransaction(void)
 			INSTR_TIME_SUBTRACT(_xe, xact_start_instr);
 			pgStatAbortedTotalTime += (PgStat_Counter) INSTR_TIME_GET_MICROSEC(_xe);
 #ifdef RCC_ABORTPROF
-			/* 사인별 낭비 분해용: 직전 ERROR 라인(같은 pid)과 조인해 분류 */
+			/* Per-cause waste breakdown: classify by joining with the preceding ERROR line of the same pid */
 			elog(LOG, "[ABORTPROF] us=%ld", (long) INSTR_TIME_GET_MICROSEC(_xe));
 #endif
 		}

@@ -1036,7 +1036,7 @@ CleanupTxnDependency()
 bool 
 CheckAbortedDependencies(void)
 {
-    //여기서도, 다른 트랜잭션이 나를 abort시킬 수도 있으니, 내가 abort되었는지 체크
+    //Another transaction may have aborted us, so check our own status first
     TransactionId myxid = GetTopTransactionIdIfAny();
     if (!TransactionIdIsValid(myxid))
         return false;  /* No active transaction → no dependencies */
@@ -1054,10 +1054,10 @@ CheckAbortedDependencies(void)
 #ifdef RCC_DEBUG
             elog(LOG, "[DepGraph] Dependency %u has aborted: TX_ID: %u\n", depxid, myxid);
 #endif            
-            return true; /* ERROR 이후에도 안전하게 반환 */
+            return true; /* safe to return even after an ERROR */
         }
     }
-    return false;  /* 모든 의존성이 유효함 */
+    return false;  /* all dependencies are still valid */
 }
 
 /* ----------------------------------------------------------------------

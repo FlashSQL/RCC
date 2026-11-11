@@ -1,7 +1,9 @@
 #!/bin/bash
 
-# TPC-C Benchmark - Varying Warehouse Count
-# Usage: export rcc_data_dir=/path/to/data rcc_log_dir=/path/to/log && ./run_tpcc_warehouses.sh [--results-dir <path>]
+# PostgreSQL YCSB - Varying Client Threads (paper Fig. 9(a))
+# YCSB 10M rows (HASH(id), 128 partitions), zipf theta 0.9, 8 reads + 8 updates per transaction in ascending key order.
+# RCC at Repeatable Read vs. vanilla PostgreSQL at Read Committed / Repeatable Read.
+# Usage: export rcc_data_dir=/path/to/data rcc_log_dir=/path/to/log && ./fig9a_ycsb_threads.sh [--results-dir <path>]
 
 # ==========================================
 # PATH CONFIGURATION
@@ -9,50 +11,53 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BASE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 POSTGRESQL_HOME="$BASE_DIR/rcc_postgresql"
-SYSBENCH_HOME="$BASE_DIR/sysbench-tpcc"
-# sysbench (built with --with-pgsql) for tpcc.lua's `#!/usr/bin/env sysbench`
+SYSBENCH_HOME="$BASE_DIR/sysbench-ycsb"
+# sysbench built with --with-pgsql
 export PATH="${SYSBENCH_BIN_DIR:-$HOME/sysbench/src}:$PATH"
 BLD_PATH="${POSTGRESQL_HOME}/bld"
 PSQL_BIN="${BLD_PATH}/bin/psql"
 PG_BIN="${BLD_PATH}/bin/postgres"
 INITDB_BIN="${BLD_PATH}/bin/initdb"
-
-# ==========================================
-# CONFIGURATION
-# ==========================================
-DATA_DIR="${rcc_data_dir:-}"
-LOG_DIR="${rcc_log_dir:-}"
-RESULTS_DIR=""
-
-DEFAULT_WARMUP=50
-PAGE_SIZE=16
-# Configurations to sweep, as <build>_<isolation>:
-#   vanilla_rc / vanilla_rr : stock PostgreSQL (-O2) at Read Committed / Repeatable Read
-#   rcc_rr                  : RCC (-O2 -DRCC) at Repeatable Read
-BUILD_MODES=("vanilla_rc" "vanilla_rr" "rcc_rr")
-
-# NUMA policy, chosen per experiment by set_numa_policy (2 sockets x 48 logical CPUs):
-#   up to NUMA_PIN_MAX_THREADS client threads : CPUs and memory pinned to node 0
-#   above that                                : all CPUs, memory interleaved over both nodes
-# Applied to the server and to sysbench alike.  Empty if numactl is missing.
+# Use the original shared-node placement for both server and clients.
 NUMA_PIN_MAX_THREADS=128
 NUMACTL=""
 set_numa_policy() {
-    local TERMINALS=$1
+    local THREADS=$1
     command -v numactl >/dev/null 2>&1 || { NUMACTL=""; return; }
-    if (( TERMINALS <= NUMA_PIN_MAX_THREADS )); then
+    if (( THREADS <= NUMA_PIN_MAX_THREADS )); then
         NUMACTL="numactl --cpunodebind=0 --membind=0"
     else
         NUMACTL="numactl --interleave=all"
     fi
 }
 
-# Format: "name:warehouses,terminals,duration"
+# ==========================================
+# CONFIGURATION
+# ==========================================
+DATA_DIR="${rcc_data_dir:-}"
+LOG_DIR="${rcc_log_dir:-}"
+RESULTS_DIR="$BASE_DIR/results/Fig9a"
+
+DEFAULT_WARMUP=50
+PAGE_SIZE=16
+TABLE_SIZE=10000000
+PARTITIONS=128
+ZIPF_THETA=0.9
+READS=8
+UPDATES=8
+# Configurations to sweep, as <build>_<isolation>:
+#   vanilla_rc / vanilla_rr : stock PostgreSQL (-O2) at Read Committed / Repeatable Read
+#   rcc_rr                  : RCC (-O2 -DRCC) at Repeatable Read
+BUILD_MODES=("rcc_rr" "vanilla_rc" "vanilla_rr")
+
+# Format: "name:threads,duration"
 EXPERIMENTS=(
-    "s1_t16:1,16,50"
-    "s2_t32:2,32,50"
-    "s4_t64:4,64,50"
-    "s8_t128:8,128,50"
+    "t1:1,50"
+    "t16:16,50"
+    "t32:32,50"
+    "t64:64,50"
+    "t96:96,50"
+    "t128:128,50"
 )
 
 # ==========================================
@@ -81,9 +86,16 @@ usage() {
     echo "  rcc_log_dir           PostgreSQL log directory"
     echo ""
     echo "Options:"
-    echo "  --results-dir <path>  Results directory"
+    echo "  --results-dir <path>  Results directory (default: results/Fig9a)"
     echo "  -h, --help            Show this help"
     exit 0
+}
+
+isolation_of() {
+    case "$1" in
+        *_rc) echo "read committed" ;;
+        *)    echo "repeatable read" ;;
+    esac
 }
 
 # ==========================================
@@ -96,11 +108,10 @@ stop_postgresql() {
 }
 
 start_postgresql() {
-    local WAREHOUSES=$1
-    local RESULT_DIR=$2
-    local BUILD_MODE=$3
+    local RESULT_DIR=$1
+    local BUILD_MODE=$2
 
-    print_header "PostgreSQL Server Startup ($BUILD_MODE, Warehouses: $WAREHOUSES)"
+    print_header "PostgreSQL Server Startup ($BUILD_MODE)"
 
     stop_postgresql
 
@@ -140,20 +151,22 @@ start_postgresql() {
     sed -i "s|log_directory = '.*'|log_directory = '$LOG_DIR'|" $DATA_DIR/postgresql.conf
 
     print_info "Starting PostgreSQL..."
-    $NUMACTL $PG_BIN -D $DATA_DIR &
+    # Isolation level of every transaction; RCC: the asynchronous deadlock detector runs in the background
+    # (vanilla builds do not know rcc_bg_detect)
+    local PG_OPTS=(-c "default_transaction_isolation=$(isolation_of $BUILD_MODE)")
+    if [[ "$BUILD_MODE" == rcc* ]]; then PG_OPTS+=(-c rcc_bg_detect=on); fi
+    $NUMACTL $PG_BIN -D $DATA_DIR "${PG_OPTS[@]}" &
     sleep 5
 
-    $PSQL_BIN -U postgres -c "CREATE DATABASE tpcc OWNER postgres;" 2>/dev/null
-    $PSQL_BIN -U postgres -c "GRANT ALL PRIVILEGES ON DATABASE tpcc TO postgres;" 2>/dev/null
+    $PSQL_BIN -U postgres -c "CREATE DATABASE sbtest OWNER postgres;" 2>/dev/null
 
-    print_info "Loading TPC-C data (warehouses=$WAREHOUSES)..."
+    print_info "Loading YCSB data ($TABLE_SIZE rows, $PARTITIONS partitions)..."
     cd $SYSBENCH_HOME
-    $NUMACTL ./tpcc.lua --pgsql-user=postgres --pgsql-db=tpcc \
-        --threads=$WAREHOUSES --tables=1 --scale=$WAREHOUSES \
-        --use_fk=0 --trx_level=RR --partition=yes --db-driver=pgsql prepare > /dev/null 2>&1
+    $NUMACTL sysbench ycsb_like.lua --db-driver=pgsql --pgsql-user=postgres --pgsql-db=sbtest \
+        --tables=1 --table_size=$TABLE_SIZE --hash_partitions=$PARTITIONS prepare > $RESULT_DIR/load.log 2>&1
 
-    $PSQL_BIN -U postgres -d tpcc -c "VACUUM ANALYZE;" 2>/dev/null
-    $PSQL_BIN -U postgres -d tpcc -c "SELECT pg_stat_reset();" 2>/dev/null
+    $PSQL_BIN -U postgres -d sbtest -c "VACUUM ANALYZE;" 2>/dev/null
+    $PSQL_BIN -U postgres -d sbtest -c "SELECT pg_stat_reset();" 2>/dev/null
 
     print_info "PostgreSQL ready!"
     return 0
@@ -162,68 +175,60 @@ start_postgresql() {
 # ==========================================
 # BENCHMARK FUNCTION
 # ==========================================
+run_ycsb() {   # <threads> <seconds> <log>
+    # aborted transactions retry at once (no backoff), as in the TPC-C script (--backoff_on=0)
+    SB_SORT=1 SB_BACKOFF_US=0 $NUMACTL sysbench ycsb_like.lua --db-driver=pgsql --pgsql-user=postgres --pgsql-db=sbtest \
+        --tables=1 --table_size=$TABLE_SIZE --point_selects=$READS --non_index_updates=$UPDATES \
+        --rand-type=zipfian --rand-zipfian-exp=$ZIPF_THETA \
+        --threads=$1 --time=$2 --report-interval=1 run > $3 2>&1
+}
+
 run_experiment() {
     local NAME=$1
-    local WAREHOUSES=$2
-    local TERMINALS=$3
-    local DURATION=$4
-    local RESULT_DIR=$5
-    local BUILD_MODE=$6
+    local THREADS=$2
+    local DURATION=$3
+    local RESULT_DIR=$4
+    local BUILD_MODE=$5
 
     mkdir -p $RESULT_DIR
 
     print_header "Experiment: $NAME ($BUILD_MODE)"
-    echo "  Warehouses: $WAREHOUSES, Terminals: $TERMINALS, Duration: ${DURATION}s"
+    echo "  Threads: $THREADS, Duration: ${DURATION}s, Isolation: $(isolation_of $BUILD_MODE)"
 
-    set_numa_policy $TERMINALS
+    set_numa_policy $THREADS
     print_info "NUMA policy: ${NUMACTL:-none}"
 
-    start_postgresql $WAREHOUSES $RESULT_DIR $BUILD_MODE
+    start_postgresql $RESULT_DIR $BUILD_MODE
     if [ $? -ne 0 ]; then
+        print_error "Failed to start PostgreSQL"
         return 1
     fi
 
-    # isolation level follows the configuration name (see BUILD_MODES)
-    local TRX
-    case "$BUILD_MODE" in
-        *_rc) TRX="RC" ;;
-        *)    TRX="RR" ;;
-    esac
-
     cd $SYSBENCH_HOME
 
-    # Warmup as a SEPARATE run (discarded), so server-side statistics cover
-    # only the measured run.
-    print_info "Warming up... (${DEFAULT_WARMUP}s, trx_level=$TRX, not measured)"
-    $NUMACTL ./tpcc.lua --pgsql-user=postgres --pgsql-db=tpcc \
-        --time=$DEFAULT_WARMUP \
-        --threads=$TERMINALS --report-interval=1 --retry_on_fail=yes --backoff_on=0 \
-        --tables=1 --scale=$WAREHOUSES --use_fk=0 --trx_level=$TRX \
-        --partition=yes --db-driver=pgsql run > $RESULT_DIR/warmup.log 2>&1
-    $PSQL_BIN -U postgres -d tpcc -c "SELECT pg_stat_reset();" > /dev/null 2>&1
+    # Warmup as a separate run (discarded): the measured run starts on a warmed-up server.
+    print_info "Warming up... (${DEFAULT_WARMUP}s, not measured)"
+    run_ycsb $THREADS $DEFAULT_WARMUP $RESULT_DIR/warmup.log
 
-    print_info "Running Sysbench TPC-C... (trx_level=$TRX, ${DURATION}s measured)"
-    $NUMACTL ./tpcc.lua --pgsql-user=postgres --pgsql-db=tpcc \
-        --time=$DURATION \
-        --threads=$TERMINALS --report-interval=1 --retry_on_fail=yes --backoff_on=0 \
-        --tables=1 --scale=$WAREHOUSES --use_fk=0 --trx_level=$TRX \
-        --partition=yes --db-driver=pgsql run > $RESULT_DIR/sysbench.log 2>&1
+    $PSQL_BIN -U postgres -d sbtest -c "SELECT pg_stat_reset();" > /dev/null 2>&1
+    for f in "$LOG_DIR"/*; do : > "$f"; done 2>/dev/null
 
-    # TPC-C Clause 3.3 consistency check on the final data, before the server stops.
-    print_info "Running consistency check..."
-    $PSQL_BIN -U postgres -d tpcc -f "$SCRIPT_DIR/consistency_check.sql" \
-        > $RESULT_DIR/consistency.txt 2>&1
+    print_info "Running Sysbench YCSB... (${DURATION}s measured)"
+    run_ycsb $THREADS $DURATION $RESULT_DIR/sysbench.log
 
     # Save summary
     echo "=== Experiment Summary ===" > $RESULT_DIR/summary.txt
     echo "Build Mode: $BUILD_MODE" >> $RESULT_DIR/summary.txt
-    echo "Isolation: $TRX" >> $RESULT_DIR/summary.txt
-    echo "NUMA: ${NUMACTL:-none}" >> $RESULT_DIR/summary.txt
-    echo "Warehouses: $WAREHOUSES" >> $RESULT_DIR/summary.txt
-    echo "Terminals: $TERMINALS" >> $RESULT_DIR/summary.txt
-    echo "Duration: ${DURATION}s" >> $RESULT_DIR/summary.txt
+    echo "Isolation: $(isolation_of $BUILD_MODE)" >> $RESULT_DIR/summary.txt
+    echo "Threads: $THREADS" >> $RESULT_DIR/summary.txt
+    echo "Duration: ${DURATION}s (warmup ${DEFAULT_WARMUP}s)" >> $RESULT_DIR/summary.txt
+    echo "Table: $TABLE_SIZE rows, HASH(id) $PARTITIONS partitions, zipf $ZIPF_THETA, ${READS}R+${UPDATES}W sorted" >> $RESULT_DIR/summary.txt
+    echo "Backoff: off" >> $RESULT_DIR/summary.txt
+    echo "rcc_bg_detect: $($PSQL_BIN -U postgres -At -c 'SHOW rcc_bg_detect' 2>/dev/null || echo n/a)" >> $RESULT_DIR/summary.txt
 
     stop_postgresql
+    # Save the PostgreSQL server log into this run's result dir before it gets wiped.
+    cp $LOG_DIR/*.log $RESULT_DIR/ 2>/dev/null
     rm -f $LOG_DIR/*.log 2>/dev/null
     rm -rf $DATA_DIR/* 2>/dev/null
     rm -f $RESULT_DIR/build.log $RESULT_DIR/config.log 2>/dev/null
@@ -248,13 +253,17 @@ if [[ -z "$DATA_DIR" ]] || [[ -z "$LOG_DIR" ]]; then
     usage
 fi
 
+# Make results dir absolute: build runs from bld/, so relative log paths would break
+mkdir -p "$RESULTS_DIR"
+RESULTS_DIR="$(cd "$RESULTS_DIR" && pwd)"
+
 # Get sudo password (from env or prompt)
 if ! sudo -n true 2>/dev/null && [[ -z "${PASSWD:-}" ]]; then
     read -s -p "Enter sudo password: " PASSWD
     echo ""
 fi
 
-print_header "TPC-C Benchmark - Varying Warehouse Count"
+print_header "YCSB Benchmark - Varying Client Threads"
 echo "Results: $RESULTS_DIR"
 
 TOTAL=0
@@ -264,12 +273,11 @@ for BUILD_MODE in "${BUILD_MODES[@]}"; do
     for exp in "${EXPERIMENTS[@]}"; do
         NAME=$(echo $exp | cut -d':' -f1)
         PARAMS=$(echo $exp | cut -d':' -f2)
-        WAREHOUSES=$(echo $PARAMS | cut -d',' -f1)
-        TERMINALS=$(echo $PARAMS | cut -d',' -f2)
-        DURATION=$(echo $PARAMS | cut -d',' -f3)
+        THREADS=$(echo $PARAMS | cut -d',' -f1)
+        DURATION=$(echo $PARAMS | cut -d',' -f2)
 
         TOTAL=$((TOTAL + 1))
-        if run_experiment "$NAME" $WAREHOUSES $TERMINALS $DURATION "$RESULTS_DIR/$BUILD_MODE/$NAME" $BUILD_MODE; then
+        if run_experiment "$NAME" $THREADS $DURATION "$RESULTS_DIR/$BUILD_MODE/$NAME" $BUILD_MODE; then
             SUCCESS=$((SUCCESS + 1))
         fi
         sleep 10

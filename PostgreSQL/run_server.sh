@@ -177,7 +177,10 @@ if command -v numactl >/dev/null 2>&1; then
         none)       NUMACTL="" ;;
     esac
 fi
-$NUMACTL $PG_BIN -D $DATA_DIR &
+# RCC builds: the asynchronous deadlock detector runs in the background (vanilla builds do not know this setting)
+PG_OPTS=""
+if "$BLD_PATH/bin/pg_config" --cflags 2>/dev/null | grep -qw -- '-DRCC'; then PG_OPTS="-c rcc_bg_detect=on"; fi
+$NUMACTL $PG_BIN -D $DATA_DIR $PG_OPTS &
 sleep 5
 
 # Cleanup build logs

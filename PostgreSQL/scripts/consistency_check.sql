@@ -1,6 +1,6 @@
 -- TPC-C Clause 3.3 consistency checks adapted for sysbench-tpcc schema.
 -- Assumes --tables=1 (table suffix "1": warehouse1, district1, orders1, ...).
--- Based on /home/vldb/benchmarksql/target/run/checks/checks.sql
+-- Based on BenchmarkSQL checks.sql (https://github.com/wieck/benchmarksql/blob/master/src/main/resources/checks/checks.sql)
 -- Column names are identical to BenchmarkSQL; only table names differ.
 
 -- ----------------------------------------------------------------------

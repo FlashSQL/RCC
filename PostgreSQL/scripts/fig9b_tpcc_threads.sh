@@ -1,7 +1,8 @@
 #!/bin/bash
 
-# TPC-C Benchmark - Varying Client Threads
-# Usage: export rcc_data_dir=/path/to/data rcc_log_dir=/path/to/log && ./run_tpcc_threads.sh [--results-dir <path>]
+# PostgreSQL TPC-C - Varying Client Threads (paper Fig. 9(b))
+# TPC-C 1 warehouse, NewOrder:Payment = 1:1. RCC at Repeatable Read vs. vanilla PostgreSQL at Read Committed / Repeatable Read.
+# Usage: export rcc_data_dir=/path/to/data rcc_log_dir=/path/to/log && ./fig9b_tpcc_threads.sh [--results-dir <path>]
 
 # ==========================================
 # PATH CONFIGURATION
@@ -34,7 +35,7 @@ set_numa_policy() {
 # ==========================================
 DATA_DIR="${rcc_data_dir:-}"
 LOG_DIR="${rcc_log_dir:-}"
-RESULTS_DIR=""
+RESULTS_DIR="$BASE_DIR/results/Fig9b"
 
 DEFAULT_WARMUP=50
 PAGE_SIZE=16
@@ -46,12 +47,11 @@ BUILD_MODES=("rcc_rr" "vanilla_rc" "vanilla_rr")
 # Format: "name:warehouses,terminals,duration"
 EXPERIMENTS=(
     "s1_t1:1,1,50"
-    "s1_t8:1,8,50"
     "s1_t16:1,16,50"
     "s1_t32:1,32,50"
     "s1_t64:1,64,50"
+    "s1_t96:1,96,50"
     "s1_t128:1,128,50"
-    # "s1_t256:1,256,50"
 )
 
 # ==========================================
@@ -80,7 +80,7 @@ usage() {
     echo "  rcc_log_dir           PostgreSQL log directory"
     echo ""
     echo "Options:"
-    echo "  --results-dir <path>  Results directory"
+    echo "  --results-dir <path>  Results directory (default: results/Fig9b)"
     echo "  -h, --help            Show this help"
     exit 0
 }
@@ -139,7 +139,10 @@ start_postgresql() {
     sed -i "s|log_directory = '.*'|log_directory = '$LOG_DIR'|" $DATA_DIR/postgresql.conf
 
     print_info "Starting PostgreSQL..."
-    $NUMACTL $PG_BIN -D $DATA_DIR &
+    # RCC: the asynchronous deadlock detector runs in the background (vanilla builds do not know this setting)
+    local PG_OPTS=""
+    if [[ "$BUILD_MODE" == rcc* ]]; then PG_OPTS="-c rcc_bg_detect=on"; fi
+    $NUMACTL $PG_BIN -D $DATA_DIR $PG_OPTS &
     sleep 5
 
     $PSQL_BIN -U postgres -c "CREATE DATABASE tpcc OWNER postgres;" 2>/dev/null
@@ -192,11 +195,7 @@ run_experiment() {
 
     cd $SYSBENCH_HOME
 
-    # Warmup as a SEPARATE run (discarded).  sysbench's --warmup-time only excludes
-    # warmup from its own tps, but our in-server pgstat breakdown counters
-    # (committed/aborted_total_time, txwait, etc.) accumulate from server start and
-    # would otherwise include the warmup transactions.  Running warmup separately
-    # gives a clean boundary at which to reset those counters.
+    # Warmup as a separate run (discarded): the measured run starts on a warmed-up server.
     print_info "Warming up... (${DEFAULT_WARMUP}s, trx_level=$TRX, not measured)"
     $NUMACTL ./tpcc.lua --pgsql-user=postgres --pgsql-db=tpcc \
         --time=$DEFAULT_WARMUP \
@@ -204,7 +203,7 @@ run_experiment() {
         --tables=1 --scale=$WAREHOUSES --use_fk=0 --trx_level=$TRX \
         --partition=yes --db-driver=pgsql run > $RESULT_DIR/warmup.log 2>&1
 
-    # Reset PG-side stats so the breakdown counters cover ONLY the measured window.
+    # Reset PG-side stats so they cover only the measured run.
     $PSQL_BIN -U postgres -d tpcc -c "SELECT pg_stat_reset();" > /dev/null 2>&1
 
     # Truncate server logs so postgresql.log covers ONLY the measured window
@@ -225,25 +224,7 @@ run_experiment() {
     echo "Warehouses: $WAREHOUSES" >> $RESULT_DIR/summary.txt
     echo "Terminals: $TERMINALS" >> $RESULT_DIR/summary.txt
     echo "Duration: ${DURATION}s" >> $RESULT_DIR/summary.txt
-
-    # Breakdown: capture per-db wait/total-time counters BEFORE stopping (pg_stat is in-memory)
-    $PSQL_BIN -U postgres -d tpcc -At -F'=' > $RESULT_DIR/breakdown.txt 2>/dev/null <<'SQL'
-SELECT 'committed_total_ms', pg_stat_get_db_committed_total_time(d.oid) FROM pg_database d WHERE datname='tpcc'
-UNION ALL SELECT 'aborted_total_ms', pg_stat_get_db_aborted_total_time(d.oid) FROM pg_database d WHERE datname='tpcc'
-UNION ALL SELECT 'lock_wait_ms',   pg_stat_get_db_tuplock_wait_time(d.oid)      FROM pg_database d WHERE datname='tpcc'
-UNION ALL SELECT 'spin_wait_ms',   pg_stat_get_db_tuple_update_wait_time(d.oid) FROM pg_database d WHERE datname='tpcc'
-UNION ALL SELECT 'commit_wait_ms', pg_stat_get_db_txwait_time(d.oid)            FROM pg_database d WHERE datname='tpcc'
-UNION ALL SELECT 'xact_commit',   xact_commit::float8   FROM pg_stat_database WHERE datname='tpcc'
-UNION ALL SELECT 'xact_rollback', xact_rollback::float8 FROM pg_stat_database WHERE datname='tpcc';
-SQL
-
-    # HOT vs non-HOT update counts (scenario-2 trigger frequency) + relid->name
-    # map for decoding [RCC_fanout] log lines.  pg_stat is in-memory: must run
-    # before the server stops.
-    $PSQL_BIN -U postgres -d tpcc -c "SELECT relname, n_tup_upd, n_tup_hot_upd, n_tup_upd - n_tup_hot_upd AS non_hot FROM pg_stat_user_tables ORDER BY n_tup_upd DESC;" \
-        > $RESULT_DIR/hot_stats.txt 2>&1
-    $PSQL_BIN -U postgres -d tpcc -c "SELECT c.oid, c.relname, c.relkind FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' ORDER BY c.oid;" \
-        > $RESULT_DIR/relmap.txt 2>&1
+    echo "rcc_bg_detect: $($PSQL_BIN -U postgres -At -c 'SHOW rcc_bg_detect' 2>/dev/null || echo n/a)" >> $RESULT_DIR/summary.txt
 
     # TPC-C Clause 3.3 consistency check on the final data, before the server stops.
     print_info "Running consistency check..."
@@ -314,10 +295,3 @@ done
 
 print_header "SUMMARY"
 echo "Total: $TOTAL, Success: $SUCCESS, Failed: $((TOTAL - SUCCESS))"
-
-# Latency breakdown (Execution / Lock wait / Commit wait / Wasted) per experiment
-for BUILD_MODE in "${BUILD_MODES[@]}"; do
-    print_header "LATENCY BREAKDOWN ($BUILD_MODE)"
-    python3 "$SCRIPT_DIR/breakdown_report.py" "$RESULTS_DIR/$BUILD_MODE" \
-        | tee "$RESULTS_DIR/$BUILD_MODE/breakdown_report.txt"
-done

@@ -230,7 +230,7 @@ search:
 			else{
 #ifdef RCC
 			if(CheckAbortedDependencies()){
-				/* 의존 트랜잭션이 abort 되었으므로 직렬화 실패 */
+				/* Serialization failure: a transaction we depend on aborted */
 					/* be tidy */
 				if (stack)
 					_bt_freestack(stack);
@@ -618,7 +618,7 @@ _bt_check_unique(Relation rel, BTInsertState insertstate, Relation heapRel,
 						SnapshotDirty.xmin : SnapshotDirty.xmax;
 #ifdef RCC
 					if(CheckAbortedDependencies()){
-						/* 의존 트랜잭션이 abort 되었으므로 직렬화 실패 */
+						/* Serialization failure: a transaction we depend on aborted */
 							/* be tidy */
 						if (nbuf != InvalidBuffer)
 							_bt_relbuf(rel, nbuf);
@@ -710,7 +710,7 @@ _bt_check_unique(Relation rel, BTInsertState insertstate, Relation heapRel,
 						key_desc = BuildIndexValueDescription(rel, values,
 															  isnull);
 #ifdef RCC					
-					if(CheckAbortedDependencies()){ // 내가 Depending한 TRX이 abort됐음에도 Index Insert를 진행하는 경우를 체크히가 위함.
+					if(CheckAbortedDependencies()){ // Catch an index insert that proceeds after a transaction we depend on aborted.
 						if (nbuf != InvalidBuffer)
 							_bt_relbuf(rel, nbuf);
 						ereport(ERROR,

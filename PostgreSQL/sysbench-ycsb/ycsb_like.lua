@@ -1,8 +1,8 @@
--- YCSB batchtx 근사: 트랜잭션당 N개 연산, 키는 전부 서로 다름(batchtx.distinct=true 와 동일),
--- 읽기는 PK 점 조회만, 쓰기는 non-index UPDATE. 범위 스캔 없음.
--- 읽기 개수 = --point-selects, 쓰기 개수 = --non-index-updates (개수는 고정),
--- 연산 순서는 매 트랜잭션 무작위로 섞는다 (YCSB CoreWorkload 와 동일).
--- [PG] /root/snu/ShadowTX8/sysbench_ycsb/ycsb_like.lua 의 PostgreSQL 판. 다른 곳은 [PG] 표시.
+-- YCSB batchtx approximation: N operations per transaction, all keys distinct (as batchtx.distinct=true);
+-- reads are PK point lookups only, writes are non-index UPDATEs. No range scans.
+-- Read count = --point-selects, write count = --non-index-updates (both fixed);
+-- operation order is shuffled in every transaction (as in YCSB CoreWorkload).
+-- PostgreSQL version of the MySQL sysbench YCSB script; [PG] marks the PostgreSQL-specific parts.
 require("oltp_common")
 
 -- sysbench skips thread_done() when thread_run() raises a fatal error. Close
@@ -27,54 +27,54 @@ ffi.cdef[[
   int gettimeofday(struct timeval *tv, void *tz);
 ]]
 
--- 어보트 처리 방식 두 가지 (배타적):
---   SB_ABUF=0 (기본) : [BACKOFF] 0~SB_BACKOFF_US us 자고 그 자리에서 같은 키로 재시도
---   SB_ABUF=1        : [ABUF] DBx1000 abort buffer. 아래 event() 참조
+-- Two abort-handling modes (mutually exclusive):
+--   SB_ABUF=0 (default): [BACKOFF] sleep 0~SB_BACKOFF_US us, then retry in place with the same keys
+--   SB_ABUF=1          : [ABUF] DBx1000 abort buffer; see event() below
 local BACKOFF_US = tonumber(os.getenv("SB_BACKOFF_US") or "5000")
 local ABUF = (os.getenv("SB_ABUF") or "0") ~= "0"
 local EXPBO = (os.getenv("SB_EXPBO") or "0") ~= "0"
 local PENALTY_US = tonumber(os.getenv("SB_PENALTY_US") or "5000")
--- 버퍼 상한. 0 이면 무제한(기본). 양수면 DBx1000 config-std.h:85 ABORT_BUFFER_SIZE 처럼
--- 버퍼가 차면 새 트랜잭션을 만들지 않고 가장 빨리 익는 항목까지 잠근다(배압, thread.cpp:105).
+-- Buffer cap. 0 = unbounded (default). If positive, as with DBx1000 ABORT_BUFFER_SIZE (config-std.h:85),
+-- a full buffer admits no new transaction and sleeps until the earliest entry is ready (backpressure, thread.cpp:105).
 local ABUF_SIZE = tonumber(os.getenv("SB_ABUF_SIZE") or "0")
--- [SORT] SB_SORT=1 이면 트랜잭션의 16개 키를 오름차순으로 접근한다. 키가 트랜잭션 안에서
--- 서로 다르므로(distinct_keys) 2PL의 레코드 락 획득 순서가 생긴다.
--- retire/dirty borrowing에서는 RW/WR/WW 의존이 별도로 생겨 정렬해도 사이클이 가능하다.
--- 주의: 원본 YCSB/sysbench 는 정렬하지 않는다. 이건 변형판이다.
+-- [SORT] With SB_SORT=1, the transaction's 16 keys are accessed in ascending order. Since keys are
+-- distinct within a transaction (distinct_keys), this fixes the 2PL record-lock acquisition order.
+-- Under retire/dirty borrowing, RW/WR/WW dependencies form independently, so cycles remain possible even when sorted.
+-- Note: the original YCSB/sysbench does not sort; this is a variant.
 local SORTKEY = (os.getenv("SB_SORT") or "0") ~= "0"
 local DUMPATT = tonumber(os.getenv("SB_DUMPATT") or "0")
 local IGNORE = {[1213]=true,[1205]=true,[1020]=true,[1180]=true,[1614]=true}
 
--- 현재 트랜잭션의 상태. sysbench 는 스레드마다 Lua 상태가 따로라 이 지역변수들이
--- 그대로 스레드 지역이다.
+-- Current transaction state. sysbench keeps a separate Lua state per thread, so these locals
+-- are thread-local as is.
 local seen = {}
 local keys = {}
-local isw = {}          -- 각 연산이 쓰기인가
-local nops = 0          -- 현재 트랜잭션의 연산 수
+local isw = {}          -- whether each operation is a write
+local nops = 0          -- number of operations in the current transaction
 local tnum = 1
-local pending = false   -- [SAMEKEY] 직전 시도가 실패해 재시도 중인가
+local pending = false   -- [SAMEKEY] previous attempt failed and is being retried
 
--- [ABUF] 워커 스레드별 abort buffer.
+-- [ABUF] Per-worker-thread abort buffer.
 local buf = {}
 local maxbuf = 0
--- [ABUFDIAG] 시도를 신규/버퍼복귀로 나눠 센다. 구현이 이론대로 도는지 확인용.
-local from_buf = false      -- 지금 실행 중인 시도가 버퍼에서 꺼낸 것인가
-local att = 0               -- 지금 트랜잭션의 누적 시도 횟수
-local n_fresh, n_buf = 0, 0       -- 시작한 시도 수
-local a_fresh, a_buf = 0, 0       -- 그중 어보트한 수
+-- [ABUFDIAG] Count attempts as fresh vs. from-buffer, to check the implementation behaves as modeled.
+local from_buf = false      -- current attempt was taken from the buffer
+local att = 0               -- cumulative attempt count of the current transaction
+local n_fresh, n_buf = 0, 0       -- attempts started
+local a_fresh, a_buf = 0, 0       -- of those, attempts aborted
 local commits, att_sum, att_max = 0, 0, 0
-local nsleep = 0            -- 버퍼가 꽉 차 배압으로 잠든 횟수
--- [TIME] temp.out 3~4번째 줄(execution / wasted time)용. 시도 하나가 begin 직전부터
--- 커밋 또는 어보트로 끝날 때까지의 벽시계 시간을 커밋/어보트로 나눠 합산한다.
--- 버퍼에서 익기를 기다린 시간, 백오프 usleep 은 포함하지 않는다 (TPCC 의 TOTAL_COMMIT / TOTAL_WASTE,
--- YCSB 의 [COMMITTED] / [WASTED] 와 같은 잣대).
+local nsleep = 0            -- times slept on backpressure because the buffer was full
+-- [TIME] Execution / wasted time. Wall-clock time of each attempt, from just before begin
+-- until it commits or aborts, summed separately for committed and aborted attempts.
+-- Excludes time waiting in the buffer to become ready and backoff usleep (same metric as TPCC TOTAL_COMMIT / TOTAL_WASTE
+-- and YCSB [COMMITTED] / [WASTED]).
 local t_att = 0
 local exec_us, wasted_us, n_abort = 0, 0, 0
--- [HIST] 커밋까지 걸린 시도 횟수 분포 + 고재시도 트랜잭션의 최소키(= 가장 뜨거운 키)
+-- [HIST] Distribution of attempts needed to commit + min key of high-retry transactions (= hottest key)
 local BUCK = {1,2,4,8,16,32,64,128,256,512,1024}
 local hist = {}
 for i = 1, #BUCK + 1 do hist[i] = 0 end
-local hot_lo, hot_n = 0, 0   -- att>=32 인 것들의 최소키 평균용
+local hot_lo, hot_n = 0, 0   -- for averaging the min key of transactions with att>=32
 local all_lo, all_n = 0, 0
 
 local tvv = ffi.new("struct timeval")
@@ -83,14 +83,14 @@ local function now_us()
    return tonumber(tvv.tv_sec) * 1000000 + tonumber(tvv.tv_usec)
 end
 
--- 드라이버가 자체 무시하지 않는 에러(1180 등)를 재시도 대상으로 강등만 한다.
--- 실제 어보트 처리는 before_restart_event 에서 한다 — sql_error_ignorable 은
--- --mysql-ignore-errors 기본값(1213,1020,1205)에 걸리는 에러에 대해서는
--- 호출되지 않기 때문이다 (sysbench.sql.lua:254 의 or 단축평가).
--- [PG] pgsql 드라이버는 sql_errno 가 항상 0 이고, SQLSTATE 40001/40P01/23505 만 스스로
--- 재시도 대상으로 올린다 (drv_pgsql.c). RCC 는 드물게 elog(ERROR)(XX000, 예: "unexpected
--- table_tuple_lock status")로도 트랜잭션을 끝내므로 이것까지 재시도로 강등한다. 워커가 죽지
--- 않게 하되 숨기지 않도록 SQLSTATE 별 개수를 thread_done() 의 [PGERR] 로 남긴다.
+-- Only downgrades errors the driver does not ignore by itself (1180, etc.) to retryable.
+-- Actual abort handling is in before_restart_event, because sql_error_ignorable is
+-- not called for errors matched by the --mysql-ignore-errors default (1213,1020,1205)
+-- (short-circuit `or` in sysbench.sql.lua:254).
+-- [PG] The pgsql driver always reports sql_errno 0 and itself marks only SQLSTATE 40001/40P01/23505
+-- as retryable (drv_pgsql.c). RCC occasionally ends a transaction with elog(ERROR) (XX000, e.g. "unexpected
+-- table_tuple_lock status"), so these are downgraded to retryable as well. To keep workers alive
+-- without hiding the errors, per-SQLSTATE counts are reported as [PGERR] in thread_done().
 local PG_IGNORE = {["XX000"]=true, ["25P02"]=true}
 local pgerr = {}
 function sysbench.hooks.sql_error_ignorable(e)
@@ -102,21 +102,21 @@ function sysbench.hooks.sql_error_ignorable(e)
    return false
 end
 
--- 모든 재시도가 여기를 지난다 (sysbench.lua:36). 드라이버가 무시한 1213 도 포함.
+-- Every retry passes through here (sysbench.lua:36), including 1213 ignored by the driver.
 function sysbench.hooks.before_restart_event(e)
-   -- 1180(COMMIT 실패), 1205 등은 전체 트랜잭션을 끝내지 않을 수 있다.
-   -- 다음 BEGIN 전에 SSN descriptor/lock을 정리한다. 자동 rollback된 경우도 안전하다.
+   -- 1180 (COMMIT failure), 1205, etc. may not end the whole transaction.
+   -- Clean up SSN descriptor/locks before the next BEGIN; safe even after an automatic rollback.
    con:query("ROLLBACK")
-   -- [TIME] 어보트한 시도의 시간
+   -- [TIME] time of the aborted attempt
    wasted_us = wasted_us + (now_us() - t_att)
    n_abort = n_abort + 1
    if ABUF then
-      -- [ABUF] 실패한 트랜잭션을 키 그대로 큐에 넣는다. pending 을 풀어 다음
-      -- event() 가 익은 항목이나 새 트랜잭션을 고르게 한다 (워커는 놀지 않는다).
+      -- [ABUF] Enqueue the failed transaction with its keys unchanged. Clearing pending lets the next
+      -- event() pick a ready entry or a new transaction (the worker never idles).
       local k, w = {}, {}
       for i = 1, nops do k[i] = keys[i]; w[i] = isw[i] end
-      -- [EXPBO] SB_EXPBO=1 이면 재시도 횟수에 따라 penalty 를 2배씩(상한 64배) 늘린다.
-      -- 굶고 있는 트랜잭션이 같은 속도로 큐를 두드리는 것을 막는다.
+      -- [EXPBO] With SB_EXPBO=1, the penalty doubles with each retry (capped at 64x).
+      -- Keeps starving transactions from hammering the queue at the same rate.
       local pen = PENALTY_US
       if EXPBO then
          local mul = 1
@@ -134,23 +134,23 @@ function sysbench.hooks.before_restart_event(e)
    return true
 end
 
--- 한 번의 stdio 쓰기로 줄과 개행을 함께 출력한다. print()는 둘을 따로 써서
--- 여러 thread_done()의 통계가 같은 줄에 붙고 ^[TIME] 집계에서 누락될 수 있다.
+-- Write the line and its newline in one stdio write. print() writes them separately, so
+-- stats from several thread_done() calls can share a line and be missed by ^[TIME] aggregation.
 local function emit_line(line)
    io.write(line .. "\n")
 end
 
--- [ABUF] 스레드 종료 시 버퍼 최대 길이를 남긴다. 이 값이 계속 커지면 어보트가
--- 커밋보다 빨리 쌓였다는 뜻이라 그 판의 수치는 신뢰할 수 없다.
+-- [ABUF] Report the maximum buffer length at thread exit. If it keeps growing, aborts
+-- accumulate faster than commits and the run's numbers are not reliable.
 function thread_done()
-   -- [TIME] 스레드별 합계. run-ALL-s.sh 가 전 스레드를 더해 temp.out 3~6번째 줄을 만든다.
+   -- [TIME] Per-thread totals; summed across all threads to obtain execution / wasted time.
    emit_line(string.format("[TIME] commits=%d aborts=%d exec_us=%d wasted_us=%d",
       commits, n_abort, exec_us, wasted_us))
-   -- [PG] 드라이버가 올리지 않아 강등한 에러 (위 sql_error_ignorable)
+   -- [PG] Errors downgraded because the driver does not mark them retryable (see sql_error_ignorable above)
    for st, n in pairs(pgerr) do emit_line(string.format("[PGERR] sqlstate=%s n=%d", st, n)) end
    if ABUF then
-      emit_line(string.format("[ABUF] maxbuf=%d leftover=%d | 신규 %d 시도 %d 어보트(%.1f%%)"
-         .. " | 버퍼복귀 %d 시도 %d 어보트(%.1f%%) | 커밋 %d 커밋당시도 %.2f max %d 배압 %d",
+      emit_line(string.format("[ABUF] maxbuf=%d leftover=%d | fresh %d attempts %d aborts(%.1f%%)"
+         .. " | from-buffer %d attempts %d aborts(%.1f%%) | commits %d attempts-per-commit %.2f max %d backpressure %d",
          maxbuf, #buf, n_fresh, a_fresh, a_fresh/math.max(n_fresh,1)*100,
          n_buf, a_buf, a_buf/math.max(n_buf,1)*100,
          commits, att_sum/math.max(commits,1), att_max, nsleep))
@@ -158,7 +158,7 @@ function thread_done()
       for i = 1, #BUCK do h[#h+1] = string.format("<=%d:%d", BUCK[i], hist[i]) end
       h[#h+1] = string.format(">%d:%d", BUCK[#BUCK], hist[#BUCK+1])
       emit_line("[HIST] " .. table.concat(h, " "))
-      emit_line(string.format("[HOTKEY] 전체 평균 최소키 %.0f (n=%d) | att>=32 평균 최소키 %.0f (n=%d)",
+      emit_line(string.format("[HOTKEY] all avg-min-key %.0f (n=%d) | att>=32 avg-min-key %.0f (n=%d)",
          all_lo/math.max(all_n,1), all_n, hot_lo/math.max(hot_n,1), hot_n))
    end
    common_thread_done()
@@ -173,20 +173,20 @@ function prepare_statements()
    prepare_non_index_updates()
 end
 
--- oltp_common 의 c_value_template 은 local 이라 밖에서 못 쓴다. 동일한 값을 다시 정의한다
--- (10 groups, 119 characters — oltp_common.lua:139 과 같음).
+-- oltp_common's c_value_template is local and not accessible here, so the same value is redefined
+-- (10 groups, 119 characters; same as in oltp_common.lua).
 local c_tmpl = "###########-###########-###########-" ..
    "###########-###########-###########-" ..
    "###########-###########-###########-" ..
    "###########"
 
--- 트랜잭션 하나에 쓸 서로 다른 키 n 개.  중복이 나오면 다시 뽑는다.
+-- n distinct keys for one transaction. Duplicates are redrawn.
 local function distinct_keys(n)
    for k in pairs(seen) do seen[k] = nil end
    local got = 0
-   -- distinct 를 무제한 재추첨으로 보장한다. 예전에는 n*1000 번 시도 후 포기하고
-   -- keys 를 1,2,...,n 으로 채웠는데, 하필 zipf 에서 가장 뜨거운 키들이라
-   -- 치우친 판에서 인위적 핫스팟을 만든다. (table_size >= n 이어야 종료한다.)
+   -- Enforce distinctness by redrawing without a retry cap. A capped fallback that fills
+   -- keys with 1,2,...,n would select exactly the hottest zipfian keys and create an
+   -- artificial hotspot under skew. (Terminates only if table_size >= n.)
    while got < n do
       local id = sysbench.rand.default(1, sysbench.opt.table_size)
       if not seen[id] then
@@ -197,18 +197,18 @@ local function distinct_keys(n)
    end
 end
 
--- 새 트랜잭션 하나를 뽑아 keys/isw/tnum 에 싣는다.
+-- Draw one new transaction into keys/isw/tnum.
 local function new_tx(nr, n)
    distinct_keys(n)
-   -- get_table_num() 은 oltp_common 의 local 이라 밖에서 못 부른다. 직접 뽑는다.
+   -- get_table_num() is local to oltp_common and not callable here; draw the table directly.
    tnum = sysbench.rand.uniform(1, sysbench.opt.tables)
-   -- 읽기 nr 개 / 쓰기 nw 개를 고정해두고 순서만 섞는다 (Fisher-Yates).
+   -- Fix nr reads / nw writes and shuffle only their order (Fisher-Yates).
    for i = 1, n do isw[i] = (i > nr) end
    for i = n, 2, -1 do
       local j = math.random(i)
       isw[i], isw[j] = isw[j], isw[i]
    end
-   -- [SORT] 접근 순서만 키 오름차순으로 고정한다. 어느 자리가 쓰기인지는 그대로 둔다.
+   -- [SORT] Only the access order is fixed to ascending keys; which positions are writes is unchanged.
    if SORTKEY then table.sort(keys) end
 end
 
@@ -217,14 +217,14 @@ function event()
    local n = nr + sysbench.opt.non_index_updates
    nops = n
 
-   -- [SAMEKEY] 어보트 시 sysbench 는 event() 를 통째로 다시 부른다
-   -- (sysbench.lua:33 의 repeat...until success). pending 이 서 있으면 키·연산순서·
-   -- 테이블을 다시 뽑지 않고 그대로 재사용해서 "같은 키 재시도"를 만든다
-   -- (DBx1000 Bamboo/RR thread.cpp 와 동일 모델).
+   -- [SAMEKEY] On abort, sysbench re-invokes event() from scratch
+   -- (repeat...until success in sysbench.lua:33). While pending is set, keys, operation order and
+   -- table are reused instead of redrawn, giving a "same-key retry"
+   -- (same model as DBx1000 Bamboo/RR thread.cpp).
    if not pending then
-      -- [ABUF] 버퍼 전체를 훑어 ready 가 지난 첫 항목을 꺼낸다. head 만 보면
-      -- 지연이 균등난수라 아직 안 익은 head 하나가 뒤의 익은 항목들을 전부 막는다
-      -- (CoreWorkload.java:852 와 같은 이유). 나머지는 순서를 유지한 채 뒤로 회전.
+      -- [ABUF] Scan the whole buffer and take the first entry whose ready time has passed. With only the head
+      -- checked and uniformly random delays, one unready head would block every ready entry behind it
+      -- (same reason as CoreWorkload.java:852). The rest rotate to the back, order preserved.
       while ABUF and #buf > 0 do
          local t0 = now_us()
          local picked, min_ready = nil, nil
@@ -245,8 +245,8 @@ function event()
             pending = true
             break
          end
-         -- 익은 게 없다. 버퍼에 여유가 있으면 새 트랜잭션을 만들고(아래로 빠짐),
-         -- 꽉 찼으면 가장 빨리 익는 시각까지 자고 다시 훑는다 (배압).
+         -- Nothing is ready. If the buffer has room, create a new transaction (fall through below);
+         -- if it is full, sleep until the earliest ready time and rescan (backpressure).
          if ABUF_SIZE == 0 or #buf < ABUF_SIZE then break end
          nsleep = nsleep + 1
          ffi.C.usleep(math.max(min_ready - t0, 1))
@@ -277,8 +277,8 @@ function event()
 
    if not sysbench.opt.skip_trx then commit() end
    commits = commits + 1
-   exec_us = exec_us + (now_us() - t_att)   -- [TIME] 커밋한 시도의 시간
-   -- [DUMPATT] SB_DUMPATT=N: 시도 N회 이상 걸린 트랜잭션의 키 집합을 커밋 시 출력
+   exec_us = exec_us + (now_us() - t_att)   -- [TIME] time of the committed attempt
+   -- [DUMPATT] SB_DUMPATT=N: on commit, print the key set of transactions that took N or more attempts
    if DUMPATT > 0 and att >= DUMPATT then
       local ks = {}
       for i = 1, n do ks[i] = (isw[i] and 'W' or 'R') .. keys[i] end
@@ -294,6 +294,6 @@ function event()
    for i = 2, n do if keys[i] < lo then lo = keys[i] end end
    all_lo = all_lo + lo; all_n = all_n + 1
    if att >= 32 then hot_lo = hot_lo + lo; hot_n = hot_n + 1 end
-   pending = false            -- 성공했으니 다음 이벤트는 새 키를 뽑는다
+   pending = false            -- committed, so the next event draws new keys
    check_reconnect()
 end
