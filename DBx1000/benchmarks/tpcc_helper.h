@@ -1,0 +1,37 @@
+#pragma once
+#include "global.h"
+#include "helper.h"
+
+uint64_t distKey(uint64_t d_id, uint64_t d_w_id);
+uint64_t custKey(uint64_t c_id, uint64_t c_d_id, uint64_t c_w_id);
+// non-primary key
+uint64_t custNPKey(char * c_last, uint64_t c_d_id, uint64_t c_w_id);
+uint64_t stockKey(uint64_t s_i_id, uint64_t s_w_id);
+
+// Index keys for ORDER / ORDER_CUST / NEWORDER / ORDERLINE.
+// o_id is packed in reverse as (g_max_orderline - o_id), so an ascending scan
+// returns the most recent orders (largest o_id) first.
+uint64_t orderKey(uint64_t o_id, uint64_t o_d_id, uint64_t o_w_id);
+uint64_t orderCustKey(int64_t o_id, uint64_t o_c_id, uint64_t o_d_id,
+                      uint64_t o_w_id);
+uint64_t neworderKey(uint64_t o_id, uint64_t o_d_id, uint64_t o_w_id);
+uint64_t orderlineKey(uint64_t ol_number, uint64_t ol_o_id, uint64_t ol_d_id,
+                      uint64_t ol_w_id);
+
+uint64_t Lastname(uint64_t num, char* name);
+
+extern drand48_data ** tpcc_buffer;
+extern uint64_t C_255, C_1023, C_8191;
+void InitNURand(uint64_t thd_id);
+
+// return random data from [0, max-1]
+uint64_t RAND(uint64_t max, uint64_t thd_id);
+// random number from [x, y]
+uint64_t URand(uint64_t x, uint64_t y, uint64_t thd_id);
+// non-uniform random number
+uint64_t NURand(uint64_t A, uint64_t x, uint64_t y, uint64_t thd_id);
+// random string with random length beteen min and max.
+uint64_t MakeAlphaString(int min, int max, char * str, uint64_t thd_id);
+uint64_t MakeNumberString(int min, int max, char* str, uint64_t thd_id);
+
+uint64_t wh_to_part(uint64_t wid);
