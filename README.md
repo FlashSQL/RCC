@@ -36,15 +36,12 @@ Each system's README covers its setup, build, experiments and results.
 
 ```bash
 cd /sys/devices/system/cpu
-echo performance | sudo tee cpu[0-9]*/cpufreq/scaling_governor > /dev/null   # fixed maximum clock (boost stays on)
-echo 1 | sudo tee cpu[0-9]*/cpuidle/state[2-9]/disable > /dev/null           # no C-states deeper than C1
+echo performance | sudo tee cpu[0-9]*/cpufreq/scaling_governor > /dev/null
+echo 1 | sudo tee cpu[0-9]*/cpuidle/state[2-9]/disable > /dev/null
 
-# Check
-cat cpu*/cpufreq/scaling_governor | sort | uniq -c                            # every CPU: performance
-grep . cpu0/cpuidle/state*/name cpu0/cpuidle/state*/disable                   # C2 and deeper: disable = 1
+cat cpu*/cpufreq/scaling_governor | sort | uniq -c
+grep . cpu0/cpuidle/state*/name cpu0/cpuidle/state*/disable
 ```
-
-`CPU_FREQ` of DBx1000 is the TSC rate (2.25 GHz) and does not change with these settings.
 
 ## Reproducing the Paper's Figures
 
