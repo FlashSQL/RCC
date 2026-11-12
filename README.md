@@ -42,10 +42,6 @@ echo 1 | sudo tee cpu[0-9]*/cpuidle/state[2-9]/disable > /dev/null           # n
 # Check
 cat cpu*/cpufreq/scaling_governor | sort | uniq -c                            # every CPU: performance
 grep . cpu0/cpuidle/state*/name cpu0/cpuidle/state*/disable                   # C2 and deeper: disable = 1
-
-# Revert
-echo schedutil | sudo tee cpu[0-9]*/cpufreq/scaling_governor > /dev/null
-echo 0 | sudo tee cpu[0-9]*/cpuidle/state[2-9]/disable > /dev/null
 ```
 
 `CPU_FREQ` of DBx1000 is the TSC rate (2.25 GHz) and does not change with these settings.
