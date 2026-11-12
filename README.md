@@ -30,6 +30,26 @@ Each system's README covers its setup, build, experiments and results.
 - 256GB DRAM
 - Ubuntu 22.04
 
+### CPU Settings
+
+> **Important:** Set the CPU to maximum performance before running any experiment. By default the `schedutil` governor lowers the clock under light load, and idle cores enter deep C-states (C2 on the EPYC 9754: 800 µs exit latency). Both slow down lock handoffs and make throughput vary between runs. These settings reset on reboot, so apply them again after every boot.
+
+```bash
+cd /sys/devices/system/cpu
+echo performance | sudo tee cpu[0-9]*/cpufreq/scaling_governor > /dev/null   # fixed maximum clock (boost stays on)
+echo 1 | sudo tee cpu[0-9]*/cpuidle/state[2-9]/disable > /dev/null           # no C-states deeper than C1
+
+# Check
+cat cpu*/cpufreq/scaling_governor | sort | uniq -c                            # every CPU: performance
+grep . cpu0/cpuidle/state*/name cpu0/cpuidle/state*/disable                   # C2 and deeper: disable = 1
+
+# Revert
+echo schedutil | sudo tee cpu[0-9]*/cpufreq/scaling_governor > /dev/null
+echo 0 | sudo tee cpu[0-9]*/cpuidle/state[2-9]/disable > /dev/null
+```
+
+`CPU_FREQ` of DBx1000 is the TSC rate (2.25 GHz) and does not change with these settings.
+
 ## Reproducing the Paper's Figures
 
 | Figure | Benchmark | System |

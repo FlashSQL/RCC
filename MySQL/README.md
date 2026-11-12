@@ -15,23 +15,126 @@ default for this source tree; `WITH_REBIRTH=ON` enables Rebirth.
 | Rebirth | `-DWITH_REBIRTH=ON` | `Bamboo/innobase/` | `Bamboo/mysql-8.4.5-build-RR/` |
 | Vanilla MySQL | Unmodified upstream source | None | `Vanilla/mysql-8.4.5-build/` |
 
+## First checkout: build, load, and run Fig. 4/5/6
+
+For a fresh checkout on **Ubuntu 22.04**, the block below installs dependencies,
+builds all five engines and both benchmark clients, loads both datasets, then
+runs Fig. 4, 5 and 6 with **no workload warmup and 5 measured seconds per case**.
+Run it in Bash as root; for a regular user, prefix the two `apt-get` commands
+with `sudo`. Change the `cd` path if the checkout is not at `~/RCC`.
+
+The default `my.cnf` uses a **32 GiB buffer pool**, so allow additional RAM for
+the server and clients. The five builds, dataset snapshots and temporary copies
+also need free disk space. `BUILD_JOBS="$(nproc)"` uses one build job per available
+CPU (128 jobs when `nproc` reports 128); lower it if compilation runs out of
+memory. Downloads require network access.
+
+```bash
+(
+  set -euo pipefail
+  cd "$HOME/RCC/MySQL"
+
+  # 1. Install build dependencies and NUMA tools (root, or use sudo).
+  apt-get update
+  apt-get install -y \
+    build-essential cmake bison git wget ca-certificates python3 perl \
+    autoconf automake libtool pkg-config \
+    libssl-dev libncurses-dev libaio-dev libnuma-dev libudev-dev \
+    libtirpc-dev rpcsvc-proto zlib1g-dev numactl
+
+  # Use Ubuntu's GCC/G++ (GCC >= 10), overriding the scripts' gcc-10 default.
+  export CC=gcc CXX=g++ BUILD_JOBS="$(nproc)"
+
+  # 2. Build and install all engines sequentially. Vanilla supplies client tools.
+  bash run_server.sh --vanilla --build-only
+  bash run_server.sh --rcc --build-only
+  bash run_server.sh --rcc-c --build-only
+  bash run_server.sh --bamboo --build-only
+  bash run_server.sh --rebirth --build-only
+
+  # 3. Build the Zipfian-capable sysbench revision against this Vanilla install.
+  export MYSQL_PREFIX="$PWD/Vanilla/mysql-8.4.5-install"
+  export LD_LIBRARY_PATH="$MYSQL_PREFIX/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+  mkdir -p tools
+  if [ ! -d tools/sysbench ]; then
+    git clone https://github.com/akopytov/sysbench.git tools/sysbench
+  fi
+  git -C tools/sysbench checkout 3ceba0b1e115f8c50d1d045a4574d8ed643bd497
+  (
+    cd tools/sysbench
+    ./autogen.sh
+    ./configure --with-mysql-includes="$MYSQL_PREFIX/include" \
+      --with-mysql-libs="$MYSQL_PREFIX/lib" --without-pgsql
+    make -j"$BUILD_JOBS"
+    ./src/sysbench --version
+  )
+
+  # 4. Build the TPC-C loader and measurement client.
+  bash scripts/build_clients.sh
+
+  # 5. Load reusable Vanilla snapshots; matching existing snapshots are reused.
+  bash scripts/load_sysbench_data.sh   # 10M rows, 128 partitions; Fig. 4 and 6
+  bash scripts/load_tpcc_data.sh       # 1 warehouse, 100K items; Fig. 5
+
+  # 6. Inspect the plan, then execute all three figures.
+  bash run_all_experiments.sh --warmup 0 --runtime 5 --dry-run
+  bash run_all_experiments.sh --warmup 0 --runtime 5
+)
+```
+
+The surrounding subshell stops at the first failed command without closing your
+interactive shell. Its exported variables do not remain set after the block
+ends; use the standalone sysbench check below when running the binary manually
+in a new shell. The dependency list follows the
+[MySQL source prerequisites](https://dev.mysql.com/doc/refman/8.4/en/source-installation-prerequisites.html),
+the MySQL 8.4.5 checks for
+[RPC](https://github.com/mysql/mysql-server/blob/mysql-8.4.5/cmake/rpc.cmake) and
+[libudev](https://github.com/mysql/mysql-server/blob/mysql-8.4.5/cmake/fido2.cmake),
+and the [sysbench build instructions](https://github.com/akopytov/sysbench#building-and-installing-from-source).
+
+Keep `--build-only` on the engine build commands. The experiment loaders and
+runners start their own servers; no manually started MySQL server or
+`rcc_data_dir` / `rcc_log_dir` environment variables are needed.
+If NUMA policy changes are unavailable (for example, `set_mempolicy: Operation
+not permitted` in a container), add `--numa none` to **both loaders and the
+experiment commands**.
+
+After the engines and clients are built, steps 5 and 6 can instead be combined:
+
+```bash
+bash run_all_experiments.sh --prepare --warmup 0 --runtime 5
+```
+
+`--prepare` only loads missing datasets; it **does not build engines or clients**.
+`Missing Vanilla tool: mysqld; build Vanilla first` means step 2 has not installed
+`Vanilla/mysql-8.4.5-install/bin/mysqld` successfully. Complete the build before
+retrying. `--dry-run` checks the plan only, not installed binaries or datasets.
+
+With the default sweeps there are 24 + 30 + 15 = **69 cases**, one repetition
+each. Five seconds applies to each case, so the requested measurement windows
+total **345 seconds**. Loading, copying snapshots, starting/stopping servers,
+and TPC-C consistency checks take additional time. **`--warmup 0` still performs
+the full-table preload for Fig. 4/6** and the statistics refresh for Fig. 5.
+Results are saved under `results/Fig4/`, `results/Fig5/` and `results/Fig6/`, in
+new timestamped directories containing `summary.csv` and per-case logs.
+
 ## Build
 
 From this directory, with the MySQL 8.4 build dependencies installed:
 
 ```bash
+bash run_server.sh --vanilla --build-only
 bash run_server.sh --rcc --build-only
 bash run_server.sh --rcc-c --build-only
 bash run_server.sh --bamboo --build-only
 bash run_server.sh --rebirth --build-only
-bash run_server.sh --vanilla --build-only
 ```
 
 These commands download MySQL 8.4.5 when needed, refresh the InnoDB overlay,
 configure, build and install. They do not start a server or access data/log
 directories. The default compilers are `gcc-10` and `g++-10`; set `CC` and
-`CXX` to use another supported compiler (GCC 10 or newer). Set `BUILD_JOBS`
-to control build parallelism. RCC and RCC-C share
+`CXX` to use another supported compiler (GCC 10 or newer). `BUILD_JOBS` defaults
+to `nproc` (all available CPUs); set it to override build parallelism. RCC and RCC-C share
 `RCC/mysql-8.4.5/`; build them sequentially. Their build and install outputs
 are separate (`-build`/`-install` versus `-build-C`/`-install-C`). Launchers use
 the installed executables in `mysql-8.4.5-install[-C]/bin/`. Similarly,
@@ -79,9 +182,11 @@ On a new machine, install Autoconf, Automake, Libtool and pkg-config, then build
 it against the same Vanilla MySQL installation used for loading:
 
 ```bash
-cd /home/hjin/RCC/MySQL
+cd "$HOME/RCC/MySQL"
 MYSQL_PREFIX="$PWD/Vanilla/mysql-8.4.5-install"
-# Or: MYSQL_PREFIX=/home/hjin/mysql-8.4.5-install
+# Or: MYSQL_PREFIX=/path/to/vanilla-install
+export LD_LIBRARY_PATH="$MYSQL_PREFIX/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+mkdir -p tools
 git clone https://github.com/akopytov/sysbench.git tools/sysbench
 git -C tools/sysbench checkout 3ceba0b1e115f8c50d1d045a4574d8ed643bd497
 (
@@ -89,7 +194,8 @@ git -C tools/sysbench checkout 3ceba0b1e115f8c50d1d045a4574d8ed643bd497
   ./autogen.sh
   ./configure --with-mysql-includes="$MYSQL_PREFIX/include" \
     --with-mysql-libs="$MYSQL_PREFIX/lib" --without-pgsql
-  make -j8
+  make -j"${BUILD_JOBS:-$(nproc)}"
+  ./src/sysbench --version
 )
 ```
 
@@ -97,8 +203,26 @@ The runner looks for `tools/sysbench/src/sysbench`, then
 `$HOME/sysbench/src/sysbench`, then `sysbench` on `PATH`. A binary without
 `--rand-zipfian-exp` is rejected. Override it with `--sysbench /path/to/sysbench`.
 
+For a standalone check after building, including from a new shell:
+
 ```bash
-cd /home/hjin/RCC/MySQL
+cd "$HOME/RCC/MySQL"
+export MYSQL_PREFIX="$PWD/Vanilla/mysql-8.4.5-install"
+export LD_LIBRARY_PATH="$MYSQL_PREFIX/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+./tools/sysbench/src/sysbench --version
+./tools/sysbench/src/sysbench --help
+```
+
+`error while loading shared libraries: libmysqlclient.so.24` means the runtime
+linker cannot find the Vanilla client library. If the library exists under
+`$MYSQL_PREFIX/lib`, the exports above supply its location; rebuilding sysbench
+is not needed for that error. The experiment scripts already set this library
+path for their clients. A block copied separately must also define
+`MYSQL_PREFIX` before `./configure`; the sysbench source is in `tools/sysbench`,
+while this repository's `sysbench/` directory contains only Lua workloads.
+
+```bash
+cd "$HOME/RCC/MySQL"
 bash scripts/build_clients.sh
 ```
 
@@ -107,8 +231,8 @@ This builds `tpcc-mysql/tpcc_load` and `tpcc-mysql/tpcc_start` against
 installation instead:
 
 ```bash
-bash scripts/build_clients.sh --mysql-config /home/hjin/mysql-8.4.5-install/bin/mysql_config
-# Pass --loader-prefix /home/hjin/mysql-8.4.5-install to the loaders and runs below.
+bash scripts/build_clients.sh --mysql-config /path/to/vanilla-install/bin/mysql_config
+# Pass --loader-prefix /path/to/vanilla-install to the loaders and runs below.
 ```
 
 `--loader-prefix` supplies the Vanilla server, MySQL client tools, shared client
@@ -166,12 +290,15 @@ bash scripts/fig6_sysbench_rows.sh
 
 # Load missing snapshots automatically, then run all three figures:
 bash run_all_experiments.sh --prepare
+
+# Short run: no workload warmup, 5 measured seconds per case:
+bash run_all_experiments.sh --prepare --warmup 0 --runtime 5
 ```
 
 `--dry-run` prints every case without creating files, checking/installing
 binaries, loading data, or starting/stopping servers. `--prepare` loads missing
 snapshots before running; without it, missing data stops the run with a loader
-instruction.
+instruction. Neither option builds engines or clients.
 
 Useful options (pass to any figure script):
 
@@ -241,7 +368,7 @@ stop the run instead of adding a successful result row.
 Successful/aborted attempt times are sums of client-observed wall times, not CPU
 time. Wait counters overlap successful attempt time and must not simply be
 added to it. Server counter snapshots bracket the separate measurement client,
-so they include its connection/drain interval; the 30-second warmup is excluded.
+so they include its connection/drain interval; any configured warmup is excluded.
 A missing custom counter is left empty, rather than reported as a measured zero.
 Vanilla's lock counter scope can differ from the custom engines' successful-
 attempt counters. Original logs and counters are retained for Fig. 4/5 time

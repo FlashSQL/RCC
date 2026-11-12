@@ -41,24 +41,4 @@ plot \
   'tps_128.csv' using 0:3 with linespoints ls 41 title "BB"
 
 
-# -----------------------------
-# Plot 2: Abort Rate
-# -----------------------------
-# Abort plot keeps its previous settings.
-set output
-set terminal pdf size 3,2 font "Helvetica,16"
-set lmargin -1
-set output 'fig5a_tpcc_abort.pdf'
-set xrange [-0.3:5.3]
-set ylabel "Abort Rate (%)"
-set yrange [0:100]
-set ytics 0,25,100
-set key inside left top reverse Left samplen 3 font "Helvetica, 14"
-
-plot \
-  'abort_128.csv' using 0:6 with linespoints ls 31 title "RCC-C",  \
-  'abort_128.csv' using 0:5 with linespoints ls 61 title "RCC",  \
-  'abort_128.csv' using 0:4 with linespoints ls 51 title "RR",  \
-  'abort_128.csv' using 0:3 with linespoints ls 41 title "BB",  \
-  'abort_128.csv' using 0:2:xtic(1) with linespoints ls 11 title "VAN"
 set output
