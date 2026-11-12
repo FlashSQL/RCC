@@ -1,5 +1,6 @@
 """Offline checks: plans, measurement parsing, snapshot publication and server ownership."""
 import contextlib
+import csv
 import importlib.util
 import io
 import json
@@ -40,6 +41,7 @@ class Plans(unittest.TestCase):
             cases = bench.plan(args)
             self.assertEqual(len(cases), count)
             self.assertEqual((args.warmup, args.runtime), (30, 30))
+            self.assertFalse(args.skip_consistency_check)
             if figure == "fig5":
                 self.assertEqual({c["workload"] for c in cases}, {"tpcc"})
             else:
@@ -247,6 +249,65 @@ class Lifecycle(unittest.TestCase):
             bench.run_case(self.args, bench.plan(self.args)[0], results, {"Vanilla": self.args.loader_prefix})
         self.assertTrue(next(results.glob("*/consistency.tsv")).is_file())
         self.assertTrue((results / "summary.csv").is_file())
+        summary = json.loads(next(results.glob("*/summary.json")).read_text())
+        self.assertEqual(summary["consistency_check"], "passed")
+
+    def test_consistency_skip_is_explicit_and_does_not_hide_client_errors(self):
+        scenarios = (("skip", True, "", None),
+                     ("strict", False, "", "TPC-C consistency check failed"),
+                     ("client-error", True, "FATAL client error", "Client error"))
+        for name, skip, client_error, expected_error in scenarios:
+            with self.subTest(name=name):
+                work = self.root / name
+                args = bench.parse_args(["fig5", "--engines", "RCC-C", "--threads", "128",
+                                         "--warmup", "0", "--runtime", "5",
+                                         "--work-dir", str(work), "--numa", "none",
+                                         *(["--skip-consistency-check"] if skip else [])])
+                snapshot = bench.dataset_path(args, "tpcc", 0)
+                (snapshot / "data").mkdir(parents=True)
+                (snapshot / "data/ibdata1").write_text("snapshot")
+                (snapshot / "redo").mkdir()
+                bench.write_json(snapshot / "dataset.json", bench.dataset_spec(args, "tpcc", 0))
+                (work / "runs").mkdir()
+                results = work / "results"; results.mkdir()
+                FakeServer.instances = []
+
+                def log(command, output, phase, args, seconds):
+                    self.assertEqual(phase, "run")
+                    (output / (phase + ".out")).write_text(tpcc_output(seconds=5, threads=128))
+                    (output / (phase + ".err")).write_text(client_error)
+
+                def fail_check(checker):
+                    (checker.output / "consistency.tsv").write_text("ERROR\t1\tconstraint\n")
+                    raise RuntimeError("TPC-C consistency check failed")
+
+                with patch.object(bench, "Server", FakeServer), \
+                        patch.object(bench, "logged", side_effect=log), \
+                        patch.object(bench, "check_tpcc_consistency", side_effect=fail_check) as check:
+                    if expected_error:
+                        with self.assertRaisesRegex(RuntimeError, expected_error):
+                            bench.run_case(args, bench.plan(args)[0], results,
+                                           {"RCC-C": args.loader_prefix})
+                    else:
+                        bench.run_case(args, bench.plan(args)[0], results,
+                                       {"RCC-C": args.loader_prefix})
+                    self.assertEqual(check.call_count, 0 if skip else 1)
+
+                self.assertTrue(all(server.process is None for server in FakeServer.instances))
+                if expected_error:
+                    self.assertFalse((results / "summary.csv").exists())
+                else:
+                    self.assertEqual(len(FakeServer.instances), 1)
+                    with (results / "summary.csv").open() as stream:
+                        row, = list(csv.DictReader(stream))
+                    self.assertEqual(row["consistency_check"], "skipped")
+                    summary = json.loads(next(results.glob("*/summary.json")).read_text())
+                    metadata = json.loads(next(results.glob("*/run.json")).read_text())
+                    self.assertEqual(summary["consistency_check"], "skipped")
+                    self.assertEqual(metadata["consistency_check"], "skipped")
+                    self.assertTrue(metadata["skip_consistency_check"])
+                    self.assertFalse(list(results.glob("*/consistency-check")))
+                    self.assertEqual(list((work / "runs").iterdir()), [])
 
     def test_measurement_uses_fresh_copy_and_excludes_warmup(self):
         with patch.object(bench, "Server", FakeServer), patch.object(bench, "logged"):

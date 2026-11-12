@@ -253,11 +253,15 @@ The loaders initialize their own Vanilla server, create/load the schema,
 validate row counts, and shut it down cleanly before publishing a reusable
 snapshot. Matching snapshots are reused. No existing user database is needed.
 TPC-C also runs the seven active checks in `tpcc-mysql/consistency_check.sql`
-after loading and after every measured run. A failed check stops the run;
+after loading and, by default, after every measured run. A failed check stops the run;
 the output is retained as `consistency.tsv`. After measurement, the engine
 shuts down fully and a separate Vanilla server checks the persisted rows in
 an explicit SERIALIZABLE transaction. Validation is outside the measured time;
 its server logs are in `consistency-check/`.
+To bypass the post-run check temporarily, pass `--skip-consistency-check`.
+This skips starting the validation server and records `consistency_check=skipped`
+in `run.json`, `summary.json` and `summary.csv`. It does not bypass checks when
+loading a reusable dataset, client errors, or server shutdown failures.
 Sysbench uses HASH(id) with 128 partitions, as in the ShadowTX8 loader; set
 `--partitions 0` on both loading and running to disable partitioning. TPC-C uses
 the imported schema unchanged, including its district partitioning and indexes.
@@ -309,6 +313,7 @@ Useful options (pass to any figure script):
 | `--rows 10M,100K,10K,1K,0.1K` | Sysbench access-range list; Fig. 4 defaults to 10M |
 | `--warmup 30 --runtime 30` | Warmup and measured seconds |
 | `--repeat 2` / `--paper` | Two repetitions / three repetitions, like DBx1000 |
+| `--skip-consistency-check` | Skip post-run TPC-C validation; mark the result as `skipped` |
 | `--results-dir /path/to/results` | Parent directory for timestamped results |
 | `--work-dir /path/to/data` | Shared snapshot and scratch directory |
 | `--loader-prefix /path/to/vanilla-install` | Existing Vanilla tools/installation |
@@ -324,6 +329,24 @@ Example of one selected point, with automatic data preparation:
 ```bash
 bash scripts/fig5_tpcc_threads.sh --engines RCC --threads 64 --prepare
 ```
+
+If Fig. 5 stopped at its final RCC-C / 128-thread case because of a consistency
+failure, rerun only that case with validation disabled, then run Fig. 6:
+
+```bash
+(
+  set -e
+  bash scripts/fig5_tpcc_threads.sh --engines RCC-C --threads 128 \
+    --warmup 0 --runtime 5 --skip-consistency-check
+  bash scripts/fig6_sysbench_rows.sh --warmup 0 --runtime 5
+)
+```
+
+These are new runs, not an in-place resume. The single-point Fig. 5 result is
+saved in a new timestamped directory; the previous 29 results and the original
+failure logs remain in the old directory. Combine the single-point result with
+those earlier points when plotting the full sweep. Passing the option to
+`run_all_experiments.sh` also works, but starts all three figures again.
 
 Warmup and measurement are separate client invocations against the same running
 server. Warmup output is saved but excluded from the summary. Sysbench preloads
@@ -358,6 +381,9 @@ results/Fig6/20261111_190000_12345/
 `summary.csv` records engine, access rows, actual table rows, threads, repetition,
 TPS, completed transactions (`commits`), aborts, abort fraction (0–1), successful
 attempt time, aborted attempt time, and server lock/commit wait deltas in ms.
+New results also include `consistency_check`: `passed` for validated TPC-C runs,
+`skipped` when explicitly bypassed, and `not_applicable` for sysbench. Older CSVs
+do not have this column.
 TPC-C completions use the per-thread `sc + lt` totals for NewOrder and Payment,
 not tpmC. Final attempt-time totals are also summed from per-thread counters
 after the workers finish. The runner requires every requested worker to finish
@@ -374,6 +400,74 @@ Vanilla's lock counter scope can differ from the custom engines' successful-
 attempt counters. Original logs and counters are retained for Fig. 4/5 time
 breakdown analysis. The static gnuplot templates do not directly consume this
 new CSV format.
+
+### 5. Collect results and plot Fig. 4/5/6
+
+```bash
+cd "$HOME/RCC/MySQL"
+# Plotting dependency, if not already installed:
+python3 -m pip install matplotlib
+bash scripts/plot_fig4_5_6.sh
+```
+
+The script reads `results/Fig4/**/summary.csv`, `Fig5/**/summary.csv` and
+`Fig6/**/summary.csv`. For each engine/access range/table size/thread count/
+repetition, it keeps the newest completed result by the runner's directory
+timestamp. A single-point rerun therefore replaces that point while preserving
+the rest of the sweep. Older results fill points missing from newer summaries;
+the selected paths and counts are printed so this is visible. Failed cases
+without a summary row are not parsed from logs. Repetitions are averaged with
+equal weight; throughput and abort plots show sample standard deviations when
+there is more than one measurement. Missing points remain gaps, not zeroes.
+
+Outputs are under `results/plots/` by default:
+
+| Directory | Plots (both PDF and PNG) |
+| --- | --- |
+| `Fig4/` | `fig4a_ycsb`, `fig4b_ycsb_time` |
+| `Fig5/` | `fig5a_tpcc`, `fig5b_tpcc_time` |
+| `Fig6/` | `fig6a_tps`, `fig6b_abort` |
+
+Each figure directory also contains `collected.csv` (selected measurements with
+source paths and consistency status) and `aggregated.csv` (means, standard
+deviations, sample counts and time components). `sources.json` records input
+files and the selection policy. A `skipped` consistency check remains marked in
+the CSV and produces a warning. Legacy results without that field are `unknown`.
+
+Time bars divide each run's client attempt-time totals and server wait counters
+by committed transactions before averaging. Where both wait counters are
+available, execution is successful-attempt time minus lock wait and commit wait;
+wasted time is aborted-attempt time per commit. If a counter is missing or the
+wait sum exceeds successful time, the successful total is shown with dotted fill
+as **Successful (unsplit)**, alongside wasted time. Missing counters remain empty
+in CSVs. This avoids inventing a measured zero or double-counting waits; the
+counter scope/window limitations described above still apply. Abort fractions
+are converted to percentages. Fig. 6 orders access ranges from largest to
+smallest. Non-default row/thread sweeps produce separate files with setting
+suffixes instead of averaging different workloads together.
+
+```bash
+# Only Fig. 5; explicitly combine an earlier sweep and a single-point rerun.
+bash scripts/plot_fig4_5_6.sh --figures fig5 \
+  --fig5-dir results/Fig5/<sweep-directory> results/Fig5/<rerun-directory>
+
+# Use another results root or output directory; export SVG as well.
+bash scripts/plot_fig4_5_6.sh --results-dir /path/to/results \
+  --output-dir /path/to/plots --formats pdf png svg
+
+# Average all stored runs instead of selecting the latest case/repeat.
+# Use only comparable runs (same benchmark settings, builds and hardware).
+bash scripts/plot_fig4_5_6.sh --all-runs
+
+# Collect/aggregate CSVs without matplotlib or rendering plots.
+python3 scripts/plot_figures.py --collect-only
+```
+
+The `--fig4-dir`, `--fig5-dir` and `--fig6-dir` overrides each accept one or more
+figure directories, timestamped run directories or summary CSV paths. Default
+paths are relative to the script, so it can be launched from any working
+directory. Re-running overwrites matching output filenames; source results are
+read-only.
 
 ### Offline verification
 

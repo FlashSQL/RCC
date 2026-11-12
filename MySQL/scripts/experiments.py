@@ -375,6 +375,7 @@ def run_case(args, case, results, prefixes):
     server = Server(args, prefixes[case["engine"]], temp / "data", temp / "redo", output)
     metadata = {**case, "isolation": "SERIALIZABLE", "warmup_seconds": args.warmup,
                 "runtime_seconds": args.runtime, "zipf": 0.9 if kind == "sysbench" else None,
+                "skip_consistency_check": args.skip_consistency_check,
                 "order": "asc" if kind == "sysbench" else None,
                 "read_ops": 8 if kind == "sysbench" else None, "write_ops": 8 if kind == "sysbench" else None,
                 "tpcc_mix": "NewOrder:Payment=1:1" if kind == "tpcc" else None,
@@ -414,15 +415,22 @@ def run_case(args, case, results, prefixes):
                                 ("commit_wait_ms", "innodb_row_commit_time")):
             parsed[metric] = (after_values[counter] - before_values[counter]
                               if counter in before_values and counter in after_values else None)
-        record = {**case, **parsed}
+        record = {**case, **parsed, "consistency_check": "not_applicable"}
     if kind == "tpcc":
-        # Validate persisted rows with Vanilla after the measured engine has
-        # completed a full shutdown; validation is outside all timing windows.
-        check_output = output / "consistency-check"; check_output.mkdir()
-        checker = Server(args, args.loader_prefix, temp / "data", temp / "redo", check_output)
-        with running(checker):
-            check_tpcc_consistency(checker)
-        shutil.copy2(check_output / "consistency.tsv", output / "consistency.tsv")
+        if args.skip_consistency_check:
+            record["consistency_check"] = "skipped"
+            print(f"[WARN] {label}: TPC-C consistency check skipped (--skip-consistency-check)", flush=True)
+        else:
+            # Validate persisted rows with Vanilla after the measured engine has
+            # completed a full shutdown; validation is outside all timing windows.
+            check_output = output / "consistency-check"; check_output.mkdir()
+            checker = Server(args, args.loader_prefix, temp / "data", temp / "redo", check_output)
+            with running(checker):
+                check_tpcc_consistency(checker)
+            shutil.copy2(check_output / "consistency.tsv", output / "consistency.tsv")
+            record["consistency_check"] = "passed"
+    metadata["consistency_check"] = record["consistency_check"]
+    write_json(output / "run.json", metadata)
     write_json(output / "summary.json", record)
     summary = results / "summary.csv"
     exists = summary.exists()
@@ -448,6 +456,8 @@ def parse_args(argv=None):
     parser.add_argument("--repeat", type=int, default=1)
     parser.add_argument("--paper", action="store_true", help="Three repetitions, like DBx1000 --paper")
     parser.add_argument("--prepare", action="store_true", help="Load missing Vanilla snapshots before experiments")
+    parser.add_argument("--skip-consistency-check", action="store_true",
+                        help="Skip post-run TPC-C consistency checks and mark results as skipped; dataset loading remains checked")
     parser.add_argument("--dry-run", action="store_true", help="Print plan only; no writes, builds or server actions")
     parser.add_argument("--work-dir", type=Path, default=BASE / "benchmark-data")
     parser.add_argument("--results-dir", type=Path)
